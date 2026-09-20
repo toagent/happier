@@ -1,0 +1,81 @@
+import org.gradle.api.artifacts.repositories.MavenArtifactRepository
+
+def localMavenRepo = System.getenv('WETAMP_LOCAL_MAVEN_REPO')
+
+def mirrorUrlFor = { URI repositoryUrl ->
+    def url = repositoryUrl.toString()
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        return null
+    }
+    if (url.contains('mirrors.cloud.tencent.com')) {
+        return url
+    }
+    return 'https://mirrors.cloud.tencent.com/nexus/repository/maven-public/'
+}
+
+def addWetampLocalRepository = { repositories ->
+    if (localMavenRepo == null || localMavenRepo.trim().isEmpty()) {
+        return
+    }
+    def localRepository = repositories.maven {
+        name = 'wetampLocalArtifacts'
+        url = new File(localMavenRepo).toURI()
+    }
+    repositories.exclusiveContent {
+        forRepositories(localRepository)
+        filter {
+            includeModule('com.github.gregcockroft', 'AndroidMath')
+            includeModule('com.github.Dimezis', 'BlurView')
+        }
+    }
+}
+
+def rewriteRepository = { repository ->
+    if (!(repository instanceof MavenArtifactRepository)) {
+        return
+    }
+    def mirrorUrl = mirrorUrlFor(repository.url)
+    if (mirrorUrl != null && repository.url.toString() != mirrorUrl) {
+        logger.lifecycle("[WeTAMP mirror] ${repository.url} -> ${mirrorUrl}")
+        repository.setUrl(mirrorUrl)
+    }
+}
+
+settingsEvaluated { settings ->
+    settings.pluginManagement.repositories.configureEach(rewriteRepository)
+    settings.dependencyResolutionManagement.repositories.configureEach(rewriteRepository)
+    addWetampLocalRepository(settings.dependencyResolutionManagement.repositories)
+}
+
+allprojects { project ->
+    project.buildscript.repositories.configureEach(rewriteRepository)
+    project.repositories.configureEach(rewriteRepository)
+    addWetampLocalRepository(project.repositories)
+}
+
+gradle.beforeProject { project ->
+    project.afterEvaluate {
+        def isAndroidApplication = project.plugins.hasPlugin('com.android.application')
+        def isAndroidLibrary = project.plugins.hasPlugin('com.android.library')
+        if (!isAndroidApplication && !isAndroidLibrary) {
+            return
+        }
+
+        def android = project.extensions.findByName('android')
+        android.buildToolsVersion = '36.0.0'
+        android.externalNativeBuild.cmake.version = '3.30.5'
+        if (!isAndroidApplication) {
+            return
+        }
+
+        def signingConfig = android.signingConfigs.findByName('wetampRelease')
+        if (signingConfig == null) {
+            signingConfig = android.signingConfigs.create('wetampRelease')
+        }
+        signingConfig.storeFile = project.file(System.getenv('WETAMP_ANDROID_KEYSTORE'))
+        signingConfig.storePassword = System.getenv('WETAMP_ANDROID_KEYSTORE_PASSWORD')
+        signingConfig.keyAlias = System.getenv('WETAMP_ANDROID_KEY_ALIAS')
+        signingConfig.keyPassword = System.getenv('WETAMP_ANDROID_KEY_PASSWORD')
+        android.buildTypes.getByName('release').signingConfig = signingConfig
+    }
+}

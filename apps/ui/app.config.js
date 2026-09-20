@@ -238,13 +238,20 @@ const schemeOverride = (process.env.EXPO_APP_SCHEME || process.env.HAPPY_STACKS_
 const resolvedScheme = schemeOverride || appEnvironmentConfig.scheme;
 
 const mergeDeep = (base, override) => {
-    if (override == null) return base;
+    if (override === undefined) return base;
+    if (override === null) return null;
     if (Array.isArray(base) || Array.isArray(override)) return override;
     if (typeof base !== 'object' || typeof override !== 'object') return override;
 
     const next = { ...base };
     for (const [key, value] of Object.entries(override)) {
         if (value === undefined) continue;
+        // Expo serializes null object fields as {}, so local configs use null to
+        // remove inherited identities such as googleServicesFile and extra.eas.
+        if (value === null) {
+            delete next[key];
+            continue;
+        }
         next[key] = Object.prototype.hasOwnProperty.call(base, key) ? mergeDeep(base[key], value) : value;
     }
     return next;

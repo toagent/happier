@@ -17,6 +17,9 @@ async function writeFakeYarn(params: Readonly<{ dir: string; logPath: string }>)
     const content = `#!/bin/sh
 set -e
 echo "YARN $@" >> "${params.logPath}"
+if [ -n "\${HAPPIER_DB_PROVIDER:-}" ]; then
+    echo "PROVIDER \${HAPPIER_DB_PROVIDER}" >> "${params.logPath}.env"
+fi
 exit 0
 `;
     await writeFile(yarnPath, content, { mode: 0o755 });
@@ -91,6 +94,15 @@ describe('dev.light.ts', () => {
         expect(result.stdout).toContain('{"happierStackTransition":"migration_completed"}');
         const lines = await readLogLines(logPath);
         expect(lines).toEqual(['YARN -s migrate:deploy', 'YARN -s start:light']);
+    });
+
+    it('propagates the resolved default provider to migration and server processes', async () => {
+        const lightDataDir = join(tmpDir, 'server-light-provider');
+        const result = runDevLightScript({ binDir, tmpDir, lightDataDir });
+
+        expect(result.status).toBe(0);
+        const providerLines = await readLogLines(`${logPath}.env`);
+        expect(providerLines).toEqual(['PROVIDER sqlite', 'PROVIDER sqlite']);
     });
 
     it('does not let a previous local run authorize skipping migrations', async () => {

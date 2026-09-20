@@ -530,13 +530,13 @@ describe('app.config.js', () => {
         expect(result.exp.slug).toBe('toagent-remote');
         expect(result.exp.scheme).toBe('toagent-remote');
         expect(result.exp.android?.package).toBe('io.toagent.remote');
-        expect(result.exp.android?.googleServicesFile).toBeNull();
+        expect(result.exp.android).not.toHaveProperty('googleServicesFile');
         expect(result.exp.updates).toMatchObject({
             enabled: false,
             checkAutomatically: 'NEVER',
             url: 'https://updates.toagent.invalid',
         });
-        expect(result.exp.extra?.eas).toBeNull();
+        expect(result.exp.extra).not.toHaveProperty('eas');
         expect(result.serverUrl).toBe('https://twin-control.tail46137f.ts.net');
     });
 });

@@ -11,6 +11,7 @@ async function main() {
     const filesDir = env.HAPPY_SERVER_LIGHT_FILES_DIR!;
     const dbDir = env.HAPPY_SERVER_LIGHT_DB_DIR!;
     const plan = buildLightDevPlan(env);
+    env.HAPPIER_DB_PROVIDER ??= plan.provider;
 
     // Ensure dirs exist for light flavor.
     await mkdir(dataDir, { recursive: true });

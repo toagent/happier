@@ -1,0 +1,60 @@
+diff --git a/build.gradle b/build.gradle
+index d7f9b41..482942a 100644
+--- a/build.gradle
++++ b/build.gradle
+@@ -4,8 +4,7 @@ buildscript {
+         google()
+     }
+     dependencies {
+-        classpath 'com.android.tools.build:gradle:7.1.2'
+-        classpath("de.mannodermaus.gradle.plugins:android-junit5:1.8.2.0")
++        classpath 'com.android.tools.build:gradle:8.11.0'
+     }
+ }
+ 
+diff --git a/gradle/wrapper/gradle-wrapper.properties b/gradle/wrapper/gradle-wrapper.properties
+index a401e57..9f52d68 100644
+--- a/gradle/wrapper/gradle-wrapper.properties
++++ b/gradle/wrapper/gradle-wrapper.properties
+@@ -3,4 +3,4 @@ distributionBase=GRADLE_USER_HOME
+ distributionPath=wrapper/dists
+ zipStoreBase=GRADLE_USER_HOME
+ zipStorePath=wrapper/dists
+-distributionUrl=https\://services.gradle.org/distributions/gradle-7.2-all.zip
++distributionUrl=https\://mirrors.cloud.tencent.com/gradle/gradle-8.14.3-bin.zip
+diff --git a/library/build.gradle b/library/build.gradle
+index 2f2a6fc..b823b0d 100644
+--- a/library/build.gradle
++++ b/library/build.gradle
+@@ -1,8 +1,8 @@
+ apply plugin: 'com.android.library'
+-apply plugin: 'de.mannodermaus.android-junit5'
+ 
+ android {
+-    compileSdkVersion 31
++    namespace 'eightbitlab.com.blurview'
++    compileSdkVersion 36
+ 
+     compileOptions {
+         sourceCompatibility JavaVersion.VERSION_1_8
+@@ -36,11 +36,11 @@ task androidJavadocs(type: Javadoc) {
+ }
+ 
+ task androidJavadocsJar(type: Jar, dependsOn: androidJavadocs) {
+-    classifier = 'javadoc'
++    archiveClassifier.set('javadoc')
+     from androidJavadocs.destinationDir
+ }
+ 
+ task androidSourcesJar(type: Jar) {
+-    classifier = 'sources'
++    archiveClassifier.set('sources')
+     from android.sourceSets.main.java.srcDirs
+ }
+diff --git a/settings.gradle b/settings.gradle
+index 3af716d..67b9a63 100644
+--- a/settings.gradle
++++ b/settings.gradle
+@@ -1 +1 @@
+-include ':app', ':library'
++include ':library'

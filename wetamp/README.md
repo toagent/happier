@@ -5,7 +5,7 @@
 - [Y700 Android 定制路线](plans/y700-private-android-customization.md)：完整需求、源码落点、实施阶段与验收；修订 2 已获批准并开始执行。
 - [上游升级约定](UPSTREAM.md)：定制边界、源码合并、组件兼容、数据升级与回退。
 
-当前正在执行 P0，建立私有 App 配置、构建入口和 Y700 安装基线；尚未完成 APK、双机公网交互或上游升级验收。
+当前正在执行 P0，私有 App 配置和国内镜像构建入口已建立；APK、双机公网交互与上游升级验收以实际构建和真机证据为准。
 
 ## 目录边界
 
@@ -15,13 +15,19 @@ wetamp/
   UPSTREAM.md
   plans/
     y700-private-android-customization.md
-  config/       # 后续实施：非敏感 App/构建配置
+  config/       # 非敏感 App 配置和 Gradle 国内镜像规则
   assets/       # 后续实施：自有图标、启动图等资源
-  scripts/      # 后续实施：调用上游现有脚本的构建与校验入口
+  scripts/      # 调用上游现有脚本的构建与校验入口
   upstream/     # 后续实施：已验证基线、定制接入点与每次升级证据
 ```
 
-后续目录按实际需要创建，不建立空目录或占位实现。`config/`、`assets/`、`scripts/`、`upstream/` 目前均未创建。
+`config/app.cjs` 通过上游 `EXPO_APP_LOCAL_CONFIG_PATH` 接入，删除上游 Firebase/EAS 身份并关闭 Expo OTA。`scripts/build-android-apk.sh` 固定 Node 22、JDK 17、Android SDK 36，以及腾讯云的 Gradle 分发和 Maven 镜像；执行时会清除所有代理环境变量。JitPack 独有的 `AndroidMath:v1.1.0` 和 `BlurView:version-2.0.6` 分别从 `gitclone.com`、GitCode 国内 Git 镜像按固定提交构建为本地 Maven AAR；Gradle 对这两个坐标只读取 `$GRADLE_USER_HOME/local-maven`。`sherpa-onnx:v1.12.25` 的 Android 原生包通过 `gh-proxy.com` 国内镜像直连下载，命中官方 SHA-256 后才原子写入 Gradle 构建缓存。签名文件与密码必须保存在仓库外。
+
+```bash
+wetamp/scripts/build-android-apk.sh --install
+```
+
+`--install` 会将 arm64 release APK 安装到当前连接的 Android 设备；不传该参数时只构建和校验 `wetamp/dist/` 下的 APK。`assets/` 与 `upstream/` 仍按实际需要创建，不建立空目录或占位实现。
 
 上游 `apps/`、`packages/` 继续拥有 App、CLI、server、协议和 provider 实现。需要接线的定制在这些 owner 内做可审查改动，相关单测就近放置，`wetamp/upstream/` 记录原因、接入点与验证入口。不把上游实现复制到本目录，不靠批量覆盖文件安装定制，不生成第二套锁文件和独立依赖树。
 

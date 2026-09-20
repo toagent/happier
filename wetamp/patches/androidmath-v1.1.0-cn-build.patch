@@ -1,0 +1,62 @@
+diff --git a/gradle/wrapper/gradle-wrapper.properties b/gradle/wrapper/gradle-wrapper.properties
+index 2733ed5..3ce3dcd 100644
+--- a/gradle/wrapper/gradle-wrapper.properties
++++ b/gradle/wrapper/gradle-wrapper.properties
+@@ -1,5 +1,5 @@
+ distributionBase=GRADLE_USER_HOME
+ distributionPath=wrapper/dists
+-distributionUrl=https\://services.gradle.org/distributions/gradle-8.13-bin.zip
++distributionUrl=https\://mirrors.cloud.tencent.com/gradle/gradle-8.13-bin.zip
+ zipStoreBase=GRADLE_USER_HOME
+ zipStorePath=wrapper/dists
+diff --git a/mathdisplaylib/build.gradle b/mathdisplaylib/build.gradle
+index 8276267..20d7503 100644
+--- a/mathdisplaylib/build.gradle
++++ b/mathdisplaylib/build.gradle
+@@ -5,11 +5,16 @@ apply plugin: 'maven-publish'
+ group='com.github.gregcockroft'
+ 
+ android {
+-    compileSdkVersion 34
++    compileSdkVersion 36
++    buildToolsVersion "36.0.0"
+ 
+     defaultConfig {
+         minSdkVersion 24
+-        targetSdkVersion 34
++        targetSdkVersion 36
++
++        ndk {
++            abiFilters 'arm64-v8a'
++        }
+ 
+         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+         sourceSets.test.resources.srcDirs += ["src/main"]
+@@ -37,9 +42,10 @@ android {
+     externalNativeBuild {
+         cmake {
+             path 'src/main/cpp/CMakeLists.txt'
++            version '3.30.5'
+         }
+     }
+-    ndkVersion "28.2.13676358"
++    ndkVersion "27.1.12297006"
+     namespace 'com.agog.mathdisplay'
+ 
+     compileOptions {
+@@ -59,7 +65,6 @@ dependencies {
+     implementation 'androidx.test:runner:1.5.2'
+     implementation 'androidx.test:rules:1.5.0'
+     api "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+-    implementation 'com.github.jitpack:gradle-simple:1.0'
+ }
+ repositories {
+     mavenCentral()
+diff --git a/settings.gradle b/settings.gradle
+index 48a930e..0d90ff4 100644
+--- a/settings.gradle
++++ b/settings.gradle
+@@ -1,2 +1 @@
+-include ':mathdisplaylib', ':sampleapp'
+-
++include ':mathdisplaylib'
