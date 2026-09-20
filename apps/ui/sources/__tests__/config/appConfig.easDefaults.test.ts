@@ -61,6 +61,10 @@ function withCleanEnv<T>(fn: () => T): T {
         'EXPO_APP_SLUG',
         'EXPO_APP_BUNDLE_ID',
         'EXPO_ANDROID_PACKAGE',
+        'EXPO_APP_NAME',
+        'EXPO_APP_SCHEME',
+        'EXPO_APP_LINK_HOST',
+        'EXPO_PUBLIC_HAPPIER_SERVER_URL',
         'HAPPIER_EXPO_RUNTIME_VERSION',
         'HAPPIER_EXPO_RUNTIME_VERSION_POLICY',
         'EXPO_APP_LOCAL_CONFIG_PATH',
@@ -503,5 +507,36 @@ describe('app.config.js', () => {
         expect(exp.ios?.infoPlist?.NSPhotoLibraryUsageDescription).toBe(
             'Local override: access photos for sharing.',
         );
+    });
+
+    it('isolates the WeTAMP Android release identity from upstream services', () => {
+        const result = withCleanEnv(() => {
+            process.env.EXPO_APP_LOCAL_CONFIG_PATH = join(
+                getUiDir(),
+                '..',
+                '..',
+                'wetamp',
+                'config',
+                'app.cjs',
+            );
+            const exp = getPublicConfig();
+            return {
+                exp,
+                serverUrl: process.env.EXPO_PUBLIC_HAPPIER_SERVER_URL,
+            };
+        });
+
+        expect(result.exp.name).toBe('ToAgent Remote');
+        expect(result.exp.slug).toBe('toagent-remote');
+        expect(result.exp.scheme).toBe('toagent-remote');
+        expect(result.exp.android?.package).toBe('io.toagent.remote');
+        expect(result.exp.android?.googleServicesFile).toBeNull();
+        expect(result.exp.updates).toMatchObject({
+            enabled: false,
+            checkAutomatically: 'NEVER',
+            url: 'https://updates.toagent.invalid',
+        });
+        expect(result.exp.extra?.eas).toBeNull();
+        expect(result.serverUrl).toBe('https://twin-control.tail46137f.ts.net');
     });
 });
