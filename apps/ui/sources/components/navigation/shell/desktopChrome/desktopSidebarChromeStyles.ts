@@ -4,6 +4,7 @@ import {
     DESKTOP_SIDEBAR_CHROME_BRAND_ROW_MIN_HEIGHT_PX,
     DESKTOP_SIDEBAR_CHROME_CONTROL_GAP_PX,
     DESKTOP_SIDEBAR_CHROME_HORIZONTAL_PADDING_PX,
+    DESKTOP_SIDEBAR_CHROME_NATIVE_TOUCH_TARGET_SIZE_PX,
     DESKTOP_SIDEBAR_CHROME_ROW_GAP_PX,
     DESKTOP_SIDEBAR_CHROME_TOP_ICON_GAP_PX,
     DESKTOP_SIDEBAR_CHROME_TOP_NAV_ICON_BUTTON_SIZE_PX,
@@ -68,6 +69,10 @@ export const desktopSidebarChromeStyles = StyleSheet.create((theme) => ({
         alignItems: 'center',
         gap: DESKTOP_SIDEBAR_CHROME_CONTROL_GAP_PX,
     },
+    nativeTouchContentRow: {
+        flexDirection: 'column',
+        alignItems: 'stretch',
+    },
     compactContentRow: {
         minHeight: DESKTOP_SIDEBAR_CHROME_BRAND_ROW_MIN_HEIGHT_PX,
     },
@@ -86,6 +91,16 @@ export const desktopSidebarChromeStyles = StyleSheet.create((theme) => ({
         alignItems: 'center',
         justifyContent: 'center',
         flexShrink: 0,
+    },
+    nativeTouchBrandButton: {
+        width: DESKTOP_SIDEBAR_CHROME_NATIVE_TOUCH_TARGET_SIZE_PX,
+        height: DESKTOP_SIDEBAR_CHROME_NATIVE_TOUCH_TARGET_SIZE_PX,
+    },
+    nativeTouchBrandGroup: {
+        flexGrow: 0,
+        flexShrink: 0,
+        flexBasis: 'auto',
+        minHeight: DESKTOP_SIDEBAR_CHROME_NATIVE_TOUCH_TARGET_SIZE_PX,
     },
     updateIndicatorHost: {
         flexShrink: 0,
@@ -161,6 +176,17 @@ export const desktopSidebarChromeStyles = StyleSheet.create((theme) => ({
         alignItems: 'center',
         flexDirection: 'row',
         gap: 4,
+    },
+    nativeTouchActionsRow: {
+        alignSelf: 'stretch',
+        justifyContent: 'flex-end',
+        marginLeft: 0,
+    },
+    nativeTouchIconButton: {
+        width: DESKTOP_SIDEBAR_CHROME_NATIVE_TOUCH_TARGET_SIZE_PX,
+        height: DESKTOP_SIDEBAR_CHROME_NATIVE_TOUCH_TARGET_SIZE_PX,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     iconButton: {
         width: 32,

@@ -82,6 +82,31 @@ vi.mock('@/text', async () => {
 });
 
 describe('ItemRowActions', () => {
+    it('uses a real button box when a touch target size is requested', async () => {
+        const { ItemRowActions } = await import('./ItemRowActions');
+        const screen = await renderScreen(React.createElement(ItemRowActions, {
+            title: 'Navigation',
+            compactThreshold: 200,
+            buttonSize: 48,
+            actions: [{
+                id: 'new-session',
+                inlineTestID: 'new-session',
+                title: 'New session',
+                icon: 'plus',
+                onPress: vi.fn(),
+            }],
+        }));
+
+        const button = screen.findByTestId('new-session');
+        expect(button?.props.style).toEqual(expect.objectContaining({
+            width: 48,
+            height: 48,
+            alignItems: 'center',
+            justifyContent: 'center',
+        }));
+        expect(button?.props.hitSlop).toBeUndefined();
+    });
+
     it('forwards the press event to inline actions so modifier-aware navigation stays centralized', async () => {
         const { ItemRowActions } = await import('./ItemRowActions');
         const onPress = vi.fn();

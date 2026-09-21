@@ -45,6 +45,8 @@ export interface ItemRowActionsProps {
      */
     overflowPosition?: 'end' | 'beforePinned';
     iconSize?: number;
+    /** Optional real button-box size for touch layouts. */
+    buttonSize?: number;
     gap?: number;
     onActionPressIn?: () => void;
     /**
@@ -142,6 +144,22 @@ export function ItemRowActions(props: ItemRowActionsProps) {
 
     const iconSize = props.iconSize ?? 20;
     const gap = props.gap ?? 16;
+    const buttonSize = typeof props.buttonSize === 'number'
+        && Number.isFinite(props.buttonSize)
+        && props.buttonSize > 0
+        ? props.buttonSize
+        : null;
+    const buttonStyle = buttonSize == null
+        ? undefined
+        : {
+            width: buttonSize,
+            height: buttonSize,
+            alignItems: 'center' as const,
+            justifyContent: 'center' as const,
+        };
+    const buttonHitSlop = buttonSize == null
+        ? { top: 10, bottom: 10, left: 10, right: 10 }
+        : undefined;
 
     const renderInlineAction = React.useCallback((action: ItemAction) => {
         const color = action.color ?? (action.destructive ? theme.colors.state.danger.foreground : theme.colors.button.secondary.tint);
@@ -161,7 +179,8 @@ export function ItemRowActions(props: ItemRowActionsProps) {
                 key={action.id}
                 testID={action.inlineTestID}
                 disabled={action.disabled || !action.onPress}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                hitSlop={buttonHitSlop}
+                style={buttonStyle}
                 onPressIn={() => props.onActionPressIn?.()}
                 onPress={(e: GestureResponderEvent) => {
                     e?.stopPropagation?.();
@@ -175,7 +194,7 @@ export function ItemRowActions(props: ItemRowActionsProps) {
                 )}
             </Pressable>
         );
-    }, [iconSize, props, theme.colors.button.secondary.tint, theme.colors.state.danger.foreground]);
+    }, [buttonHitSlop, buttonStyle, iconSize, props, theme.colors.button.secondary.tint, theme.colors.state.danger.foreground]);
 
     const renderOverflow = React.useCallback(() => {
         const accessibilityLabel = t('common.moreActions');
@@ -196,8 +215,8 @@ export function ItemRowActions(props: ItemRowActionsProps) {
                         : (
                             <Pressable
                                 testID={props.overflowTriggerTestID}
-                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                                style={showOverflow ? { opacity: 0 } : undefined}
+                                hitSlop={buttonHitSlop}
+                                style={[buttonStyle, showOverflow ? { opacity: 0 } : undefined]}
                                 onPressIn={() => props.onActionPressIn?.()}
                                 onPress={(e: GestureResponderEvent) => {
                                     e?.stopPropagation?.();
@@ -269,7 +288,7 @@ export function ItemRowActions(props: ItemRowActionsProps) {
                 ) : null}
             </View>
         );
-    }, [iconSize, overflowActionItems, props, showOverflow, theme.colors.button.secondary.tint]);
+    }, [buttonHitSlop, buttonStyle, iconSize, overflowActionItems, props, showOverflow, theme.colors.button.secondary.tint]);
 
     return (
         <View style={[styles.container, { gap }]}>

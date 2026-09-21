@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Pressable, View } from 'react-native';
+import { Platform, Pressable, View } from 'react-native';
 import { useUnistyles } from 'react-native-unistyles';
 import { ConnectionStatusControl } from '@/components/navigation/ConnectionStatusControl';
 import { useDesktopWindowDragMouseProps } from '@/components/navigation/desktopWindowChrome/DesktopWindowDragRegion';
@@ -10,6 +10,7 @@ import { t } from '@/text';
 import {
     DESKTOP_SIDEBAR_CHROME_ACTIONS_COMPACT_THRESHOLD_PX,
     DESKTOP_SIDEBAR_CHROME_ICON_GLYPH_SIZE_PX,
+    DESKTOP_SIDEBAR_CHROME_NATIVE_TOUCH_TARGET_SIZE_PX,
     DESKTOP_SIDEBAR_CHROME_TOP_NAV_ICON_BUTTON_SIZE_PX,
 } from './desktopChromeMetrics';
 import { desktopSidebarChromeStyles } from './desktopSidebarChromeStyles';
@@ -87,6 +88,10 @@ export const DesktopSidebarChrome = React.memo((props: DesktopSidebarChromeProps
     const styles = desktopSidebarChromeStyles;
     const { theme } = useUnistyles();
     const hasDesktopWindowControls = props.desktopWindowControls != null;
+    const isNativeTouchSidebar = Platform.OS !== 'web' && !hasDesktopWindowControls;
+    const contentActionButtonSize = isNativeTouchSidebar
+        ? DESKTOP_SIDEBAR_CHROME_NATIVE_TOUCH_TARGET_SIZE_PX
+        : 32;
     const topStripDragProps = useDesktopWindowDragMouseProps();
     const canNavigateBack = props.canNavigateBack ?? true;
     const canNavigateForward = props.canNavigateForward ?? true;
@@ -138,7 +143,10 @@ export const DesktopSidebarChrome = React.memo((props: DesktopSidebarChromeProps
     }, [styles.topIconButton, styles.topSettingsIconButton, theme.colors.chrome.header.foreground]);
 
     const actionsRow = (
-        <View testID="desktop-sidebar-chrome-actions-row" style={styles.rightContainer}>
+        <View
+            testID="desktop-sidebar-chrome-actions-row"
+            style={[styles.rightContainer, isNativeTouchSidebar ? styles.nativeTouchActionsRow : null]}
+        >
             <ItemRowActions
                 title={t('common.moreActions')}
                 actions={contentHeaderActions}
@@ -146,26 +154,27 @@ export const DesktopSidebarChrome = React.memo((props: DesktopSidebarChromeProps
                 compactThreshold={DESKTOP_SIDEBAR_CHROME_ACTIONS_COMPACT_THRESHOLD_PX}
                 compactActionIds={compactContentActionIds}
                 pinnedActionIds={compactContentActionIds}
+                buttonSize={isNativeTouchSidebar ? contentActionButtonSize : undefined}
                 leadingPinnedContent={props.inboxModel ? (
                     <View style={styles.inlineUtilityRow}>
                         {props.inboxEnabled ? (
                             <InboxPopoverButton
                                 model={props.inboxModel}
                                 testID="sidebar-inbox-button"
-                                buttonSize={32}
+                                buttonSize={contentActionButtonSize}
                                 iconSize={DESKTOP_SIDEBAR_CHROME_ICON_GLYPH_SIZE_PX}
                             />
                         ) : null}
                         <SidebarActionOperationButton
                             model={props.inboxModel}
-                            buttonSize={32}
+                            buttonSize={contentActionButtonSize}
                             iconSize={DESKTOP_SIDEBAR_CHROME_ICON_GLYPH_SIZE_PX}
                         />
                     </View>
                 ) : (
                     <ActionOperationActivityButton
                         testID="desktop-sidebar-action-operations"
-                        buttonSize={32}
+                        buttonSize={contentActionButtonSize}
                         iconSize={DESKTOP_SIDEBAR_CHROME_ICON_GLYPH_SIZE_PX}
                     />
                 )}
@@ -176,8 +185,11 @@ export const DesktopSidebarChrome = React.memo((props: DesktopSidebarChromeProps
                 renderOverflowTrigger={({ open, toggle, testID, accessibilityLabel, accessibilityHint }) => (
                     <Pressable
                         testID={testID}
-                        hitSlop={15}
-                        style={open ? { opacity: 0 } : undefined}
+                        hitSlop={isNativeTouchSidebar ? undefined : 15}
+                        style={[
+                            isNativeTouchSidebar ? styles.nativeTouchIconButton : null,
+                            open ? { opacity: 0 } : null,
+                        ]}
                         pointerEvents={open ? 'none' : 'auto'}
                         onPress={open ? undefined : toggle}
                         focusable={!open}
@@ -290,14 +302,18 @@ export const DesktopSidebarChrome = React.memo((props: DesktopSidebarChromeProps
                 testID="desktop-sidebar-chrome-content-row"
                 style={[
                     styles.contentRow,
+                    isNativeTouchSidebar ? styles.nativeTouchContentRow : null,
                     hasDesktopWindowControls ? styles.compactContentRow : { minHeight: props.headerHeightPx },
                 ]}
             >
-                <View testID="desktop-sidebar-chrome-brand-group" style={styles.brandGroup}>
+                <View
+                    testID="desktop-sidebar-chrome-brand-group"
+                    style={[styles.brandGroup, isNativeTouchSidebar ? styles.nativeTouchBrandGroup : null]}
+                >
                     <SidebarLogoButton
                         testID="desktop-sidebar-brand-button"
                         onPress={props.onPressHome}
-                        style={styles.brandButton}
+                        style={[styles.brandButton, isNativeTouchSidebar ? styles.nativeTouchBrandButton : null]}
                     />
                     <View testID="desktop-sidebar-title-container" style={styles.titleContainerLeft}>
                         <View style={styles.titleRow}>

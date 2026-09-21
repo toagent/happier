@@ -9,7 +9,12 @@ import { useLocalSetting, useLocalSettingMutable } from '@/sync/domains/state/st
 import { ResizableDockedPane, type ResizableDockedPaneCommitMeta } from '@/components/ui/panels/ResizableDockedPane';
 import { PANE_SIZING_DEFAULTS, resolveScaledPaneWidthPx } from '@/components/appShell/panes/layout/paneSizing';
 import { StyleSheet } from 'react-native-unistyles';
-import { resolveSidebarDockMaxWidthPx, SIDEBAR_COLLAPSED_WIDTH_PX, SIDEBAR_DOCK_MIN_WIDTH_PX } from './sidebarSizing';
+import {
+    resolveSidebarDockMaxWidthPx,
+    SIDEBAR_COLLAPSED_WIDTH_PX,
+    SIDEBAR_DOCK_MIN_WIDTH_PX,
+    SIDEBAR_NATIVE_TOUCH_MIN_WIDTH_PX,
+} from './sidebarSizing';
 import { useAppPaneContext } from '@/components/appShell/panes/AppPaneProvider';
 import { resolvePaneFocusModeRouteScopeId } from '@/components/appShell/panes/focusMode/resolvePaneFocusModeRouteScopeId';
 import { isTauriDesktop } from '@/utils/platform/tauri';
@@ -19,8 +24,6 @@ import { InboxContentModelProvider, useInboxContentModel } from '@/components/in
 import { useInboxAvailable } from '@/hooks/inbox/useInboxAvailable';
 
 const TERMINAL_CONNECT_ROUTE = '/terminal/connect';
-const EXPANDED_SIDEBAR_MIN_WINDOW_WIDTH_PX = SIDEBAR_DOCK_MIN_WIDTH_PX + PANE_SIZING_DEFAULTS.mainMinPx;
-
 function isTerminalConnectWebPathname(pathname: string | null | undefined): boolean {
     const route = String(pathname ?? '').split('?')[0]?.replace(/\/+$/, '');
     return route === TERMINAL_CONNECT_ROUTE;
@@ -122,11 +125,13 @@ export const SidebarNavigator = React.memo((props: SidebarNavigatorProps) => {
     const [, setSidebarWidthBasisPx] = useLocalSettingMutable('sidebarWidthBasisPx');
     const [dragSidebarWidthPx, setDragSidebarWidthPx] = React.useState<number | null>(null);
     const collapseTriggeredDuringDragRef = React.useRef(false);
+    const sidebarMinWidthPx = Platform.OS === 'web'
+        ? SIDEBAR_DOCK_MIN_WIDTH_PX
+        : SIDEBAR_NATIVE_TOUCH_MIN_WIDTH_PX;
     const forceCompactSidebarForViewport =
-        Platform.OS === 'web'
-        && showSidebar
+        showSidebar
         && Number.isFinite(windowWidth)
-        && windowWidth < EXPANDED_SIDEBAR_MIN_WINDOW_WIDTH_PX;
+        && windowWidth < sidebarMinWidthPx + PANE_SIZING_DEFAULTS.mainMinPx;
     const effectiveSidebarCollapsed = Boolean(sidebarCollapsed || paneFocusModeChromeActive || forceCompactSidebarForViewport);
 
     React.useEffect(() => {
@@ -162,10 +167,10 @@ export const SidebarNavigator = React.memo((props: SidebarNavigatorProps) => {
             preferredWidthPx: sidebarWidthPx,
             basisContainerWidthPx: sidebarWidthBasisPx,
             containerWidthPx: windowWidth,
-            minPx: SIDEBAR_DOCK_MIN_WIDTH_PX,
+            minPx: sidebarMinWidthPx,
             maxPx: sidebarMaxWidthPx,
         });
-    }, [sidebarMaxWidthPx, sidebarWidthBasisPx, sidebarWidthPx, windowWidth]);
+    }, [sidebarMaxWidthPx, sidebarMinWidthPx, sidebarWidthBasisPx, sidebarWidthPx, windowWidth]);
 
     // Hidden chrome occupies no space; the mounted navigation owner is unchanged.
     const sidebarWidth = React.useMemo(() => {
@@ -235,7 +240,7 @@ export const SidebarNavigator = React.memo((props: SidebarNavigatorProps) => {
     ) : (
         <ResizableDockedPane
             widthPx={sidebarWidth}
-            minWidthPx={SIDEBAR_DOCK_MIN_WIDTH_PX}
+            minWidthPx={sidebarMinWidthPx}
             maxWidthPx={sidebarMaxWidthPx}
             resizeEdge="right"
             onDragWidthPx={handleSidebarWidthDrag}

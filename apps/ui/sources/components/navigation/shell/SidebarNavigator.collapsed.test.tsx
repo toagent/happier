@@ -294,7 +294,7 @@ function getSidebar(tree: renderer.ReactTestRenderer) {
 
 function getResizableSidebarPane(tree: renderer.ReactTestRenderer) {
   return tree.find((node) => {
-    return typeof node.props?.onCommitWidthPx === 'function' && node.props?.minWidthPx === 250;
+    return typeof node.props?.onCommitWidthPx === 'function' && typeof node.props?.minWidthPx === 'number';
   });
 }
 
@@ -420,6 +420,31 @@ describe('SidebarNavigator (collapsed sidebar)', () => {
     const drawer = getSidebar(tree);
     expect(drawer.findByType('SidebarView' as any)).toBeDefined();
     expect(drawer.props.style.width).toBeGreaterThan(0);
+  });
+
+  it('keeps the expanded sidebar readable on a native tablet in landscape', async () => {
+    hoistedState.mockPlatformOS = 'ios';
+    hoistedState.forceIsTablet = true;
+    hoistedState.mockWindowDimensions = { width: 1009, height: 632 };
+
+    const { SidebarNavigator } = await import('./SidebarNavigator');
+    const screen = await renderScreen(<SidebarNavigator />);
+
+    expect(getResizableSidebarPane(screen.tree).props.minWidthPx).toBe(320);
+    expect(getSidebar(screen.tree).props.style.width).toBe(320);
+  });
+
+  it('uses the compact navigation rail on a native tablet in portrait', async () => {
+    hoistedState.mockPlatformOS = 'ios';
+    hoistedState.forceIsTablet = true;
+    hoistedState.mockWindowDimensions = { width: 632, height: 1009 };
+
+    const { SidebarNavigator } = await import('./SidebarNavigator');
+    const screen = await renderScreen(<SidebarNavigator />);
+
+    expect(getSidebar(screen.tree).props.style.width).toBe(72);
+    expect(screen.tree.findAllByType('CollapsedSidebarView' as any)).toHaveLength(1);
+    expect(screen.tree.findAllByType('SidebarView' as any)).toHaveLength(0);
   });
 
   it('wraps authenticated desktop sidebar content in the main-content drag surface on Tauri web', async () => {

@@ -13,6 +13,11 @@ const desktopWindowBridgeState = vi.hoisted(() => ({
 
 const itemRowActionsState = vi.hoisted(() => ({
     lastActionIds: [] as string[],
+    lastButtonSize: null as number | null,
+}));
+
+const platformState = vi.hoisted(() => ({
+    os: 'web' as 'web' | 'ios',
 }));
 
 installNavigationShellCommonModuleMocks({
@@ -20,7 +25,9 @@ installNavigationShellCommonModuleMocks({
         const { createReactNativeWebMock } = await import('@/dev/testkit/mocks/reactNative');
         return createReactNativeWebMock({
             Platform: {
-                OS: 'web',
+                get OS() {
+                    return platformState.os;
+                },
             },
             Pressable: ({ children, ...props }: any) => React.createElement('Pressable', props, children),
             View: 'View',
@@ -40,6 +47,7 @@ vi.mock('@/components/navigation/ConnectionStatusControl', () => ({
 vi.mock('@/components/ui/lists/ItemRowActions', () => ({
     ItemRowActions: (props: {
         actions: Array<{ id: string }>;
+        buttonSize?: number;
         renderOverflowTrigger?: (params: {
             open: boolean;
             toggle: () => void;
@@ -49,6 +57,7 @@ vi.mock('@/components/ui/lists/ItemRowActions', () => ({
         }) => React.ReactNode;
     }) => {
         itemRowActionsState.lastActionIds = props.actions.map((action) => action.id);
+        itemRowActionsState.lastButtonSize = props.buttonSize ?? null;
         return React.createElement(
             View,
             { testID: 'desktop-sidebar-item-actions' },
@@ -83,6 +92,37 @@ describe('DesktopSidebarChrome', () => {
     beforeEach(() => {
         desktopWindowBridgeState.startDesktopWindowDragging.mockReset();
         itemRowActionsState.lastActionIds = [];
+        itemRowActionsState.lastButtonSize = null;
+        platformState.os = 'web';
+    });
+
+    it('stacks tablet chrome and uses real 48-point action targets on native', async () => {
+        platformState.os = 'ios';
+        const { DesktopSidebarChrome } = await import('./DesktopSidebarChrome');
+        const screen = await renderScreen(
+            <DesktopSidebarChrome
+                sidebarWidthPx={320}
+                headerHeightPx={56}
+                onPressHome={vi.fn()}
+                environmentBadge="DEV"
+                headerActions={[
+                    { id: 'settings', title: 'Settings', inlineTestID: 'nav-settings', icon: 'gear', onPress: vi.fn() },
+                    { id: 'newSession', title: 'New', inlineTestID: 'nav-new-session', icon: 'plus', onPress: vi.fn() },
+                ]}
+                renderHeaderOverflowVisual={() => <View testID="desktop-sidebar-overflow-visual" />}
+                popoverBoundaryRef={{ current: null }}
+            />,
+        );
+
+        const contentRow = requireTestInstance(screen.findByTestId('desktop-sidebar-chrome-content-row'), 'content row');
+        const contentRowStyle = Object.assign({}, ...contentRow.props.style.filter(Boolean));
+        const brandGroup = requireTestInstance(screen.findByTestId('desktop-sidebar-chrome-brand-group'), 'brand group');
+        const brandGroupStyles = Array.isArray(brandGroup.props.style) ? brandGroup.props.style : [brandGroup.props.style];
+        const brandGroupStyle = Object.assign({}, ...brandGroupStyles.filter(Boolean));
+
+        expect(contentRowStyle).toMatchObject({ flexDirection: 'column', alignItems: 'stretch' });
+        expect(brandGroupStyle).toMatchObject({ flexGrow: 0, flexShrink: 0, minHeight: 48 });
+        expect(itemRowActionsState.lastButtonSize).toBe(48);
     });
 
     it('places utility controls above the branded sidebar row', async () => {
