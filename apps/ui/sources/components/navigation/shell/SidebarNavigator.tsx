@@ -1,7 +1,7 @@
 import { useAuth } from '@/auth/context/AuthContext';
 import * as React from 'react';
 import { Stack, usePathname } from 'expo-router';
-import { useIsTablet } from '@/utils/platform/responsive';
+import { useIsDockedSidebarLayout } from './useIsDockedSidebarLayout';
 import { SidebarView } from './SidebarView';
 import { CollapsedSidebarView } from './CollapsedSidebarView';
 import { View, useWindowDimensions, Platform } from 'react-native';
@@ -11,9 +11,8 @@ import { PANE_SIZING_DEFAULTS, resolveScaledPaneWidthPx } from '@/components/app
 import { StyleSheet } from 'react-native-unistyles';
 import {
     resolveSidebarDockMaxWidthPx,
+    resolveSidebarDockMinWidthPx,
     SIDEBAR_COLLAPSED_WIDTH_PX,
-    SIDEBAR_DOCK_MIN_WIDTH_PX,
-    SIDEBAR_NATIVE_TOUCH_MIN_WIDTH_PX,
 } from './sidebarSizing';
 import { useAppPaneContext } from '@/components/appShell/panes/AppPaneProvider';
 import { resolvePaneFocusModeRouteScopeId } from '@/components/appShell/panes/focusMode/resolvePaneFocusModeRouteScopeId';
@@ -100,11 +99,11 @@ export type SidebarNavigatorProps = Readonly<{
 export const SidebarNavigator = React.memo((props: SidebarNavigatorProps) => {
     const styles = stylesheet;
     const auth = useAuth();
-    const isTablet = useIsTablet();
+    const isDockedSidebarLayout = useIsDockedSidebarLayout();
     const pathname = usePathname();
     const isDesktopPetOverlayWindow = isDesktopPetOverlayWindowContext();
     const bypassSidebar = Platform.OS === 'web' && isTerminalConnectWebPathname(pathname);
-    const showSidebar = auth.isAuthenticated && isTablet && !isDesktopPetOverlayWindow && !bypassSidebar;
+    const showSidebar = auth.isAuthenticated && isDockedSidebarLayout && !isDesktopPetOverlayWindow && !bypassSidebar;
     const inboxModel = useInboxContentModel();
     const inboxEnabled = useInboxAvailable();
     const routeScopeId = React.useMemo(() => resolvePaneFocusModeRouteScopeId(pathname), [pathname]);
@@ -125,14 +124,11 @@ export const SidebarNavigator = React.memo((props: SidebarNavigatorProps) => {
     const [, setSidebarWidthBasisPx] = useLocalSettingMutable('sidebarWidthBasisPx');
     const [dragSidebarWidthPx, setDragSidebarWidthPx] = React.useState<number | null>(null);
     const collapseTriggeredDuringDragRef = React.useRef(false);
-    const sidebarMinWidthPx = Platform.OS === 'web'
-        ? SIDEBAR_DOCK_MIN_WIDTH_PX
-        : SIDEBAR_NATIVE_TOUCH_MIN_WIDTH_PX;
-    const forceCompactSidebarForViewport =
-        showSidebar
-        && Number.isFinite(windowWidth)
-        && windowWidth < sidebarMinWidthPx + PANE_SIZING_DEFAULTS.mainMinPx;
-    const effectiveSidebarCollapsed = Boolean(sidebarCollapsed || paneFocusModeChromeActive || forceCompactSidebarForViewport);
+    const sidebarMinWidthPx = resolveSidebarDockMinWidthPx(Platform.OS);
+    // A viewport too narrow to seat the dock no longer squeezes it into a rail: `showSidebar` is
+    // already false there and the narrow layout owns navigation, so the only collapse inputs left
+    // are the user's own preference and focus mode — both of which the rail can undo.
+    const effectiveSidebarCollapsed = Boolean(sidebarCollapsed || paneFocusModeChromeActive);
 
     React.useEffect(() => {
         if (!focusedScopeId) return;
@@ -190,7 +186,7 @@ export const SidebarNavigator = React.memo((props: SidebarNavigatorProps) => {
             Platform.OS === 'web'
             && !effectiveSidebarCollapsed
             && !collapseTriggeredDuringDragRef.current
-            && nextWidthPx <= SIDEBAR_DOCK_MIN_WIDTH_PX
+            && nextWidthPx <= sidebarMinWidthPx
             && dragMeta?.exceededMinPx === true;
 
         if (shouldCollapseToCompactView) {
@@ -201,7 +197,7 @@ export const SidebarNavigator = React.memo((props: SidebarNavigatorProps) => {
         }
 
         setDragSidebarWidthPx(nextWidthPx);
-    }, [effectiveSidebarCollapsed, setSidebarCollapsed]);
+    }, [effectiveSidebarCollapsed, setSidebarCollapsed, sidebarMinWidthPx]);
 
     const handleSidebarWidthCommit = React.useCallback((nextWidthPx: number) => {
         collapseTriggeredDuringDragRef.current = false;

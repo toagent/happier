@@ -12,6 +12,7 @@ import {
     DESKTOP_SIDEBAR_CHROME_COLLAPSED_HORIZONTAL_PADDING_PX,
     DESKTOP_SIDEBAR_CHROME_COLLAPSED_VERTICAL_GAP_PX,
     DESKTOP_SIDEBAR_CHROME_ICON_GLYPH_SIZE_PX,
+    DESKTOP_SIDEBAR_CHROME_NATIVE_TOUCH_TARGET_SIZE_PX,
 } from './desktopChrome/desktopChromeMetrics';
 import { DesktopShellWindowControlsHost } from './desktopChrome/DesktopShellWindowControlsHost';
 import { useResolvedDesktopWindowControls } from './desktopChrome/useResolvedDesktopWindowControls';
@@ -73,6 +74,10 @@ const styles = StyleSheet.create((theme) => ({
         width: 40,
         height: 32,
     },
+    nativeTouchButton: {
+        width: DESKTOP_SIDEBAR_CHROME_NATIVE_TOUCH_TARGET_SIZE_PX,
+        height: DESKTOP_SIDEBAR_CHROME_NATIVE_TOUCH_TARGET_SIZE_PX,
+    },
 }));
 
 function renderUpdateIndicatorWithFallback(
@@ -124,11 +129,18 @@ export const CollapsedSidebarView = React.memo((props: CollapsedSidebarViewProps
         }
     }, [focusModeActive, onExitFocusMode, router]);
 
+    // The expanded chrome already trades hitSlop for real 48-point boxes on touch builds; the rail
+    // draws the same controls, so it has to make the same trade rather than keep a second answer.
+    const isNativeTouchRail = Platform.OS !== 'web' && props.desktopWindowControls == null;
+    const railControlSize = isNativeTouchRail
+        ? DESKTOP_SIDEBAR_CHROME_NATIVE_TOUCH_TARGET_SIZE_PX
+        : 32;
+
     const logoButton = (
         <SidebarLogoButton
             testID="collapsed-sidebar-home-button"
             onPress={handleHome}
-            style={styles.logoButton}
+            style={[styles.logoButton, isNativeTouchRail ? styles.nativeTouchButton : null]}
         />
     );
 
@@ -146,34 +158,33 @@ export const CollapsedSidebarView = React.memo((props: CollapsedSidebarViewProps
                 {props.inboxEnabled && props.inboxModel ? (
                     <InboxPopoverButton
                         model={props.inboxModel}
-                        buttonSize={32}
+                        buttonSize={railControlSize}
                         iconSize={DESKTOP_SIDEBAR_CHROME_ICON_GLYPH_SIZE_PX}
                         testID="collapsed-sidebar-inbox-button"
                     />
                 ) : null}
                 <ActionOperationActivityButton
                     testID="collapsed-sidebar-action-operations"
-                    buttonSize={32}
+                    buttonSize={railControlSize}
                     iconSize={DESKTOP_SIDEBAR_CHROME_ICON_GLYPH_SIZE_PX}
                 />
-                {Platform.OS === 'web' ? (
-                    <Pressable
-                        testID="sidebar-expand-button"
-                        onPress={handleExpand}
-                        style={styles.button}
-                        accessibilityRole="button"
-                        accessibilityLabel={t('common.expand')}
-                    >
-                        {/* The rail IS the collapsed state, so this button expands. It used to
-                            take the collapse glyph and the component's default size, which made it
-                            both the wrong icon and a different size from the same control in the
-                            expanded chrome. */}
-                        <SidebarExpandIcon
-                            size={DESKTOP_SIDEBAR_CHROME_ICON_GLYPH_SIZE_PX}
-                            color={theme.colors.chrome.header.foreground}
-                        />
-                    </Pressable>
-                ) : null}
+                {/* The rail IS the collapsed state, so this button expands. It used to take the
+                    collapse glyph and the component's default size, which made it both the wrong
+                    icon and a different size from the same control in the expanded chrome. It was
+                    also web-only, while the collapse control that produces this rail is not — so a
+                    tablet user could fold the sidebar away and never get it back. */}
+                <Pressable
+                    testID="sidebar-expand-button"
+                    onPress={handleExpand}
+                    style={[styles.button, isNativeTouchRail ? styles.nativeTouchButton : null]}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('common.expand')}
+                >
+                    <SidebarExpandIcon
+                        size={DESKTOP_SIDEBAR_CHROME_ICON_GLYPH_SIZE_PX}
+                        color={theme.colors.chrome.header.foreground}
+                    />
+                </Pressable>
             </View>
         </View>
     );

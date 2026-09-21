@@ -24,7 +24,7 @@ import { useRouter } from 'expo-router';
 
 import { useNavigateToSession } from '@/hooks/session/useNavigateToSession';
 import { layout } from '@/components/ui/layout/layout';
-import { useIsTablet } from '@/utils/platform/responsive';
+import { useIsDockedSidebarLayout } from '@/components/navigation/shell/useIsDockedSidebarLayout';
 import { Header } from '@/components/navigation/Header';
 import { Image } from 'expo-image';
 import { FeedItemCard } from '@/components/inbox/cards/FeedItemCard';
@@ -119,7 +119,9 @@ export const FriendsView = React.memo(({}: FriendsViewProps) => {
     const feedLoaded = useFeedLoaded();
     const friendsLoaded = useFriendsLoaded();
     const { theme } = useUnistyles();
-    const isTablet = useIsTablet();
+    // The shell only leaves the header to this view when it seated a docked sidebar; in the
+    // narrow layout it draws the header itself and a second one here would stack on top.
+    const isDockedSidebarLayout = useIsDockedSidebarLayout();
     const friendsIdentityReadiness = useFriendsIdentityReadiness();
     const friendsIdentityReady = friendsIdentityReadiness.isReady;
     const myId = syncStorage((state) => state.profile.id);
@@ -141,7 +143,7 @@ export const FriendsView = React.memo(({}: FriendsViewProps) => {
     if (!friendsIdentityReady) {
         return (
             <View style={styles.container}>
-                {isTablet && (
+                {isDockedSidebarLayout && (
                     <View style={{ backgroundColor: theme.colors.background.canvas }}>
                         <Header
                             title={<HeaderTitleTablet />}
@@ -162,7 +164,7 @@ export const FriendsView = React.memo(({}: FriendsViewProps) => {
     if (isLoading) {
         return (
             <View style={styles.container}>
-                {isTablet && (
+                {isDockedSidebarLayout && (
                     <View style={{ backgroundColor: theme.colors.background.canvas }}>
                         <Header
                             title={<HeaderTitleTablet />}
@@ -185,7 +187,7 @@ export const FriendsView = React.memo(({}: FriendsViewProps) => {
     if (isEmpty) {
         return (
             <View style={styles.container}>
-                {isTablet && (
+                {isDockedSidebarLayout && (
                     <View style={{ backgroundColor: theme.colors.background.canvas }}>
                         <Header
                             title={<HeaderTitleTablet />}
@@ -214,7 +216,7 @@ export const FriendsView = React.memo(({}: FriendsViewProps) => {
 
     return (
         <View style={styles.container}>
-            {isTablet && (
+            {isDockedSidebarLayout && (
                 <View style={{ backgroundColor: theme.colors.background.canvas }}>
                     <Header
                         title={<HeaderTitleTablet />}

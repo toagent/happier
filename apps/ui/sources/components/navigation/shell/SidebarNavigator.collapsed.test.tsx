@@ -392,7 +392,11 @@ describe('SidebarNavigator (collapsed sidebar)', () => {
     expect(drawer.findByType('CollapsedSidebarView' as never).props.inboxModel).toBe(hoistedState.inboxModel);
   });
 
-  it('forces the compact sidebar on narrow docked-sidebar viewports so routed content keeps width', async () => {
+  // A viewport with no room for the dock used to keep a 72px rail. The rail had no way to open —
+  // the width rule outranked the user's own collapse preference — so the shell ended up with a
+  // strip of icons, the "pick a session from the sidebar" empty state, and nothing to pick from.
+  // Below this width the narrow layout owns navigation instead, and it carries its own chrome.
+  it('drops the dock entirely on viewports with no room for it', async () => {
     hoistedState.forceIsTablet = true;
     hoistedState.mockWindowDimensions = { width: 360, height: 900 };
     act(() => {
@@ -403,9 +407,8 @@ describe('SidebarNavigator (collapsed sidebar)', () => {
     const { SidebarNavigator } = await import('./SidebarNavigator');
     const screen = await renderScreen(<SidebarNavigator />);
 
-    const drawer = getSidebar(screen.tree);
-    expect(drawer.props.style.width).toBe(72);
-    expect(screen.tree.findAllByType('CollapsedSidebarView' as any)).toHaveLength(1);
+    expect(screen.tree.findAllByProps({ testID: 'navigation-sidebar' })).toHaveLength(0);
+    expect(screen.tree.findAllByType('CollapsedSidebarView' as any)).toHaveLength(0);
     expect(screen.tree.findAllByType('SidebarView' as any)).toHaveLength(0);
   });
 
@@ -434,7 +437,10 @@ describe('SidebarNavigator (collapsed sidebar)', () => {
     expect(getSidebar(screen.tree).props.style.width).toBe(320);
   });
 
-  it('uses the compact navigation rail on a native tablet in portrait', async () => {
+  // 632dp is a real device: an 8.8" Android tablet held upright. A 320dp dock plus the main pane's
+  // 420dp minimum does not fit, so the shell hands navigation to the narrow layout rather than
+  // leaving a rail the user cannot open.
+  it('hands navigation to the narrow layout on a native tablet in portrait', async () => {
     hoistedState.mockPlatformOS = 'ios';
     hoistedState.forceIsTablet = true;
     hoistedState.mockWindowDimensions = { width: 632, height: 1009 };
@@ -442,9 +448,21 @@ describe('SidebarNavigator (collapsed sidebar)', () => {
     const { SidebarNavigator } = await import('./SidebarNavigator');
     const screen = await renderScreen(<SidebarNavigator />);
 
-    expect(getSidebar(screen.tree).props.style.width).toBe(72);
-    expect(screen.tree.findAllByType('CollapsedSidebarView' as any)).toHaveLength(1);
+    expect(screen.tree.findAllByProps({ testID: 'navigation-sidebar' })).toHaveLength(0);
+    expect(screen.tree.findAllByType('CollapsedSidebarView' as any)).toHaveLength(0);
     expect(screen.tree.findAllByType('SidebarView' as any)).toHaveLength(0);
+  });
+
+  // The same device turned on its side does fit both panes, and must still dock.
+  it('still docks the sidebar once the native tablet is turned landscape', async () => {
+    hoistedState.mockPlatformOS = 'ios';
+    hoistedState.forceIsTablet = true;
+    hoistedState.mockWindowDimensions = { width: 1009, height: 632 };
+
+    const { SidebarNavigator } = await import('./SidebarNavigator');
+    const screen = await renderScreen(<SidebarNavigator />);
+
+    expect(screen.tree.findAllByType('SidebarView' as any)).toHaveLength(1);
   });
 
   it('wraps authenticated desktop sidebar content in the main-content drag surface on Tauri web', async () => {

@@ -4,7 +4,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StyleSheet } from 'react-native-unistyles';
 
 import { FriendsView } from '@/components/navigation/shell/FriendsView';
-import { useHeaderHeight, useIsTablet } from '@/utils/platform/responsive';
+import { useIsDockedSidebarLayout } from '@/components/navigation/shell/useIsDockedSidebarLayout';
+import { useHeaderHeight } from '@/utils/platform/responsive';
 import { Typography } from '@/constants/Typography';
 import { t } from '@/text';
 import { useRequireFriendsEnabled } from '@/hooks/friends/useRequireFriendsEnabled';
@@ -34,12 +35,14 @@ const styles = StyleSheet.create((theme) => ({
 export default function FriendsPage() {
   const enabled = useRequireFriendsEnabled();
   const insets = useSafeAreaInsets();
-  const isTablet = useIsTablet();
+  const isDockedSidebarLayout = useIsDockedSidebarLayout();
   const headerHeight = useHeaderHeight();
 
   if (!enabled) return null;
 
-  if (isTablet) {
+  // Same question as the one `FriendsView` asks itself, so it has to be the same answer:
+  // exactly one of the two draws the header.
+  if (isDockedSidebarLayout) {
     return <FriendsView />;
   }
 

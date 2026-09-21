@@ -12,7 +12,7 @@ describe('resolveAppShellChromeHost', () => {
             isDesktopPetOverlayWindow: false,
             isWeb: true,
             isTauriDesktop: true,
-            isTablet: true,
+            isDockedSidebarLayout: true,
             isTerminalConnectRoute: true,
         })).toBe('none');
     });
@@ -23,7 +23,7 @@ describe('resolveAppShellChromeHost', () => {
             isDesktopPetOverlayWindow: true,
             isWeb: true,
             isTauriDesktop: true,
-            isTablet: false,
+            isDockedSidebarLayout: false,
             isTerminalConnectRoute: false,
         })).toBe('none');
     });
@@ -34,7 +34,7 @@ describe('resolveAppShellChromeHost', () => {
             isDesktopPetOverlayWindow: false,
             isWeb: true,
             isTauriDesktop: false,
-            isTablet: true,
+            isDockedSidebarLayout: true,
             isTerminalConnectRoute: false,
         })).toBe('web-top-right');
     });
@@ -45,7 +45,7 @@ describe('resolveAppShellChromeHost', () => {
             isDesktopPetOverlayWindow: false,
             isWeb: false,
             isTauriDesktop: false,
-            isTablet: false,
+            isDockedSidebarLayout: false,
             isTerminalConnectRoute: false,
         } as ResolveAppShellChromeHostParams & { isWeb: boolean };
 
@@ -58,7 +58,7 @@ describe('resolveAppShellChromeHost', () => {
             isDesktopPetOverlayWindow: false,
             isWeb: true,
             isTauriDesktop: true,
-            isTablet: true,
+            isDockedSidebarLayout: true,
             isTerminalConnectRoute: false,
         })).toBe('unauth-shell');
     });
@@ -69,7 +69,7 @@ describe('resolveAppShellChromeHost', () => {
             isDesktopPetOverlayWindow: false,
             isWeb: true,
             isTauriDesktop: true,
-            isTablet: false,
+            isDockedSidebarLayout: false,
             isTerminalConnectRoute: false,
         })).toBe('narrow-desktop-fallback');
     });
@@ -80,7 +80,7 @@ describe('resolveAppShellChromeHost', () => {
             isDesktopPetOverlayWindow: false,
             isWeb: true,
             isTauriDesktop: true,
-            isTablet: true,
+            isDockedSidebarLayout: true,
             isTerminalConnectRoute: false,
         })).toBe('none');
     });

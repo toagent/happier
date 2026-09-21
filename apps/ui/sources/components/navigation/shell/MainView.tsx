@@ -6,7 +6,7 @@ import { ActivitySpinner } from '@/components/ui/feedback/ActivitySpinner';
 import {
     useVisibleSessionListPaneState,
 } from '@/hooks/session/useVisibleSessionListViewData';
-import { useIsTablet } from '@/utils/platform/responsive';
+import { useIsDockedSidebarLayout } from '@/components/navigation/shell/useIsDockedSidebarLayout';
 import { usePathname, useRouter } from 'expo-router';
 import { SessionGettingStartedGuidance } from '@/components/sessions/guidance/SessionGettingStartedGuidance';
 import { HiddenInactiveSessionsEmptyState } from '@/components/sessions/guidance/HiddenInactiveSessionsEmptyState';
@@ -54,7 +54,7 @@ interface MainViewProps {
 }
 
 type MainViewLoadedProps = MainViewProps & Readonly<{
-    isTablet: boolean;
+    isDockedSidebarLayout: boolean;
     pathname: string;
 }>;
 
@@ -289,10 +289,10 @@ const HeaderRight = React.memo(({ activeTab }: { activeTab: ActiveTabType }) => 
 });
 
 const SidebarMainViewContent = React.memo(function SidebarMainViewContent({
-    isTablet,
+    isDockedSidebarLayout,
     pathname,
 }: Readonly<{
-    isTablet: boolean;
+    isDockedSidebarLayout: boolean;
     pathname: string;
 }>) {
     const { theme } = useUnistyles();
@@ -346,7 +346,7 @@ const SidebarMainViewContent = React.memo(function SidebarMainViewContent({
             </View>
         );
     } else if (visibleSessionCount === 0) {
-        const suppressSidebarGuidance = isTablet && pathname === '/';
+        const suppressSidebarGuidance = isDockedSidebarLayout && pathname === '/';
         content = (
             <View style={styles.sidebarContainer}>
                 {storageChrome}
@@ -391,20 +391,20 @@ const SidebarMainViewContent = React.memo(function SidebarMainViewContent({
 });
 
 const PhoneMainViewContent = React.memo(function PhoneMainViewContent({
-    isTablet,
+    isDockedSidebarLayout,
     pathname,
 }: Readonly<{
-    isTablet: boolean;
+    isDockedSidebarLayout: boolean;
     pathname: string;
 }>) {
-    return <PhoneTabbedMainViewContent isTablet={isTablet} pathname={pathname} />;
+    return <PhoneTabbedMainViewContent isDockedSidebarLayout={isDockedSidebarLayout} pathname={pathname} />;
 });
 
 const PhoneTabbedMainViewContent = React.memo(function PhoneTabbedMainViewContent({
-    isTablet,
+    isDockedSidebarLayout,
     pathname,
 }: Readonly<{
-    isTablet: boolean;
+    isDockedSidebarLayout: boolean;
     pathname: string;
 }>) {
     const { theme } = useUnistyles();
@@ -450,7 +450,7 @@ const PhoneTabbedMainViewContent = React.memo(function PhoneTabbedMainViewConten
         }
     }, [effectiveActiveTab, friendsEnabled, inboxEnabled]);
 
-    if (isTablet) {
+    if (isDockedSidebarLayout) {
         const buildPolicyDecision = getFeatureBuildPolicyDecision(SESSION_GETTING_STARTED_GUIDANCE_FEATURE_ID);
         if (buildPolicyDecision !== 'deny') {
             return <SessionGettingStartedGuidance variant="primaryPane" />;
@@ -481,15 +481,15 @@ const PhoneTabbedMainViewContent = React.memo(function PhoneTabbedMainViewConten
     );
 });
 
-const MainViewLoaded = React.memo(({ variant, isTablet, pathname }: MainViewLoadedProps) => {
+const MainViewLoaded = React.memo(({ variant, isDockedSidebarLayout, pathname }: MainViewLoadedProps) => {
     if (variant === 'sidebar') {
-        return <SidebarMainViewContent isTablet={isTablet} pathname={pathname} />;
+        return <SidebarMainViewContent isDockedSidebarLayout={isDockedSidebarLayout} pathname={pathname} />;
     }
-    return <PhoneMainViewContent isTablet={isTablet} pathname={pathname} />;
+    return <PhoneMainViewContent isDockedSidebarLayout={isDockedSidebarLayout} pathname={pathname} />;
 });
 
 export const MainView = React.memo((props: MainViewProps) => {
     const pathname = usePathname();
-    const isTablet = useIsTablet();
-    return <MainViewLoaded {...props} pathname={pathname} isTablet={isTablet} />;
+    const isDockedSidebarLayout = useIsDockedSidebarLayout();
+    return <MainViewLoaded {...props} pathname={pathname} isDockedSidebarLayout={isDockedSidebarLayout} />;
 });

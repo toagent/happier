@@ -23,7 +23,7 @@ const bootCredentialsState = vi.hoisted(() => ({
 }));
 const shellChromeState = vi.hoisted(() => ({
     isTauriDesktop: false,
-    isTablet: true,
+    isDockedSidebarLayout: true,
 }));
 const desktopPetOverlayWindowState = vi.hoisted(() => ({
     value: false,
@@ -146,7 +146,13 @@ vi.mock('@/utils/platform/tauri', () => ({
 }));
 
 vi.mock('@/utils/platform/responsive', () => ({
-    useIsTablet: () => shellChromeState.isTablet,
+    useIsTablet: () => true,
+}));
+
+// The chrome host follows whether a sidebar is actually docked, not whether the device is
+// tablet-classed, so drive that decision directly here.
+vi.mock('@/components/navigation/shell/useIsDockedSidebarLayout', () => ({
+    useIsDockedSidebarLayout: () => shellChromeState.isDockedSidebarLayout,
 }));
 
 vi.mock('@/setup/desktopSetupCoordinator', () => ({
@@ -403,7 +409,7 @@ describe('app/_layout init resilience', () => {
         mockedConfigVariant = '';
         bootCredentialsState.value = null;
         shellChromeState.isTauriDesktop = false;
-        shellChromeState.isTablet = true;
+        shellChromeState.isDockedSidebarLayout = true;
         desktopPetOverlayWindowState.value = false;
         authContextState.liveIsAuthenticated = null;
         notificationNativeState.unavailable = false;
@@ -865,7 +871,7 @@ describe('app/_layout init resilience', () => {
 
     it('renders fallback desktop controls and update tag for unauthenticated Tauri desktop setup flows', async () => {
         shellChromeState.isTauriDesktop = true;
-        shellChromeState.isTablet = true;
+        shellChromeState.isDockedSidebarLayout = true;
 
         const screen = await renderSettledRootLayout();
 
@@ -880,12 +886,12 @@ describe('app/_layout init resilience', () => {
     it('preserves the navigation subtree when Tauri chrome moves between wide and narrow hosts', async () => {
         bootCredentialsState.value = { token: 'token', secret: 'secret' };
         shellChromeState.isTauriDesktop = true;
-        shellChromeState.isTablet = true;
+        shellChromeState.isDockedSidebarLayout = true;
         const screen = await renderSettledRootLayout();
         const navigator = screen.tree.findByType('SidebarNavigator' as any);
         const RootLayout = (await import('@/app/_layout')).default;
-        for (const isTablet of [false, true]) {
-            shellChromeState.isTablet = isTablet;
+        for (const isDockedSidebarLayout of [false, true]) {
+            shellChromeState.isDockedSidebarLayout = isDockedSidebarLayout;
             await screen.update(React.createElement(RootLayout));
             expect(screen.tree.findByType('SidebarNavigator' as any) === navigator).toBe(true);
         }
@@ -894,7 +900,7 @@ describe('app/_layout init resilience', () => {
     it('keeps authenticated wide Tauri desktop chrome in the sidebar host', async () => {
         bootCredentialsState.value = { token: 'token', secret: 'secret' };
         shellChromeState.isTauriDesktop = true;
-        shellChromeState.isTablet = true;
+        shellChromeState.isDockedSidebarLayout = true;
 
         const screen = await renderSettledRootLayout();
         const sidebarNavigator = screen.tree.findByType('SidebarNavigator' as any);
@@ -907,7 +913,7 @@ describe('app/_layout init resilience', () => {
 
     it('moves Tauri desktop chrome to the sidebar host after live auth changes from unauthenticated boot', async () => {
         shellChromeState.isTauriDesktop = true;
-        shellChromeState.isTablet = true;
+        shellChromeState.isDockedSidebarLayout = true;
         authContextState.liveIsAuthenticated = true;
 
         const screen = await renderSettledRootLayout();
@@ -921,7 +927,7 @@ describe('app/_layout init resilience', () => {
     it('renders fallback desktop controls and update tag when authenticated Tauri desktop is narrow', async () => {
         bootCredentialsState.value = { token: 'token', secret: 'secret' };
         shellChromeState.isTauriDesktop = true;
-        shellChromeState.isTablet = false;
+        shellChromeState.isDockedSidebarLayout = false;
 
         const screen = await renderSettledRootLayout();
 
@@ -936,7 +942,7 @@ describe('app/_layout init resilience', () => {
     it('restores sync state in the desktop pet overlay window without rendering root shell update chrome', async () => {
         bootCredentialsState.value = { token: 'token', secret: 'secret' };
         shellChromeState.isTauriDesktop = true;
-        shellChromeState.isTablet = false;
+        shellChromeState.isDockedSidebarLayout = false;
         desktopPetOverlayWindowState.value = true;
 
         const screen = await renderSettledRootLayout();
@@ -965,11 +971,11 @@ describe('app/_layout init resilience', () => {
     it('warms the inspection exactly once across re-renders of the root shell', async () => {
         bootCredentialsState.value = null;
         shellChromeState.isTauriDesktop = true;
-        shellChromeState.isTablet = true;
+        shellChromeState.isDockedSidebarLayout = true;
 
         const screen = await renderSettledRootLayout();
         const RootLayout = (await import('@/app/_layout')).default;
-        shellChromeState.isTablet = false;
+        shellChromeState.isDockedSidebarLayout = false;
         await screen.update(React.createElement(RootLayout));
         const { flushHookEffects } = await import('@/dev/testkit');
         await flushHookEffects();

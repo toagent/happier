@@ -9,7 +9,13 @@ export type ResolveAppShellChromeHostParams = Readonly<{
     isDesktopPetOverlayWindow: boolean;
     isWeb: boolean;
     isTauriDesktop: boolean;
-    isTablet: boolean;
+    /**
+     * Whether the shell actually seated a docked sidebar, which is what hosts the desktop
+     * window chrome. A tablet-classed viewport is not enough on its own: too narrow to seat
+     * the sidebar and the main pane together, the shell falls back to the narrow layout and
+     * the chrome needs its own host here.
+     */
+    isDockedSidebarLayout: boolean;
     isTerminalConnectRoute: boolean;
 }>;
 
@@ -32,7 +38,7 @@ export function resolveAppShellChromeHost(
         return 'unauth-shell';
     }
 
-    if (!params.isTablet) {
+    if (!params.isDockedSidebarLayout) {
         return 'narrow-desktop-fallback';
     }
 

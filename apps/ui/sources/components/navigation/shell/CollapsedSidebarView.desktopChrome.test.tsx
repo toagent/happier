@@ -16,6 +16,10 @@ const inboxState = vi.hoisted(() => ({
     model: { hasContent: true },
 }));
 
+const platformState = vi.hoisted(() => ({
+    os: 'web' as 'web' | 'android',
+}));
+
 const desktopWindowBridgeState = vi.hoisted(() => ({
     getDesktopWindowChromePolicy: vi.fn(),
     getDesktopWindowState: vi.fn(),
@@ -31,7 +35,9 @@ installNavigationShellCommonModuleMocks({
         const { createReactNativeWebMock } = await import('@/dev/testkit/mocks/reactNative');
         return createReactNativeWebMock({
             Platform: {
-                OS: 'web',
+                get OS() {
+                    return platformState.os;
+                },
             },
         });
     },
@@ -81,6 +87,7 @@ vi.mock('@/utils/platform/desktopWindowBridge', () => ({
 
 describe('CollapsedSidebarView desktop chrome', () => {
     beforeEach(() => {
+        platformState.os = 'web';
         collapsedSidebarState.setSidebarCollapsed.mockReset();
         desktopWindowBridgeState.getDesktopWindowChromePolicy.mockReset();
         desktopWindowBridgeState.getDesktopWindowState.mockReset();
@@ -163,6 +170,53 @@ describe('CollapsedSidebarView desktop chrome', () => {
 
         expect(screen.findAllByType('InboxPopoverButton' as never)).toHaveLength(0);
         expect(screen.findByTestId('collapsed-sidebar-action-operations')).toBeTruthy();
+    });
+
+    // The collapse control in the expanded chrome is not web-only, so a tablet user can put the
+    // sidebar into this rail and then has to be able to take it back out.
+    it('keeps the expand affordance reachable on a touch tablet', async () => {
+        platformState.os = 'android';
+        const { CollapsedSidebarView } = await import('./CollapsedSidebarView');
+        const screen = await renderScreen(<CollapsedSidebarView />);
+
+        await act(async () => {
+            await pressTestInstanceAsync(screen.findByTestId('sidebar-expand-button'));
+        });
+
+        expect(collapsedSidebarState.setSidebarCollapsed).toHaveBeenCalledWith(false);
+    });
+
+    // The expanded chrome already gives native real 48-point boxes instead of leaning on hitSlop;
+    // the rail draws the same controls and has to size them the same way.
+    it('gives every rail control a real 48-point target on a touch tablet', async () => {
+        platformState.os = 'android';
+        const { CollapsedSidebarView } = await import('./CollapsedSidebarView');
+        const screen = await renderScreen(
+            <CollapsedSidebarView inboxEnabled inboxModel={inboxState.model as never} />,
+        );
+
+        const flatten = (style: unknown) => Object.assign(
+            {},
+            ...(Array.isArray(style) ? style : [style]).filter(Boolean) as object[],
+        );
+
+        expect(flatten(screen.findByTestId('collapsed-sidebar-home-button')?.props.style))
+            .toMatchObject({ width: 48, height: 48 });
+        expect(flatten(screen.findByTestId('sidebar-expand-button')?.props.style))
+            .toMatchObject({ width: 48, height: 48 });
+        expect(screen.findByType('InboxPopoverButton' as never).props.buttonSize).toBe(48);
+        expect(screen.findByType('ActionOperationActivityButton' as never).props.buttonSize).toBe(48);
+    });
+
+    // Pointer builds keep the compact chrome sizes; the touch treatment must not leak to them.
+    it('keeps the compact rail sizes on web', async () => {
+        const { CollapsedSidebarView } = await import('./CollapsedSidebarView');
+        const screen = await renderScreen(
+            <CollapsedSidebarView inboxEnabled inboxModel={inboxState.model as never} />,
+        );
+
+        expect(screen.findByType('InboxPopoverButton' as never).props.buttonSize).toBe(32);
+        expect(screen.findByType('ActionOperationActivityButton' as never).props.buttonSize).toBe(32);
     });
 
     // The rail is the sidebar's CLOSED state, so its button opens rather than closes. It used to

@@ -62,7 +62,7 @@ import { useResolvedDesktopWindowControls } from '@/components/navigation/shell/
 import { resolveAppShellChromeHost } from '@/components/appShell/resolveAppShellChromeHost';
 import { isDesktopPetOverlayWindowContext } from '@/components/pets/desktop/runtime/isDesktopPetOverlayWindowContext';
 import { isTauriDesktop } from '@/utils/platform/tauri';
-import { useIsTablet } from '@/utils/platform/responsive';
+import { useIsDockedSidebarLayout } from '@/components/navigation/shell/useIsDockedSidebarLayout';
 import { ThemePreferenceTransitionHost } from '@/components/settings/appearance/ThemePreferenceTransitionHost';
 import { useTauriMainWindowBackgroundColor } from '@/desktop/window/useTauriMainWindowBackgroundColor';
 import { OnboardingShowcaseAutoShowMount } from '@/onboarding/showcase';
@@ -649,7 +649,7 @@ function AppBoot(props: {
     const router = useRouter();
     const pathname = usePathname();
     const safeArea = useSafeAreaInsets();
-    const isTablet = useIsTablet();
+    const isDockedSidebarLayout = useIsDockedSidebarLayout();
     const isDesktopPetOverlayWindow = isDesktopPetOverlayWindowContext();
     useTauriMainWindowBackgroundColor(
         props.desktopWindowBackgroundColor,
@@ -754,7 +754,7 @@ function AppBoot(props: {
                                             <HorizontalSafeAreaWrapper>
                                                 <RootAppShell
                                                     isDesktopPetOverlayWindow={isDesktopPetOverlayWindow}
-                                                    isTablet={isTablet}
+                                                    isDockedSidebarLayout={isDockedSidebarLayout}
                                                     isTerminalConnectRoute={isTerminalConnectRoute}
                                                     safeArea={safeArea}
                                                 />
@@ -788,7 +788,7 @@ function AppBoot(props: {
 
 function RootAppShell(props: Readonly<{
     isDesktopPetOverlayWindow: boolean;
-    isTablet: boolean;
+    isDockedSidebarLayout: boolean;
     isTerminalConnectRoute: boolean;
     safeArea: Readonly<{ top: number; right: number; left: number }>;
 }>) {
@@ -799,14 +799,14 @@ function RootAppShell(props: Readonly<{
         isDesktopPetOverlayWindow: props.isDesktopPetOverlayWindow,
         isWeb: Platform.OS === 'web',
         isTauriDesktop: tauriDesktop,
-        isTablet: props.isTablet,
+        isDockedSidebarLayout: props.isDockedSidebarLayout,
         isTerminalConnectRoute: props.isTerminalConnectRoute,
     });
     const sidebarShellUpdateIndicator =
         appShellChromeHost === 'none'
         && auth.isAuthenticated
         && tauriDesktop
-        && props.isTablet
+        && props.isDockedSidebarLayout
         && !props.isTerminalConnectRoute
         && !props.isDesktopPetOverlayWindow
             ? <AppUpdateStatusTag testID="sidebar-shell-app-update-status-tag" />
