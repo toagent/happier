@@ -15,6 +15,8 @@ transport。SSH worker 在 `$HOME/.twin-agent-worker/jobs/<job_id>` 运行隔离
 非交互 shell 不负责补齐工具 PATH，因此每个 worker 在配置中显式记录绝对
 `ai_node_bin`，SSH worker 另记录绝对 `tmux` 路径。launch 与 health 共用这些路径，health
 同时检查 worker runtime、Codex、Claude 和 OpenCode，避免探活成功而真实任务无法启动。
+SSH worker 还通过配置的 `login_shell` 在目标机器本地加载其登录环境；credential 不复制到
+worker 配置、部署包或 SSH 参数值。
 
 `delegate_agent` 支持两种工作区模式：
 

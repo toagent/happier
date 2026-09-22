@@ -53,6 +53,7 @@ class WorkerAdapterTest(unittest.TestCase):
                             "home": "/Users/control",
                             "tmux": "/opt/homebrew/bin/tmux",
                             "ai_node_bin": "/Users/control/.nvm/versions/node/v24.21.0/bin",
+                            "login_shell": "/bin/zsh",
                         },
                         {
                             "id": "twin-dev",
@@ -67,6 +68,7 @@ class WorkerAdapterTest(unittest.TestCase):
                             "home": "/Users/mini",
                             "tmux": "/opt/homebrew/bin/tmux",
                             "ai_node_bin": "/Users/mini/.npm-global/bin",
+                            "login_shell": "/bin/zsh",
                         },
                     ],
                 }
@@ -121,6 +123,7 @@ class WorkerAdapterTest(unittest.TestCase):
         self.assertIn("host=mini-host", valid.stdout)
         self.assertIn("tmux=/opt/homebrew/bin/tmux", valid.stdout)
         self.assertIn("ai_node_bin=/Users/mini/.npm-global/bin", valid.stdout)
+        self.assertIn("login_shell=/bin/zsh", valid.stdout)
 
         unknown = self.run_adapter("validate", "unknown-worker", check=False)
         self.assertNotEqual(0, unknown.returncode)
@@ -142,6 +145,16 @@ class WorkerAdapterTest(unittest.TestCase):
 
         self.assertNotEqual(0, missing.returncode)
         self.assertIn("invalid ai_node_bin for twin-dev", missing.stderr)
+
+    def test_config_requires_an_absolute_login_shell_for_ssh_workers(self):
+        value = json.loads(self.config.read_text(encoding="utf-8"))
+        value["workers"][0].pop("login_shell")
+        self.config.write_text(json.dumps(value), encoding="utf-8")
+
+        missing = self.run_adapter("validate", "twin-control", check=False)
+
+        self.assertNotEqual(0, missing.returncode)
+        self.assertIn("invalid login_shell for twin-control", missing.stderr)
 
     def test_local_worker_executes_the_existing_job_runner(self):
         job = self.root / "queue" / "jobs" / "20260922020000-aaaaaa"
@@ -213,16 +226,22 @@ class WorkerAdapterTest(unittest.TestCase):
         ssh_args = [event["args"] for event in self.events() if event["command"] == "ssh"]
         self.assertTrue(
             any(
-                "mini-host" in args
-                and "/opt/homebrew/bin/tmux" in args
-                and "new-session" in args
+                "mini-host" in " ".join(args)
+                and "/opt/homebrew/bin/tmux" in " ".join(args)
+                and "new-session" in " ".join(args)
+                and "/bin/zsh" in " ".join(args)
+                and "-lic" in " ".join(args)
+                and 'exec "$@"' in " ".join(args)
                 for args in ssh_args
             )
         )
         self.assertTrue(
-            any("AI_NODE_BIN=/Users/mini/.npm-global/bin" in args for args in ssh_args)
+            any(
+                "AI_NODE_BIN=/Users/mini/.npm-global/bin" in " ".join(args)
+                for args in ssh_args
+            )
         )
-        self.assertTrue(any(f"twin-worker-{job_id}" in args for args in ssh_args))
+        self.assertTrue(any(f"twin-worker-{job_id}" in " ".join(args) for args in ssh_args))
         rsync_args = [event["args"] for event in self.events() if event["command"] == "rsync"]
         self.assertEqual(2, len(rsync_args))
         self.assertIn("mini-host:/Users/mini/.twin-agent-worker/jobs/", " ".join(rsync_args[0]))
@@ -298,6 +317,7 @@ class WorkerAdapterTest(unittest.TestCase):
                 and "/Users/mini/.npm-global/bin/codex" in args
                 and "/Users/mini/.npm-global/bin/claude" in args
                 and "/Users/mini/.opencode/bin/opencode" in args
+                and "/bin/zsh" in args
                 for args in ssh_args
             )
         )

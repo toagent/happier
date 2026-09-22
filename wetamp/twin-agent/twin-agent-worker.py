@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -38,6 +39,7 @@ class Worker:
     ai_node_bin: PurePosixPath
     host: str | None = None
     tmux: PurePosixPath | None = None
+    login_shell: PurePosixPath | None = None
 
     @property
     def runtime_bin(self) -> PurePosixPath:
@@ -66,6 +68,8 @@ class Worker:
         ]
         if self.tmux is not None:
             executables.insert(0, self.tmux)
+        if self.login_shell is not None:
+            executables.insert(0, self.login_shell)
         return tuple(executables)
 
 
@@ -92,6 +96,7 @@ def load_workers(path: Path) -> dict[str, Worker]:
         host = item.get("host")
         tmux = item.get("tmux")
         ai_node_bin = item.get("ai_node_bin")
+        login_shell = item.get("login_shell")
         if worker_id not in REQUIRED_WORKER_IDS or worker_id in workers:
             raise WorkerConfigError(f"invalid or duplicate worker id: {worker_id}")
         if transport not in {"local", "ssh"}:
@@ -110,10 +115,17 @@ def load_workers(path: Path) -> dict[str, Worker]:
             not isinstance(tmux, str) or not SAFE_ABSOLUTE_PATH_PATTERN.fullmatch(tmux)
         ):
             raise WorkerConfigError(f"invalid tmux path for {worker_id}")
+        if transport == "ssh" and (
+            not isinstance(login_shell, str)
+            or not SAFE_ABSOLUTE_PATH_PATTERN.fullmatch(login_shell)
+        ):
+            raise WorkerConfigError(f"invalid login_shell for {worker_id}")
         if transport == "local" and host is not None:
             raise WorkerConfigError(f"local worker {worker_id} must not define host")
         if transport == "local" and tmux is not None:
             raise WorkerConfigError(f"local worker {worker_id} must not define tmux")
+        if transport == "local" and login_shell is not None:
+            raise WorkerConfigError(f"local worker {worker_id} must not define login_shell")
         workers[worker_id] = Worker(
             worker_id=worker_id,
             transport=transport,
@@ -121,6 +133,7 @@ def load_workers(path: Path) -> dict[str, Worker]:
             ai_node_bin=PurePosixPath(ai_node_bin),
             host=host,
             tmux=PurePosixPath(tmux) if tmux is not None else None,
+            login_shell=PurePosixPath(login_shell) if login_shell is not None else None,
         )
 
     if set(workers) != REQUIRED_WORKER_IDS:
@@ -340,6 +353,7 @@ def launch_ssh(
     poll_seconds = max(0.0, float(os.environ.get("TWIN_AGENT_WORKER_POLL_SECONDS", "2")))
     assert worker.host is not None
     assert worker.tmux is not None
+    assert worker.login_shell is not None
 
     run(ssh_command(worker, ["mkdir", "-p", str(remote_job), str(remote_work)]))
     outbound = [rsync_bin, "-a", "--delete"]
@@ -367,6 +381,10 @@ def launch_ssh(
         "-d",
         "-s",
         session,
+        str(worker.login_shell),
+        "-lic",
+        'exec "$@"',
+        "twin-agent-worker",
         "env",
         f"TWIN_AGENT_BASE={worker.worker_base}",
         "TWIN_AGENT_NOTIFY_SCHEDULER=0",
@@ -384,7 +402,7 @@ def launch_ssh(
         str(remote_run_cwd),
         str(remote_work),
     ]
-    run(ssh_command(worker, remote_command))
+    run(ssh_command(worker, [shlex.join(remote_command)]))
 
     cancelled = False
 
@@ -439,6 +457,8 @@ def command_validate(worker_id: str) -> int:
     print(f"home={worker.home}")
     if worker.tmux is not None:
         print(f"tmux={worker.tmux}")
+    if worker.login_shell is not None:
+        print(f"login_shell={worker.login_shell}")
     print(f"ai_node_bin={worker.ai_node_bin}")
     print(f"workspace_root={worker.workspace_root}")
     return 0
