@@ -45,3 +45,12 @@ test("Android APK build pins Java tools to the validated JDK", () => {
     /export PATH="\$JAVA_HOME\/bin:\$NODE_BIN_DIR:\$SDK_ROOT\/platform-tools:/,
   );
 });
+
+test("Android APK build defaults dex-heavy release builds to an 8 GiB Gradle heap", () => {
+  const buildScript = readFileSync(path.join(scriptsDir, "build-android-apk.sh"), "utf8");
+
+  assert.match(
+    buildScript,
+    /HAPPIER_ANDROID_GRADLE_JVMARGS="\$\{HAPPIER_ANDROID_GRADLE_JVMARGS:--Xmx8192m .*\}"/,
+  );
+});

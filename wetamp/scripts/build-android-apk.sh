@@ -36,6 +36,7 @@ export WETAMP_LOCAL_MAVEN_REPO="${WETAMP_LOCAL_MAVEN_REPO:-$GRADLE_USER_HOME/loc
 export npm_config_registry="https://registry.npmmirror.com"
 export YARN_REGISTRY="https://registry.npmmirror.com"
 export EXPO_APP_LOCAL_CONFIG_PATH="$APP_CONFIG"
+export HAPPIER_ANDROID_GRADLE_JVMARGS="${HAPPIER_ANDROID_GRADLE_JVMARGS:--Xmx8192m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8}"
 export EXPO_NO_TELEMETRY=1 DO_NOT_TRACK=1 CI=1
 export SENTRY_DISABLE_AUTO_UPLOAD=true SENTRY_ALLOW_FAILURE=true
 
