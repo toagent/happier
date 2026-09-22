@@ -1170,6 +1170,14 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
         mode: props.panelMaxHeightMode,
     });
     const [rootHeightPx, setRootHeightPx] = React.useState<number | null>(null);
+    const [rootWidthPx, setRootWidthPx] = React.useState<number | null>(null);
+    /**
+     * Width the composer actually gets, not the width of the window it happens to be in.
+     * With a docked sidebar the pane is far narrower than the window, so deciding chip layout
+     * from `screenWidth` crams the action bar. Falls back to the window only until the first
+     * measurement lands.
+     */
+    const composerWidth = rootWidthPx ?? screenWidth;
     const [panelHeightPx, setPanelHeightPx] = React.useState<number | null>(null);
     const [inputContainerHeightPx, setInputContainerHeightPx] = React.useState<number | null>(null);
     const [inputContentHeightPx, setInputContentHeightPx] = React.useState<number | null>(null);
@@ -1679,9 +1687,9 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
         return resolveAgentInputActionBarLayout({
             configuredLayout: agentInputActionBarLayout,
             platform: Platform.OS,
-            isMobileLayout: isMobileLayoutWidth(screenWidth),
+            isMobileLayout: isMobileLayoutWidth(composerWidth),
         });
-    }, [agentInputActionBarLayout, screenWidth]);
+    }, [agentInputActionBarLayout, composerWidth]);
 
     // In labels mode: always show; in icons mode: never show; in auto: show for 'always' policy chips.
     const showChipLabels = effectiveChipDensity === 'labels' || effectiveChipDensity === 'auto';
@@ -3079,8 +3087,8 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
         <View style={styles.actionButtonsContainer}>
             <View
                 style={[
-                    screenWidth < 420 ? styles.actionButtonsColumnNarrow : styles.actionButtonsColumn,
-                    isMobileLayoutWidth(screenWidth) ? styles.actionButtonsColumnMobile : null,
+                    composerWidth < 420 ? styles.actionButtonsColumnNarrow : styles.actionButtonsColumn,
+                    isMobileLayoutWidth(composerWidth) ? styles.actionButtonsColumnMobile : null,
                 ]}
             >{[
                 <View
@@ -3099,7 +3107,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                             {renderedActionControlNodes as any}
                         </AgentInputScrollableChipRow>
                     ) : (
-                        <View style={[styles.actionButtonsLeft, screenWidth < 420 ? styles.actionButtonsLeftNarrow : null]}>
+                        <View style={[styles.actionButtonsLeft, composerWidth < 420 ? styles.actionButtonsLeftNarrow : null]}>
                             {renderedActionControlNodes as any}
                         </View>
                     )}
@@ -3210,10 +3218,11 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                 testID="agent-input-root"
                 onLayout={(event) => {
                     updateNullableLayoutHeight(setRootHeightPx, event.nativeEvent.layout.height);
+                    updateNullableLayoutHeight(setRootWidthPx, event.nativeEvent.layout.width);
                 }}
                 style={[
                     styles.container,
-                    { paddingHorizontal: props.contentPaddingHorizontal ?? (screenWidth > 700 ? 16 : 8) },
+                    { paddingHorizontal: props.contentPaddingHorizontal ?? (composerWidth > 700 ? 16 : 8) },
                 ]}
             >
                 <View style={[
@@ -3225,6 +3234,8 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                             : [{ maxWidth: layout.maxWidth }])
                 ]} ref={overlayAnchorRef}>
                 <AgentInputOverlayLayer
+                    // Deliberately the window, not `composerWidth`: the overlay layer portals over
+                    // the whole screen, so its budget is the screen — not the pane the composer sits in.
                     screenWidth={screenWidth}
                     showPermissionPopover={showPermissionPopover && Boolean(props.onPermissionModeChange)}
                     permissionChipAnchorRef={permissionChipAnchorRef}
@@ -3377,7 +3388,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                 </View>
                             ) : null}
                             {(() => {
-                                const showOnlyOneGauge = screenWidth < 375 && Boolean(contextUsageState && props.providerUsageGauge);
+                                const showOnlyOneGauge = composerWidth < 375 && Boolean(contextUsageState && props.providerUsageGauge);
                                 const providerIsMoreUrgent = props.providerUsageGauge?.tone === 'critical'
                                     || (props.providerUsageGauge?.tone === 'warning' && contextUsageState?.severity !== 'critical');
                                 const showProviderGauge = Boolean(props.providerUsageGauge) && (!showOnlyOneGauge || providerIsMoreUrgent);

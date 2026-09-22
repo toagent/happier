@@ -168,3 +168,4 @@ R1–R8 的外层行为均有实际证据才算完成。单测通过、界面按
 - 2026-09-20 用户追加要求已纳入修订 2：迁入 `wetamp/`，补 R8、定制归属、上游合并/混合版本/数据与回退验证。只修订文档，未执行上游升级。
 - P0：IN_PROGRESS；P1-P4：PLANNED，按依赖逐步实施。
 - 本次验证：源码/配置只读核对；文档空白与链接路径检查；未安装依赖、未运行产品单测/typecheck、未构建 APK、未部署或真机验证。
+- 2026-09-22 后续现场证据：Y700 上已用同一 Android Debug 签名覆盖安装包含 `AgentInput` 容器宽度修复的 0.2.12 测试包，设备 `base.apk` 与测试包 SHA-256 一致（`841860328b831bffc192c06b69bd18278a27e62ccea15faf85f31b86260e4e93`）。在临时 2550x1904 横屏中，约 526dp 主面板的旧包输入操作栏折两行、高 519px；新包为可滑动单行、高 419px；原始竖屏和中文软键盘下输入与发送键可见。`agentInput` 98 文件/642 测试、UI typecheck 通过。正式签名 APK 构建成功，但因历史设备包为 Debug 签名，直接 `adb install -r` 报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`；未卸载、未清除配对数据，R7 签名升级尚未验收。`/tmp/y700-composer-old-526dp.png` 与 `/tmp/y700-composer-new-526dp.png` 为同设备同设置对照。此条不改变 R1-R8 的完成标准。
