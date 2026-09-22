@@ -1,6 +1,8 @@
 # WeTAMP 定制
 
-本目录是 Happier 私有 fork 的 WeTAMP 定制资料入口，由用户明确指定。目标是为 Y700 提供双机三端 AI 工作与本机 code-server 审查体验，并持续跟进 Happier 上游升级。
+本目录是 Happier 私有 fork 的 WeTAMP 定制入口，由用户明确指定。目标是让 Y700 通过本机控制面统一调度 `twin-control`、`twin-dev`、`mac-mini` 上的 Claude Code、Codex、OpenCode，并在 Happier 原生 diff 与本机 code-server 中审查同一份代码变更，同时持续跟进 Happier 上游升级。
+
+`twin-agent/` 是统一调度器的 Git 源码事实源；`~/.lan-dev-machine/twin-agent/` 仅是本机 MCP 运行投影，不得在运行目录形成无法回收到 Git 的独立改动。
 
 - [Y700 Android 定制路线](plans/y700-private-android-customization.md)：完整需求、源码落点、实施阶段与验收；修订 2 已获批准并开始执行。
 - [上游升级约定](UPSTREAM.md)：定制边界、源码合并、组件兼容、数据升级与回退。

@@ -1,0 +1,772 @@
+#!/bin/bash
+set -euo pipefail
+
+BASE="${TWIN_AGENT_BASE:-$HOME/.twin-agent}"
+BIN="$HOME/.lan-dev-machine/bin"
+STATS_BIN="${TWIN_AGENT_STATS_BIN:-$BIN/twin-agent-stats}"
+RUNNER_BIN="${TWIN_AGENT_RUNNER_BIN:-$BIN/twin-agent-runner}"
+OUTPUT_BIN="${TWIN_AGENT_OUTPUT_BIN:-$BIN/twin-agent-output}"
+JOB_RUNNER_BIN="${TWIN_AGENT_JOB_RUNNER_BIN:-$BIN/twin-agent-job-runner}"
+REMOTE_WORKSPACE_ROOT="${TWIN_AGENT_REMOTE_WORKSPACE_ROOT:-$HOME/work/_mcp_workspace}"
+MAX_CONCURRENT="${TWIN_AGENT_MAX_CONCURRENT:-3}"
+LOCK_DIR="$BASE/run/scheduler.lock"
+HISTORY_FILE="$BASE/history/jobs.jsonl"
+EVALUATION_HISTORY_FILE="$BASE/history/evaluations.jsonl"
+CLEANUP_ERRORS_FILE="$BASE/history/cleanup-errors.log"
+CLEANUP_FAILURES=0
+CLEANUP_SCHEDULED=0
+
+[[ "$MAX_CONCURRENT" =~ ^[1-9][0-9]*$ ]] || MAX_CONCURRENT=3
+
+valid_job() {
+  [[ "${1:-}" =~ ^[0-9]{14}-[a-f0-9]{6}$ ]]
+}
+
+job_dir() {
+  valid_job "$1" || { echo "invalid job id" >&2; exit 2; }
+  printf '%s/jobs/%s' "$BASE" "$1"
+}
+
+cleanup_old_jobs() {
+  local retention_days="${1:-7}" old id
+  CLEANUP_FAILURES=0
+  [[ "$retention_days" =~ ^[0-9]+$ ]] || retention_days=7
+  [[ -d "$BASE/jobs" ]] || return 0
+  while IFS= read -r old; do
+    id=${old##*/}
+    valid_job "$id" || continue
+    tmux has-session -t "twin-$id" 2>/dev/null && continue
+    [[ -x "$STATS_BIN" ]] && "$STATS_BIN" archive "$old" --history "$HISTORY_FILE" >/dev/null 2>&1 || true
+    if ! rm -rf -- "$old" 2>/dev/null; then
+      CLEANUP_FAILURES=$((CLEANUP_FAILURES + 1))
+      mkdir -p "$BASE/history"
+      printf '%s\tjob_id=%s\terror=delete_failed\n' "$(date -u +%FT%TZ)" "$id" >> "$CLEANUP_ERRORS_FILE"
+      printf 'cleanup failed for expired job %s; retained for operator recovery\n' "$id" >&2
+    fi
+  done < <(find "$BASE/jobs" -mindepth 1 -maxdepth 1 -type d -mtime "+$retention_days" -print)
+  printf 'cleanup_failures=%s\n' "$CLEANUP_FAILURES"
+}
+
+start_cleanup() {
+  CLEANUP_SCHEDULED=0
+  if tmux has-session -t "twin-cleanup" 2>/dev/null; then
+    CLEANUP_SCHEDULED=1
+    return 0
+  fi
+  if tmux new-session -d -s "twin-cleanup" "$BIN/twin-agent-remote" cleanup-old 7; then
+    CLEANUP_SCHEDULED=1
+  fi
+}
+
+cleanup_failure_count() {
+  if [[ -f "$CLEANUP_ERRORS_FILE" ]]; then
+    wc -l < "$CLEANUP_ERRORS_FILE" | tr -d ' '
+  else
+    echo 0
+  fi
+}
+
+metadata_value() {
+  local metadata="$1" key="$2" default_value="$3"
+  python3 - "$metadata" "$key" "$default_value" <<'PY'
+import json, sys
+try:
+    value=json.load(open(sys.argv[1], encoding="utf-8")).get(sys.argv[2], sys.argv[3])
+except Exception:
+    value=sys.argv[3]
+print(value)
+PY
+}
+
+acquire_scheduler_lock() {
+  local attempt now modified
+  mkdir -p "$BASE/run"
+  for attempt in $(seq 1 200); do
+    if mkdir "$LOCK_DIR" 2>/dev/null; then
+      return 0
+    fi
+    now=$(date +%s)
+    modified=$(stat -f '%m' "$LOCK_DIR" 2>/dev/null || echo 0)
+    if (( now - modified > 30 )); then
+      rmdir "$LOCK_DIR" 2>/dev/null || true
+    fi
+    sleep 0.05
+  done
+  echo "scheduler lock timeout" >&2
+  return 1
+}
+
+release_scheduler_lock() {
+  rmdir "$LOCK_DIR" 2>/dev/null || true
+}
+
+running_count() {
+  local sessions rc
+  set +e
+  sessions=$(tmux list-sessions -F '#S' 2>&1)
+  rc=$?
+  set -e
+  if (( rc == 0 )); then
+    printf '%s\n' "$sessions" | awk '/^twin-[0-9]/{count++} END{print count+0}'
+    return 0
+  fi
+  if [[ "$sessions" == *"no server running"* || "$sessions" == *"no sessions"* ]]; then
+    echo 0
+    return 0
+  fi
+  printf 'tmux status unavailable: %s\n' "$sessions" >&2
+  return 1
+}
+
+queued_ids() {
+  local candidate id ticket
+  for candidate in "$BASE"/jobs/*; do
+    [[ -d "$candidate" && -f "$candidate/queued_at" ]] || continue
+    id=${candidate##*/}
+    valid_job "$id" || continue
+    ticket=$(cat "$candidate/queue_ticket" 2>/dev/null || echo 999999999999)
+    [[ "$ticket" =~ ^[0-9]+$ ]] || ticket=999999999999
+    printf '%020d\t%s\n' "$ticket" "$id"
+  done | sort -n | cut -f2
+}
+
+queue_position() {
+  local target="$1" id position=0
+  while IFS= read -r id; do
+    position=$((position + 1))
+    if [[ "$id" == "$target" ]]; then
+      echo "$position"
+      return 0
+    fi
+  done < <(queued_ids)
+  echo 0
+}
+
+enqueue_job() {
+  local id="$1" job sequence timestamp
+  job=$(job_dir "$id")
+  acquire_scheduler_lock
+  sequence=$(cat "$BASE/run/queue-sequence" 2>/dev/null || echo 0)
+  [[ "$sequence" =~ ^[0-9]+$ ]] || sequence=0
+  sequence=$((sequence + 1))
+  printf '%s\n' "$sequence" > "$BASE/run/queue-sequence.tmp.$$"
+  mv "$BASE/run/queue-sequence.tmp.$$" "$BASE/run/queue-sequence"
+  printf '%s\n' "$sequence" > "$job/queue_ticket"
+  timestamp=$(date -u +%FT%TZ)
+  printf '%s\n' "$timestamp" > "$job/enqueued_at"
+  printf '%s\n' "$timestamp" > "$job/queued_at"
+  release_scheduler_lock
+}
+
+state_of() {
+  local job="$1" id="$2" tmux_error rc
+  if [[ -f "$job/cancelled_at" ]]; then
+    echo "cancelled"
+  elif [[ -f "$job/finished_at" ]]; then
+    echo "finished"
+  elif [[ -f "$job/queued_at" ]]; then
+    echo "queued"
+  else
+    set +e
+    tmux_error=$(tmux has-session -t "twin-$id" 2>&1)
+    rc=$?
+    set -e
+    if (( rc == 0 )); then
+      echo "running"
+    elif [[ "$tmux_error" == *"no server running"* || "$tmux_error" == *"can't find session"* || -z "$tmux_error" ]]; then
+      [[ -f "$job/started_at" ]] && echo "failed" || echo "queued"
+    else
+      echo "unknown"
+    fi
+  fi
+}
+
+dispatch_job() {
+  local id="$1" job state active oldest agent mode workspace_mode run_cwd work launched=0
+  job=$(job_dir "$id")
+  [[ -d "$job" ]] || { echo "job not found" >&2; exit 1; }
+  acquire_scheduler_lock
+
+  state=$(state_of "$job" "$id")
+  if [[ "$state" == "cancelled" || "$state" == "finished" || "$state" == "failed" || "$state" == "running" || "$state" == "unknown" ]]; then
+    release_scheduler_lock
+    printf 'job_id=%s\nstate=%s\n' "$id" "$state"
+    return 0
+  fi
+
+  if ! active=$(running_count); then
+    release_scheduler_lock
+    return 1
+  fi
+  oldest=$(queued_ids | head -1)
+  if (( active < MAX_CONCURRENT )) && [[ "$oldest" == "$id" ]]; then
+    agent=$(cat "$job/agent")
+    mode=$(cat "$job/mode")
+    workspace_mode=$(cat "$job/workspace_mode" 2>/dev/null || echo local_snapshot)
+    run_cwd=$(cat "$job/run_cwd")
+    work=$(cat "$job/work")
+    rm -f "$job/queued_at"
+    date -u +%FT%TZ > "$job/dispatched_at"
+    if tmux new-session -d -s "twin-$id" "$JOB_RUNNER_BIN" "$job" "$agent" "$mode" "$workspace_mode" "$run_cwd" "$work"; then
+      launched=1
+    else
+      rm -f "$job/dispatched_at"
+      date -u +%FT%TZ > "$job/queued_at"
+    fi
+  fi
+  release_scheduler_lock
+
+  if (( launched == 1 )); then
+    printf 'job_id=%s\nstate=running\n' "$id"
+  else
+    printf 'job_id=%s\nstate=queued\nqueue_position=%s\n' "$id" "$(queue_position "$id")"
+  fi
+}
+
+schedule_jobs() {
+  local oldest active empty_checks=0
+  while true; do
+    oldest=$(queued_ids | head -1)
+    if [[ -z "$oldest" ]]; then
+      empty_checks=$((empty_checks + 1))
+      (( empty_checks >= 5 )) && return 0
+      sleep 0.2
+      continue
+    fi
+    empty_checks=0
+    if ! active=$(running_count); then
+      sleep 2
+      continue
+    fi
+    if (( active < MAX_CONCURRENT )); then
+      dispatch_job "$oldest" >/dev/null 2>&1 || true
+      sleep 0.1
+    else
+      sleep 1
+    fi
+  done
+}
+
+start_scheduler() {
+  tmux has-session -t "twin-scheduler" 2>/dev/null || \
+    tmux new-session -d -s "twin-scheduler" "$BIN/twin-agent-remote" schedule || true
+}
+
+start_job() {
+  local id="$1" agent="$2" mode="$3" workspace_mode requested_cwd
+  local job work run_cwd root_real safe_workspace_pattern model timeout_seconds task_type complexity requested_agent
+  local snapshot_tree baseline_commit
+  local idle_timeout_seconds fallback_agent max_attempts primary_timeout_seconds
+  job=$(job_dir "$id")
+  start_cleanup
+
+  if [[ $# -eq 4 ]]; then
+    workspace_mode="local_snapshot"
+    requested_cwd="$4"
+  else
+    workspace_mode="$4"
+    requested_cwd="$5"
+  fi
+
+  [[ -f "$job/prompt.txt" ]] || { echo "prompt missing" >&2; exit 1; }
+  case "$agent" in codex|claude|opencode) ;; *) echo "unsupported agent" >&2; exit 2 ;; esac
+  case "$mode" in read_only|write) ;; *) echo "unsupported mode" >&2; exit 2 ;; esac
+  case "$workspace_mode" in local_snapshot|remote_workspace) ;; *) echo "unsupported workspace mode" >&2; exit 2 ;; esac
+  [[ -x "$RUNNER_BIN" ]] || { echo "runner helper missing: $RUNNER_BIN" >&2; exit 1; }
+  [[ -x "$OUTPUT_BIN" ]] || { echo "output helper missing: $OUTPUT_BIN" >&2; exit 1; }
+  [[ -x "$JOB_RUNNER_BIN" ]] || { echo "job runner missing: $JOB_RUNNER_BIN" >&2; exit 1; }
+
+  requested_agent=$(metadata_value "$job/metadata.json" requested_agent "$agent")
+  model=$(metadata_value "$job/metadata.json" model auto)
+  timeout_seconds=$(metadata_value "$job/metadata.json" timeout_seconds 1200)
+  idle_timeout_seconds=$(metadata_value "$job/metadata.json" idle_timeout_seconds 300)
+  fallback_agent=$(metadata_value "$job/metadata.json" fallback_agent none)
+  max_attempts=$(metadata_value "$job/metadata.json" max_attempts 1)
+  primary_timeout_seconds=$(metadata_value "$job/metadata.json" primary_timeout_seconds "$timeout_seconds")
+  task_type=$(metadata_value "$job/metadata.json" task_type general)
+  complexity=$(metadata_value "$job/metadata.json" complexity standard)
+  if [[ "$model" == "auto" ]]; then
+    [[ "$agent" == "claude" ]] && model=sonnet || model=default
+  fi
+  [[ "$model" =~ ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$ ]] || model=default
+  [[ "$timeout_seconds" =~ ^[0-9]+$ ]] || timeout_seconds=1200
+  (( timeout_seconds >= 60 && timeout_seconds <= 7200 )) || timeout_seconds=1200
+  [[ "$idle_timeout_seconds" =~ ^[0-9]+$ ]] || idle_timeout_seconds=300
+  (( idle_timeout_seconds >= 30 && idle_timeout_seconds <= 7200 )) || idle_timeout_seconds=300
+  [[ "$primary_timeout_seconds" =~ ^[0-9]+$ ]] || primary_timeout_seconds="$timeout_seconds"
+  (( primary_timeout_seconds >= 60 && primary_timeout_seconds <= timeout_seconds )) || primary_timeout_seconds="$timeout_seconds"
+  [[ "$max_attempts" =~ ^[12]$ ]] || max_attempts=1
+  case "$fallback_agent" in none|codex|claude|opencode) ;; *) fallback_agent=none ;; esac
+  if [[ "$mode" != "read_only" || "$fallback_agent" == "$agent" || "$fallback_agent" == "none" ]]; then
+    fallback_agent=none
+    max_attempts=1
+  fi
+  case "$task_type" in general|implementation|test|code_review|architecture|research|operations) ;; *) task_type=general ;; esac
+  case "$complexity" in short|standard|long) ;; *) complexity=standard ;; esac
+  case "$requested_agent" in auto|codex|claude|opencode) ;; *) requested_agent="$agent" ;; esac
+
+  if [[ "$workspace_mode" == "local_snapshot" ]]; then
+    work="$job/workspace"
+    run_cwd="$work/$requested_cwd"
+    [[ -d "$run_cwd" ]] || { echo "remote cwd missing: $run_cwd" >&2; exit 1; }
+
+    rm -rf "$work/.git"
+    git -C "$work" init -q
+    if [[ -s "$job/snapshot-files.z" ]]; then
+      : > "$job/present-snapshot-files.z"
+      while IFS= read -r -d '' snapshot_path; do
+        if [[ -e "$work/$snapshot_path" || -L "$work/$snapshot_path" ]]; then
+          printf '%s\0' "$snapshot_path" >> "$job/present-snapshot-files.z"
+        fi
+      done < "$job/snapshot-files.z"
+      if [[ -s "$job/present-snapshot-files.z" ]]; then
+        git -C "$work" add -f \
+          --pathspec-from-file="$job/present-snapshot-files.z" \
+          --pathspec-file-nul
+      fi
+    else
+      git -C "$work" add -A
+    fi
+    # This is an internal snapshot identity, not a user commit. Git plumbing keeps
+    # user commit hooks scoped to real commits while preserving a normal baseline.
+    snapshot_tree=$(git -C "$work" write-tree)
+    baseline_commit=$(git -C "$work" \
+      -c user.name=twin-agent \
+      -c user.email=twin-agent@localhost \
+      -c commit.gpgSign=false \
+      commit-tree "$snapshot_tree" -m baseline)
+    git -C "$work" update-ref HEAD "$baseline_commit"
+    printf '%s\n' "$baseline_commit" > "$job/baseline_commit"
+  else
+    safe_workspace_pattern='^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*$'
+    [[ "$requested_cwd" =~ $safe_workspace_pattern ]] || {
+      echo "invalid remote workspace: $requested_cwd" >&2
+      exit 2
+    }
+    mkdir -p "$REMOTE_WORKSPACE_ROOT"
+    root_real=$(cd "$REMOTE_WORKSPACE_ROOT" && pwd -P)
+    mkdir -p "$REMOTE_WORKSPACE_ROOT/$requested_cwd"
+    run_cwd=$(cd "$REMOTE_WORKSPACE_ROOT/$requested_cwd" && pwd -P)
+    case "$run_cwd/" in
+      "$root_real/"*) ;;
+      *) echo "remote workspace escaped root: $run_cwd" >&2; exit 2 ;;
+    esac
+    work="$run_cwd"
+    if git -C "$work" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      git -C "$work" status --short > "$job/pre-git-status.txt"
+      git -C "$work" rev-parse HEAD > "$job/baseline_commit" 2>/dev/null || true
+    else
+      find "$work" -mindepth 1 -maxdepth 3 -not -path '*/.git/*' -print | sort > "$job/pre-files.txt"
+    fi
+  fi
+
+  printf '%s\n' "$agent" > "$job/agent"
+  printf '%s\n' "$requested_agent" > "$job/requested_agent"
+  printf '%s\n' "$model" > "$job/model"
+  printf '%s\n' "$timeout_seconds" > "$job/timeout_seconds"
+  printf '%s\n' "$idle_timeout_seconds" > "$job/idle_timeout_seconds"
+  printf '%s\n' "$primary_timeout_seconds" > "$job/primary_timeout_seconds"
+  printf '%s\n' "$fallback_agent" > "$job/fallback_agent"
+  printf '%s\n' "$max_attempts" > "$job/max_attempts"
+  printf '%s\n' "$task_type" > "$job/task_type"
+  printf '%s\n' "$complexity" > "$job/complexity"
+  printf '%s\n' "$mode" > "$job/mode"
+  printf '%s\n' "$workspace_mode" > "$job/workspace_mode"
+  printf '%s\n' "$run_cwd" > "$job/run_cwd"
+  printf '%s\n' "$work" > "$job/work"
+  enqueue_job "$id"
+  dispatch_job "$id" >/dev/null
+  if [[ "$(state_of "$job" "$id")" == "queued" ]]; then
+    start_scheduler
+  fi
+  printf 'job_id=%s\nstate=%s\nagent=%s\nmode=%s\n' "$id" "$(state_of "$job" "$id")" "$agent" "$mode"
+  printf 'cleanup_scheduled=%s\n' "$CLEANUP_SCHEDULED"
+  if [[ "$(state_of "$job" "$id")" == "queued" ]]; then
+    printf 'queue_position=%s\n' "$(queue_position "$id")"
+  fi
+}
+
+show_status() {
+  local id="$1" job state rc="" running="unknown"
+  job=$(job_dir "$id")
+  [[ -d "$job" ]] || { echo "job not found" >&2; exit 1; }
+  state=$(state_of "$job" "$id")
+  [[ -f "$job/exit_code" ]] && rc=$(cat "$job/exit_code")
+  printf 'job_id=%s\nstate=%s\n' "$id" "$state"
+  [[ -n "$rc" ]] && printf 'exit_code=%s\n' "$rc"
+  [[ -f "$job/started_at" ]] && printf 'started_at=%s\n' "$(cat "$job/started_at")"
+  [[ -f "$job/finished_at" ]] && printf 'finished_at=%s\n' "$(cat "$job/finished_at")"
+  [[ -f "$job/result_collected_at" ]] && printf 'result_collected_at=%s\n' "$(cat "$job/result_collected_at")"
+  if [[ -f "$job/progress.json" ]]; then
+    python3 - "$job/progress.json" <<'PY'
+import json, sys
+try:
+    value=json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    raise SystemExit(0)
+for key in ("phase", "attempt", "agent", "model", "detail", "updated_at", "last_activity_at", "elapsed_seconds", "idle_seconds", "stdout_bytes", "stderr_bytes", "saw_output", "terminal_reason"):
+    item=value.get(key)
+    if item is not None:
+        print(f"{key}={item}")
+PY
+  fi
+  if [[ -x "$STATS_BIN" ]]; then
+    "$STATS_BIN" job "$job" 2>/dev/null | python3 -c '
+import json, sys
+try:
+    d=json.load(sys.stdin)
+except Exception:
+    raise SystemExit(0)
+for key in ("outcome", "caller", "collaboration_id", "task_title", "local_work", "requested_agent", "remote_agent", "effective_agent", "task_type", "complexity", "model", "effective_model", "timeout_seconds", "idle_timeout_seconds", "attempt_count", "fallback_used", "failure_class", "cancel_reason", "prompt_bytes", "final_bytes", "transcript_bytes", "quality_verdict", "quality_summary", "queue_wait_seconds", "prestart_seconds", "run_seconds", "total_seconds", "ttft_ms", "total_cost_usd", "api_retries", "rate_limit_retries", "result_collection_delay_seconds"):
+    value=d.get(key)
+    if value is not None:
+        print(f"{key}={value}")
+'
+  fi
+  if [[ "$state" == "queued" ]]; then
+    printf 'queue_position=%s\n' "$(queue_position "$id")"
+  fi
+  running=$(running_count 2>/dev/null || echo unknown)
+  printf 'running=%s\nmax_concurrent=%s\n' "$running" "$MAX_CONCURRENT"
+  return 0
+}
+
+show_result() {
+  local id="$1" max_chars="${2:-30000}" job state newly_collected=0 timestamp temporary
+  job=$(job_dir "$id")
+  [[ -d "$job" ]] || { echo "job not found" >&2; exit 1; }
+  [[ "$max_chars" =~ ^[0-9]+$ ]] || max_chars=30000
+  state=$(state_of "$job" "$id")
+  case "$state" in
+    finished|failed|cancelled)
+      if [[ ! -f "$job/result_collected_at" ]]; then
+        timestamp=$(date -u +%FT%TZ)
+        temporary="$job/result_collected_at.tmp.$$"
+        printf '%s\n' "$timestamp" > "$temporary"
+        mv "$temporary" "$job/result_collected_at"
+        newly_collected=1
+      fi
+      [[ -x "$STATS_BIN" ]] && "$STATS_BIN" archive "$job" --history "$HISTORY_FILE" >/dev/null 2>&1 || true
+      ;;
+  esac
+  show_status "$id"
+  echo "--- final ---"
+  [[ -f "$job/final.txt" ]] && tail -c "$max_chars" "$job/final.txt" || echo "尚无最终答复"
+  echo
+  [[ -f "$job/workspace_mode" ]] && printf '%s\n' "workspace_mode=$(cat "$job/workspace_mode")"
+  [[ -f "$job/run_cwd" ]] && printf '%s\n' "remote_cwd=$(cat "$job/run_cwd")"
+  echo "--- git status ---"
+  [[ -f "$job/git-status.txt" ]] && cat "$job/git-status.txt" || true
+  if [[ -s "$job/workspace-files.txt" ]]; then
+    echo "--- workspace files ---"
+    tail -c "$max_chars" "$job/workspace-files.txt"
+  fi
+  echo "--- patch ---"
+  if [[ "$(cat "$job/workspace_mode" 2>/dev/null || echo local_snapshot)" == "remote_workspace" ]]; then
+    echo "远端持久工作区不生成可应用到本机的 patch"
+  elif [[ -s "$job/changes.patch" ]]; then
+    tail -c "$max_chars" "$job/changes.patch"
+  else
+    echo "无代码改动"
+  fi
+  if [[ "$state" != "finished" || "$(cat "$job/exit_code" 2>/dev/null || echo 1)" != "0" ]]; then
+    echo "--- recent transcript ---"
+    [[ -f "$job/transcript.log" ]] && tail -c 6000 "$job/transcript.log" || true
+  fi
+  printf 'newly_collected=%s\n' "$newly_collected"
+  [[ -f "$job/result_collected_at" ]] && printf 'result_collected_at=%s\n' "$(cat "$job/result_collected_at")"
+  return 0
+}
+
+wait_job() {
+  local id="$1" wait_seconds="${2:-60}" max_chars="${3:-30000}" job state deadline now
+  job=$(job_dir "$id")
+  [[ -d "$job" ]] || { echo "job not found" >&2; exit 1; }
+  [[ "$wait_seconds" =~ ^[0-9]+$ ]] || wait_seconds=60
+  (( wait_seconds >= 0 && wait_seconds <= 7200 )) || { echo "wait seconds must be between 0 and 7200" >&2; exit 2; }
+  deadline=$(( $(date +%s) + wait_seconds ))
+  while true; do
+    state=$(state_of "$job" "$id")
+    case "$state" in
+      finished|failed|cancelled) show_result "$id" "$max_chars"; return 0 ;;
+      unknown) show_status "$id"; return 0 ;;
+    esac
+    now=$(date +%s)
+    if (( now >= deadline )); then
+      show_status "$id"
+      printf 'wait_timeout=1\n'
+      return 0
+    fi
+    sleep 1
+  done
+}
+
+pending_results() {
+  local collaboration_id="${1:--}" caller="${2:--}" limit="${3:-20}"
+  local job id state job_collaboration job_caller count=0
+  [[ "$collaboration_id" == "-" || "$collaboration_id" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ ]] || { echo "invalid collaboration id" >&2; exit 2; }
+  case "$caller" in -|codex|claude|opencode) ;; *) echo "invalid caller" >&2; exit 2 ;; esac
+  [[ "$limit" =~ ^[0-9]+$ ]] || limit=20
+  (( limit >= 1 && limit <= 100 )) || limit=20
+  [[ -d "$BASE/jobs" ]] || { echo "pending=0"; return 0; }
+  while IFS= read -r job; do
+    id=${job##*/}
+    valid_job "$id" || continue
+    state=$(state_of "$job" "$id")
+    case "$state" in finished|failed|cancelled) ;; *) continue ;; esac
+    [[ -f "$job/result_collected_at" ]] && continue
+    job_collaboration=$(metadata_value "$job/metadata.json" collaboration_id "legacy-$id")
+    job_caller=$(metadata_value "$job/metadata.json" caller "历史未记录")
+    [[ "$collaboration_id" == "-" || "$job_collaboration" == "$collaboration_id" ]] || continue
+    [[ "$caller" == "-" || "$job_caller" == "$caller" ]] || continue
+    printf 'job_id=%s\tstate=%s\tcollaboration_id=%s\tcaller=%s\n' "$id" "$state" "$job_collaboration" "$job_caller"
+    count=$((count + 1))
+    (( count >= limit )) && break
+  done < <(find "$BASE/jobs" -mindepth 1 -maxdepth 1 -type d -print | sort)
+  printf 'pending=%s\n' "$count"
+}
+
+collaboration_state() {
+  local collaboration_id="$1" caller="${2:--}" job id job_collaboration job_caller state
+  local total=0 queued=0 running=0 unknown=0 finished=0 failed=0 cancelled=0 terminal=0 uncollected=0
+  [[ "$collaboration_id" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ ]] || { echo "invalid collaboration id" >&2; exit 2; }
+  case "$caller" in -|codex|claude|opencode) ;; *) echo "invalid caller" >&2; exit 2 ;; esac
+  if [[ -d "$BASE/jobs" ]]; then
+    for job in "$BASE"/jobs/*; do
+      [[ -d "$job" ]] || continue
+      id=${job##*/}
+      valid_job "$id" || continue
+      job_collaboration=$(metadata_value "$job/metadata.json" collaboration_id "legacy-$id")
+      job_caller=$(metadata_value "$job/metadata.json" caller "历史未记录")
+      [[ "$job_collaboration" == "$collaboration_id" ]] || continue
+      [[ "$caller" == "-" || "$job_caller" == "$caller" ]] || continue
+      total=$((total + 1))
+      state=$(state_of "$job" "$id")
+      case "$state" in
+        queued) queued=$((queued + 1)) ;;
+        running) running=$((running + 1)) ;;
+        unknown) unknown=$((unknown + 1)) ;;
+        finished) finished=$((finished + 1)); terminal=$((terminal + 1)); [[ -f "$job/result_collected_at" ]] || uncollected=$((uncollected + 1)) ;;
+        failed) failed=$((failed + 1)); terminal=$((terminal + 1)); [[ -f "$job/result_collected_at" ]] || uncollected=$((uncollected + 1)) ;;
+        cancelled) cancelled=$((cancelled + 1)); terminal=$((terminal + 1)); [[ -f "$job/result_collected_at" ]] || uncollected=$((uncollected + 1)) ;;
+      esac
+    done
+  fi
+  printf 'collaboration_id=%s\ncaller=%s\ntotal=%s\nqueued=%s\nrunning=%s\nunknown=%s\nactive=%s\nterminal=%s\nfinished=%s\nfailed=%s\ncancelled=%s\nuncollected=%s\n' \
+    "$collaboration_id" "$caller" "$total" "$queued" "$running" "$unknown" "$((queued + running + unknown))" "$terminal" "$finished" "$failed" "$cancelled" "$uncollected"
+}
+
+cancel_job() {
+  local id="$1" reason="${2:-user_request}" job workspace_mode work state
+  job=$(job_dir "$id")
+  [[ -d "$job" ]] || { echo "job not found" >&2; exit 1; }
+  case "$reason" in user_request|superseded|duplicate|wrong_scope|resource_pressure|other) ;; *) reason=other ;; esac
+  state=$(state_of "$job" "$id")
+  case "$state" in
+    finished|failed|cancelled)
+      printf 'job_id=%s\nstate=%s\n' "$id" "$state"
+      return 0
+      ;;
+  esac
+  tmux kill-session -t "twin-$id" 2>/dev/null || true
+  tmux kill-session -t "twinq-$id" 2>/dev/null || true
+  rm -f "$job/queued_at"
+  printf '%s\n' "$reason" > "$job/cancel_reason"
+  date -u +%FT%TZ > "$job/cancelled_at"
+  workspace_mode=$(cat "$job/workspace_mode" 2>/dev/null || echo local_snapshot)
+  work="$job/workspace"
+  if [[ "$workspace_mode" == "local_snapshot" && -n "$work" && -d "$work" ]]; then
+    git -C "$work" status --short > "$job/git-status.txt" 2>&1 || true
+    git -C "$work" add -A >/dev/null 2>&1 || true
+    if [[ -s "$job/baseline_commit" ]]; then
+      git -C "$work" diff --cached --binary "$(cat "$job/baseline_commit")" > "$job/changes.patch" 2>&1 || true
+    fi
+  fi
+  remove_job_workspace "$id" >/dev/null 2>&1 || true
+  [[ -x "$STATS_BIN" ]] && "$STATS_BIN" archive "$job" --history "$HISTORY_FILE" >/dev/null 2>&1 || true
+  start_scheduler
+  echo "job_id=$id"
+  echo "state=cancelled"
+  echo "cancel_reason=$reason"
+}
+
+remove_job_workspace() {
+  local id="$1" job state workspace_mode work
+  job=$(job_dir "$id")
+  [[ -d "$job" ]] || { echo "job not found" >&2; return 1; }
+  state=$(state_of "$job" "$id")
+  case "$state" in finished|cancelled|failed) ;; *) echo "job is not terminal: $state" >&2; return 1 ;; esac
+  workspace_mode=$(cat "$job/workspace_mode" 2>/dev/null || echo local_snapshot)
+  [[ "$workspace_mode" == "local_snapshot" ]] || { echo "workspace_mode=$workspace_mode"; return 0; }
+  [[ -f "$job/changes.patch" ]] || { echo "patch missing" >&2; return 1; }
+  work="$job/workspace"
+  [[ -d "$work" ]] || { echo "already_compacted=1"; return 0; }
+
+  rm -rf -- "$work" 2>/dev/null || sudo -n rm -rf -- "$work" 2>/dev/null || true
+  if [[ -e "$work" ]]; then
+    date -u +%FT%TZ > "$job/workspace_compaction_failed_at"
+    echo "workspace compaction failed" >&2
+    return 1
+  fi
+  rm -f "$job/workspace_compaction_failed_at"
+  date -u +%FT%TZ > "$job/workspace_compacted_at"
+  echo "workspace_compacted=1"
+}
+
+compact_jobs() {
+  local action="${1:-dry-run}" job id state workspace_mode work kib total_kib=0 count=0 compacted=0 failed=0
+  case "$action" in dry-run|apply) ;; *) echo "usage: compact {dry-run|apply}" >&2; exit 2 ;; esac
+  [[ -d "$BASE/jobs" ]] || { echo "compact_candidates=0"; return 0; }
+  for job in "$BASE"/jobs/*; do
+    [[ -d "$job" ]] || continue
+    id=${job##*/}
+    valid_job "$id" || continue
+    state=$(state_of "$job" "$id")
+    case "$state" in finished|cancelled|failed) ;; *) continue ;; esac
+    workspace_mode=$(cat "$job/workspace_mode" 2>/dev/null || echo local_snapshot)
+    [[ "$workspace_mode" == "local_snapshot" ]] || continue
+    work="$job/workspace"
+    [[ -d "$work" && -f "$job/changes.patch" ]] || continue
+    kib=$(du -sk "$work" 2>/dev/null | awk '{print $1+0}')
+    total_kib=$((total_kib + kib))
+    count=$((count + 1))
+    printf '%s\t%s KiB\n' "$id" "$kib"
+    if [[ "$action" == "apply" ]]; then
+      if remove_job_workspace "$id" >/dev/null; then
+        compacted=$((compacted + 1))
+      else
+        failed=$((failed + 1))
+      fi
+    fi
+  done
+  printf 'compact_candidates=%s\nreclaimable_kib=%s\ncompacted=%s\nfailed=%s\naction=%s\n' "$count" "$total_kib" "$compacted" "$failed" "$action"
+  (( failed == 0 ))
+}
+
+show_stats() {
+  local report_date="${1:-all}" timezone_name="${2:-Asia/Taipei}"
+  local collaboration_id="${3:--}" caller="${4:--}" include_jobs="${5:-0}" output_format="${6:-text}"
+  [[ -x "$STATS_BIN" ]] || { echo "stats helper missing: $STATS_BIN" >&2; exit 1; }
+  [[ "$report_date" == "all" || "$report_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || {
+    echo "invalid date: $report_date" >&2; exit 2;
+  }
+  [[ "$timezone_name" =~ ^[A-Za-z0-9_+./-]+$ ]] || { echo "invalid timezone" >&2; exit 2; }
+  [[ "$collaboration_id" == "-" || "$collaboration_id" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ ]] || {
+    echo "invalid collaboration id" >&2; exit 2;
+  }
+  case "$caller" in -|codex|claude|opencode) ;; *) echo "invalid caller" >&2; exit 2 ;; esac
+  case "$include_jobs" in 0|1) ;; *) echo "invalid include_jobs" >&2; exit 2 ;; esac
+  case "$output_format" in text|json) ;; *) echo "invalid format" >&2; exit 2 ;; esac
+
+  local args=(report --base "$BASE" --history "$HISTORY_FILE" --evaluations "$EVALUATION_HISTORY_FILE" --date "$report_date" --timezone "$timezone_name" --format "$output_format")
+  [[ "$collaboration_id" != "-" ]] && args+=(--collaboration-id "$collaboration_id")
+  [[ "$caller" != "-" ]] && args+=(--caller "$caller")
+  [[ "$include_jobs" == "1" ]] && args+=(--include-jobs)
+  "$STATS_BIN" "${args[@]}"
+}
+
+evaluate_job() {
+  local id="$1" job evaluation state verdict exit_code
+  job=$(job_dir "$id")
+  evaluation="$job/evaluation.json"
+  [[ -d "$job" ]] || { echo "job not found" >&2; exit 1; }
+  state=$(state_of "$job" "$id")
+  case "$state" in finished|failed|cancelled) ;; *) echo "job is not terminal: $state" >&2; exit 1 ;; esac
+  [[ -s "$evaluation" ]] || { echo "evaluation missing" >&2; exit 1; }
+  verdict=$(metadata_value "$evaluation" verdict "")
+  case "$verdict" in accepted|partial|rejected) ;; *) echo "invalid evaluation verdict" >&2; exit 1 ;; esac
+  exit_code=$(cat "$job/exit_code" 2>/dev/null || echo 1)
+  if [[ "$verdict" == "accepted" && ( "$state" != "finished" || "$exit_code" != "0" ) ]]; then
+    echo "accepted requires a process-success job" >&2
+    exit 1
+  fi
+  "$STATS_BIN" archive-evaluation "$evaluation" --history "$EVALUATION_HISTORY_FILE" >/dev/null
+  python3 - "$evaluation" <<'PY'
+import json, sys
+d=json.load(open(sys.argv[1], encoding="utf-8"))
+for key in ("job_id", "verdict", "caller", "collaboration_id", "evaluated_at", "summary"):
+    value=d.get(key)
+    if value is not None:
+        print(f"{key}={value}")
+PY
+}
+
+show_queue() {
+  local ids count running="unknown"
+  ids=$(queued_ids)
+  if [[ -n "$ids" ]]; then
+    count=$(printf '%s\n' "$ids" | wc -l | tr -d ' ')
+  else
+    count=0
+  fi
+  running=$(running_count 2>/dev/null || echo unknown)
+  printf 'running=%s\nqueued=%s\nmax_concurrent=%s\n' "$running" "$count" "$MAX_CONCURRENT"
+  if [[ -n "$ids" ]]; then
+    echo "--- fifo ---"
+    printf '%s\n' "$ids" | nl -w1 -s $'\t'
+  fi
+}
+
+list_jobs() {
+  local limit="${1:-10}" count=0 job id
+  [[ "$limit" =~ ^[0-9]+$ ]] || limit=10
+  [[ -d "$BASE/jobs" ]] || return 0
+  while IFS= read -r job; do
+    id=${job##*/}
+    valid_job "$id" || continue
+    printf '%s\t%s' "$id" "$(state_of "$job" "$id")"
+    [[ -f "$job/metadata.json" ]] && printf '\t%s' "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("agent",""), d.get("mode",""), d.get("workspace_mode","local_snapshot"), d.get("local_cwd") or d.get("remote_cwd",""))' "$job/metadata.json")"
+    echo
+    count=$((count + 1))
+    [[ "$count" -ge "$limit" ]] && break
+  done < <(find "$BASE/jobs" -mindepth 1 -maxdepth 1 -type d -print | sort -r)
+}
+
+health() {
+  local running="unknown"
+  printf 'host=%s\n' "$(hostname)"
+  printf 'tmux=%s\n' "$(tmux -V)"
+  source "$HOME/.config/ai-runtime/env.zsh"
+  printf 'codex=%s\n' "$("$AI_NODE_BIN/codex" --version)"
+  printf 'claude=%s\n' "$("$AI_NODE_BIN/claude" --version)"
+  printf 'opencode=%s\n' "$("$HOME/.opencode/bin/opencode" --version)"
+  printf 'jobs=%s\n' "$(find "$BASE/jobs" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+  echo "retention_days=7"
+  running=$(running_count 2>/dev/null || echo unknown)
+  printf 'running=%s\n' "$running"
+  printf 'queued=%s\n' "$(queued_ids | wc -l | tr -d ' ')"
+  printf 'max_concurrent=%s\n' "$MAX_CONCURRENT"
+  printf 'cleanup_failures_total=%s\n' "$(cleanup_failure_count)"
+  printf 'default_timeout_short=%s\n' "600"
+  printf 'default_timeout_standard=%s\n' "1200"
+  printf 'default_timeout_long=%s\n' "1800"
+  printf 'default_idle_timeout_short=%s\n' "180"
+  printf 'default_idle_timeout_standard=%s\n' "300"
+  printf 'default_idle_timeout_long=%s\n' "420"
+  [[ -x "$JOB_RUNNER_BIN" ]] && echo "job_runner=ok" || echo "job_runner=missing"
+  [[ -x "$OUTPUT_BIN" ]] && echo "output_parser=ok" || echo "output_parser=missing"
+}
+
+mkdir -p "$BASE/jobs"
+case "${1:-}" in
+  start) shift; start_job "$@" ;;
+  dispatch) shift; dispatch_job "$@" ;;
+  watch) shift; start_scheduler ;;
+  schedule) schedule_jobs ;;
+  start-scheduler) start_scheduler ;;
+  status) shift; show_status "$@" ;;
+  result) shift; show_result "$@" ;;
+  wait) shift; wait_job "$@" ;;
+  pending) shift; pending_results "$@" ;;
+  collaboration-state) shift; collaboration_state "$@" ;;
+  cancel) shift; cancel_job "$@" ;;
+  list) shift; list_jobs "$@" ;;
+  queue) show_queue ;;
+  stats) shift; show_stats "$@" ;;
+  evaluate) shift; evaluate_job "$@" ;;
+  health) health ;;
+  cleanup-old) shift; cleanup_old_jobs "${1:-7}" ;;
+  compact) shift; compact_jobs "$@" ;;
+  compact-one) shift; remove_job_workspace "$@" ;;
+  *) echo "usage: twin-agent-remote {start|dispatch|watch|schedule|start-scheduler|status|result|wait|pending|collaboration-state|cancel|list|queue|stats|evaluate|health|cleanup-old|compact|compact-one}" >&2; exit 2 ;;
+esac

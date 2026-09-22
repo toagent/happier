@@ -1,0 +1,876 @@
+#!/usr/bin/env python3
+"""Collect durable twin-agent job metrics without reading project contents."""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import json
+import math
+import os
+import subprocess
+import sys
+from collections import Counter, defaultdict
+from datetime import datetime, timezone
+from pathlib import Path
+from statistics import mean
+from zoneinfo import ZoneInfo
+
+
+def parse_time(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def read_text(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
+def read_json(path: Path) -> dict:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def read_json_lines(path: Path) -> list[dict]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    return [value for line in lines if (value := safe_json_line(line)) is not None]
+
+
+def file_size(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
+def read_tail(path: Path, size: int = 16384) -> str:
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            length = handle.tell()
+            handle.seek(max(0, length - size))
+            return handle.read().decode("utf-8", errors="replace").lower()
+    except OSError:
+        return ""
+
+
+def integer_value(value: object, default: int | None = None) -> int | None:
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def number_value(value: object, default: float | None = None) -> float | None:
+    try:
+        return float(str(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def classify_failure(job: Path, outcome: str, exit_code: int | None, cancel_reason: str | None) -> str | None:
+    if outcome == "cancelled":
+        return f"cancelled:{cancel_reason or 'unspecified'}"
+    if outcome != "failed":
+        return None
+    reason = read_text(job / "last_failure_reason") or read_text(job / "idle_timed_out")
+    if reason in {"hard_timeout", "idle_timeout", "startup_timeout", "empty_output"}:
+        return reason
+    if (job / "timed_out").exists() or exit_code == 124:
+        return "hard_timeout"
+
+    transcript = read_tail(job / "transcript.log")
+    patterns = (
+        ("not inside a trusted directory", "workspace_not_trusted"),
+        ("cannot be used with '--approve-for-me'", "incompatible_cli_flags"),
+        ("rate limit", "rate_limit"),
+        ("too many requests", "rate_limit"),
+        ("unauthorized", "authentication"),
+        ("authentication", "authentication"),
+        ("connection refused", "network"),
+        ("network error", "network"),
+        ("context length", "context_limit"),
+        ("no such file or directory", "missing_dependency"),
+        ("command not found", "missing_dependency"),
+    )
+    for pattern, failure_class in patterns:
+        if pattern in transcript:
+            return failure_class
+    return f"process_exit_{exit_code}" if exit_code is not None else "runner_lost"
+
+
+def active_sessions() -> tuple[set[str], bool]:
+    try:
+        result = subprocess.run(
+            ["tmux", "list-sessions", "-F", "#S"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return set(), False
+    sessions = {line.strip() for line in result.stdout.splitlines() if line.strip()}
+    if result.returncode == 0:
+        return sessions, True
+    stderr = result.stderr.lower()
+    if "no server running" in stderr or "no sessions" in stderr:
+        return set(), True
+    return sessions, False
+
+
+def fallback_created_at(job_id: str) -> str | None:
+    try:
+        parsed = datetime.strptime(job_id[:14], "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+        return parsed.isoformat().replace("+00:00", "Z")
+    except ValueError:
+        return None
+
+
+def duration_seconds(start: str | None, end: str | None) -> float | None:
+    start_dt = parse_time(start)
+    end_dt = parse_time(end)
+    if not start_dt or not end_dt:
+        return None
+    return max(0.0, (end_dt - start_dt).total_seconds())
+
+
+def infer_state(
+    job_id: str, job: Path, session_snapshot: tuple[set[str], bool]
+) -> tuple[str, str]:
+    cancelled_at = read_text(job / "cancelled_at")
+    finished_at = read_text(job / "finished_at")
+    started_at = read_text(job / "started_at")
+    queued_at = read_text(job / "queued_at")
+    exit_code_text = read_text(job / "exit_code")
+    exit_code = integer_value(exit_code_text)
+    sessions, sessions_reliable = session_snapshot
+
+    if cancelled_at:
+        return "cancelled", "cancelled"
+    if finished_at:
+        return "finished", "success" if exit_code == 0 else "failed"
+    if f"twin-{job_id}" in sessions:
+        return "running", "running"
+    if queued_at or f"twinq-{job_id}" in sessions:
+        return "queued", "queued"
+    if started_at:
+        if not sessions_reliable:
+            return "unknown", "unknown"
+        return "failed", "failed"
+    return "queued", "queued"
+
+
+def build_record(
+    job: Path, session_snapshot: tuple[set[str], bool] | None = None
+) -> dict:
+    session_snapshot = session_snapshot or active_sessions()
+    job_id = job.name
+    metadata = read_json(job / "metadata.json")
+    evaluation = read_json(job / "evaluation.json")
+    state, outcome = infer_state(job_id, job, session_snapshot)
+
+    created_at = metadata.get("created_at") or fallback_created_at(job_id)
+    enqueued_at = read_text(job / "enqueued_at")
+    queued_at = read_text(job / "queued_at")
+    dispatched_at = read_text(job / "dispatched_at")
+    started_at = read_text(job / "started_at")
+    finished_at = read_text(job / "finished_at")
+    cancelled_at = read_text(job / "cancelled_at")
+    terminal_at = cancelled_at or finished_at
+    exit_code = integer_value(read_text(job / "exit_code"))
+    remote_cwd = metadata.get("remote_cwd") or read_text(job / "run_cwd") or ""
+    source_cwd = metadata.get("local_cwd") or remote_cwd
+
+    task_title = metadata.get("task_title")
+    if not task_title:
+        task_title = Path(source_cwd).name if source_cwd else "历史任务"
+
+    attempts = read_json_lines(job / "attempts.jsonl")
+    provider_metrics = read_json(job / "provider-metrics.json")
+    effective_attempt = attempts[-1] if attempts else {}
+    if not provider_metrics and isinstance(effective_attempt.get("provider_metrics"), dict):
+        provider_metrics = effective_attempt["provider_metrics"]
+    attempt_metrics = [
+        attempt["provider_metrics"]
+        for attempt in attempts
+        if isinstance(attempt.get("provider_metrics"), dict)
+    ]
+    metric_sources = attempt_metrics or ([provider_metrics] if provider_metrics else [])
+
+    def metric_sum(key: str) -> float:
+        return sum(number_value(metrics.get(key), 0.0) or 0.0 for metrics in metric_sources)
+    result_collected_at = read_text(job / "result_collected_at")
+    effective_agent = (
+        read_text(job / "effective_agent")
+        or effective_attempt.get("agent")
+        or metadata.get("agent")
+        or read_text(job / "agent")
+        or "unknown"
+    )
+    effective_model = (
+        read_text(job / "effective_model")
+        or effective_attempt.get("model")
+        or metadata.get("model")
+        or read_text(job / "model")
+        or "legacy-unknown"
+    )
+    attempt_count = integer_value(read_text(job / "attempt_count"), len(attempts) or (1 if started_at else 0))
+    fallback_used = integer_value(read_text(job / "fallback_used"), 1 if attempt_count and attempt_count > 1 else 0) or 0
+
+    record = {
+        "schema_version": 3,
+        "job_id": job_id,
+        "state": state,
+        "outcome": outcome,
+        "exit_code": exit_code,
+        "requested_agent": metadata.get("requested_agent") or read_text(job / "requested_agent") or metadata.get("agent") or read_text(job / "agent") or "unknown",
+        "remote_agent": metadata.get("agent") or read_text(job / "agent") or "unknown",
+        "effective_agent": effective_agent,
+        "task_type": metadata.get("task_type") or read_text(job / "task_type") or "legacy-unknown",
+        "complexity": metadata.get("complexity") or read_text(job / "complexity") or "legacy-unknown",
+        "model": metadata.get("model") or read_text(job / "model") or "legacy-unknown",
+        "effective_model": effective_model,
+        "timeout_seconds": integer_value(metadata.get("timeout_seconds") or read_text(job / "timeout_seconds")),
+        "idle_timeout_seconds": integer_value(metadata.get("idle_timeout_seconds") or read_text(job / "idle_timeout_seconds")),
+        "primary_timeout_seconds": integer_value(metadata.get("primary_timeout_seconds") or read_text(job / "primary_timeout_seconds")),
+        "fallback_agent": metadata.get("fallback_agent") or read_text(job / "fallback_agent") or "none",
+        "attempt_count": attempt_count,
+        "fallback_used": bool(fallback_used),
+        "fallback_recovered": bool(fallback_used and outcome == "success"),
+        "recovered_from": read_text(job / "recovered_from"),
+        "last_failure_reason": read_text(job / "last_failure_reason"),
+        "caller": metadata.get("caller") or evaluation.get("caller") or "历史未记录",
+        "collaboration_id": metadata.get("collaboration_id")
+        or evaluation.get("collaboration_id")
+        or f"legacy-{job_id}",
+        "task_title": task_title,
+        "local_work": metadata.get("local_work") or "历史未记录",
+        "mode": metadata.get("mode") or read_text(job / "mode") or "unknown",
+        "workspace_mode": metadata.get("workspace_mode")
+        or read_text(job / "workspace_mode")
+        or "local_snapshot",
+        "remote_cwd": remote_cwd,
+        "control_host": metadata.get("control_host") or "历史未记录",
+        "created_at": created_at,
+        "enqueued_at": enqueued_at,
+        "queued_at": queued_at,
+        "dispatched_at": dispatched_at,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "cancelled_at": cancelled_at,
+        "terminal_at": terminal_at,
+        "result_collected_at": result_collected_at,
+        "quality_verdict": evaluation.get("verdict"),
+        "quality_summary": evaluation.get("summary"),
+        "evaluated_at": evaluation.get("evaluated_at"),
+        "evaluated_by": evaluation.get("caller"),
+        "cancel_reason": read_text(job / "cancel_reason"),
+        "prompt_bytes": file_size(job / "prompt.txt"),
+        "final_bytes": file_size(job / "final.txt"),
+        "transcript_bytes": file_size(job / "transcript.log"),
+        "patch_bytes": file_size(job / "changes.patch"),
+        "attempts": attempts,
+        "ttft_ms": number_value(provider_metrics.get("ttft_ms") or provider_metrics.get("ttft_stream_ms")),
+        "duration_api_ms": number_value(provider_metrics.get("duration_api_ms")),
+        "total_cost_usd": round(metric_sum("total_cost_usd"), 6),
+        "input_tokens": int(metric_sum("input_tokens")),
+        "cache_creation_input_tokens": int(metric_sum("cache_creation_input_tokens")),
+        "cache_read_input_tokens": int(metric_sum("cache_read_input_tokens")),
+        "output_tokens": int(metric_sum("output_tokens")),
+        "api_retries": int(metric_sum("api_retries")),
+        "rate_limit_retries": int(metric_sum("rate_limit_retries")),
+        "permission_denials": int(metric_sum("permission_denials")),
+    }
+    record["failure_class"] = classify_failure(job, outcome, exit_code, record["cancel_reason"])
+    record["queue_wait_seconds"] = duration_seconds(enqueued_at, started_at)
+    record["prestart_seconds"] = duration_seconds(created_at, started_at)
+    record["run_seconds"] = duration_seconds(started_at, terminal_at)
+    record["total_seconds"] = duration_seconds(created_at, terminal_at)
+    record["result_collection_delay_seconds"] = duration_seconds(terminal_at, result_collected_at)
+    return record
+
+
+def load_ledger(path: Path) -> dict[str, dict]:
+    records: dict[str, dict] = {}
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return records
+    for line in lines:
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(record, dict) and record.get("job_id"):
+            records[str(record["job_id"])] = record
+    return records
+
+
+def load_evaluations(path: Path) -> dict[str, dict]:
+    evaluations: dict[str, dict] = {}
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return evaluations
+    for line in lines:
+        value = safe_json_line(line)
+        if isinstance(value, dict) and value.get("job_id"):
+            evaluations[str(value["job_id"])] = value
+    return evaluations
+
+
+def archive_record(record: dict, history: Path) -> bool:
+    if record.get("outcome") not in {"success", "failed", "cancelled"}:
+        return False
+    history.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with history.open("a+", encoding="utf-8") as handle:
+        os.chmod(history, 0o600)
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        handle.seek(0)
+        existing = {
+            item.get("job_id"): item
+            for line in handle
+            if line.strip()
+            for item in [safe_json_line(line)]
+            if isinstance(item, dict)
+        }
+        if existing.get(record["job_id"]) == record:
+            return False
+        handle.seek(0, os.SEEK_END)
+        handle.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    return True
+
+
+def archive_evaluation(evaluation: dict, history: Path) -> None:
+    if evaluation.get("verdict") not in {"accepted", "partial", "rejected"}:
+        raise ValueError("invalid evaluation verdict")
+    if not evaluation.get("job_id") or not evaluation.get("evaluated_at"):
+        raise ValueError("evaluation requires job_id and evaluated_at")
+    history.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with history.open("a", encoding="utf-8") as handle:
+        os.chmod(history, 0o600)
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        handle.write(json.dumps(evaluation, ensure_ascii=False, separators=(",", ":")) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def safe_json_line(line: str) -> dict | None:
+    try:
+        value = json.loads(line)
+        return value if isinstance(value, dict) else None
+    except json.JSONDecodeError:
+        return None
+
+
+def percentile(values: list[float], fraction: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = max(0, math.ceil(fraction * len(ordered)) - 1)
+    return ordered[index]
+
+
+def timing_summary(values: list[float]) -> dict:
+    return {
+        "count": len(values),
+        "total_seconds": round(sum(values), 3) if values else 0,
+        "average_seconds": round(mean(values), 3) if values else None,
+        "p50_seconds": round(percentile(values, 0.50), 3) if values else None,
+        "p95_seconds": round(percentile(values, 0.95), 3) if values else None,
+        "max_seconds": round(max(values), 3) if values else None,
+    }
+
+
+def size_summary(values: list[int]) -> dict:
+    return {
+        "count": len(values),
+        "total_bytes": sum(values),
+        "average_bytes": round(mean(values), 3) if values else None,
+        "p50_bytes": percentile(values, 0.50) if values else None,
+        "p95_bytes": percentile(values, 0.95) if values else None,
+        "max_bytes": max(values) if values else None,
+    }
+
+
+def group_outcomes(records: list[dict], key: str) -> dict:
+    grouped: dict[str, list[dict]] = defaultdict(list)
+    for record in records:
+        grouped[str(record.get(key) or "unknown")].append(record)
+    result = {}
+    for name, items in sorted(grouped.items()):
+        counts = Counter(item["outcome"] for item in items)
+        run_values = [item["run_seconds"] for item in items if item.get("run_seconds") is not None]
+        result[name] = {
+            "jobs": len(items),
+            **dict(sorted(counts.items())),
+            "run": timing_summary(run_values),
+        }
+    return result
+
+
+def concurrency_summary(records: list[dict]) -> dict:
+    intervals = []
+    events = []
+    for record in records:
+        start = parse_time(record.get("started_at"))
+        end = parse_time(record.get("terminal_at"))
+        if not start or not end or end < start:
+            continue
+        intervals.append((start, end))
+        events.append((start, 1))
+        events.append((end, -1))
+    if not intervals:
+        return {
+            "busy_wall_seconds": 0,
+            "parallel_time_saved_seconds": 0,
+            "parallelism_factor": None,
+            "peak_concurrency": 0,
+            "jobs_per_busy_hour": None,
+        }
+
+    intervals.sort(key=lambda item: item[0])
+    merged = []
+    for start, end in intervals:
+        if not merged or start > merged[-1][1]:
+            merged.append([start, end])
+        else:
+            merged[-1][1] = max(merged[-1][1], end)
+    busy_wall = sum((end - start).total_seconds() for start, end in merged)
+    total_run = sum((end - start).total_seconds() for start, end in intervals)
+
+    active = 0
+    peak = 0
+    for _, delta in sorted(events, key=lambda item: (item[0], item[1])):
+        active += delta
+        peak = max(peak, active)
+    return {
+        "busy_wall_seconds": round(busy_wall, 3),
+        "parallel_time_saved_seconds": round(max(0.0, total_run - busy_wall), 3),
+        "parallelism_factor": round(total_run / busy_wall, 3) if busy_wall else None,
+        "peak_concurrency": peak,
+        "jobs_per_busy_hour": round(len(intervals) * 3600 / busy_wall, 3) if busy_wall else None,
+    }
+
+
+def collaboration_rows(records: list[dict]) -> list[dict]:
+    grouped: dict[str, list[dict]] = defaultdict(list)
+    for record in records:
+        grouped[record["collaboration_id"]].append(record)
+    rows = []
+    for collaboration_id, jobs in grouped.items():
+        outcomes = Counter(job["outcome"] for job in jobs)
+        rows.append(
+            {
+                "collaboration_id": collaboration_id,
+                "caller": jobs[0]["caller"],
+                "task_title": jobs[0]["task_title"],
+                "local_work": jobs[0]["local_work"],
+                "jobs": len(jobs),
+                "success": outcomes["success"],
+                "failed": outcomes["failed"],
+                "cancelled": outcomes["cancelled"],
+                "running": outcomes["running"],
+                "queued": outcomes["queued"],
+                "run_seconds": round(
+                    sum(job["run_seconds"] or 0 for job in jobs), 3
+                ),
+            }
+        )
+    return sorted(rows, key=lambda row: row["collaboration_id"])
+
+
+def collect_records(base: Path, history: Path, evaluation_history: Path) -> list[dict]:
+    records = load_ledger(history)
+    evaluations = load_evaluations(evaluation_history)
+    session_snapshot = active_sessions()
+    jobs_dir = base / "jobs"
+    if jobs_dir.is_dir():
+        for job in jobs_dir.iterdir():
+            if job.is_dir():
+                record = build_record(job, session_snapshot)
+                records[record["job_id"]] = record
+                if record.get("quality_verdict"):
+                    evaluations[record["job_id"]] = {
+                        "job_id": record["job_id"],
+                        "verdict": record["quality_verdict"],
+                        "summary": record.get("quality_summary"),
+                        "evaluated_at": record.get("evaluated_at"),
+                        "caller": record.get("evaluated_by"),
+                        "collaboration_id": record.get("collaboration_id"),
+                    }
+    for job_id, evaluation in evaluations.items():
+        if job_id not in records:
+            continue
+        records[job_id]["quality_verdict"] = evaluation.get("verdict")
+        records[job_id]["quality_summary"] = evaluation.get("summary")
+        records[job_id]["evaluated_at"] = evaluation.get("evaluated_at")
+        records[job_id]["evaluated_by"] = evaluation.get("caller")
+        if records[job_id].get("caller") in {None, "", "历史未记录"}:
+            records[job_id]["caller"] = evaluation.get("caller") or records[job_id].get("caller")
+        if str(records[job_id].get("collaboration_id", "")).startswith("legacy-"):
+            records[job_id]["collaboration_id"] = (
+                evaluation.get("collaboration_id") or records[job_id]["collaboration_id"]
+            )
+    return list(records.values())
+
+
+def filter_records(records: list[dict], args: argparse.Namespace) -> list[dict]:
+    zone = ZoneInfo(args.timezone)
+    filtered = []
+    for record in records:
+        created = parse_time(record.get("created_at"))
+        if args.date != "all":
+            if not created or created.astimezone(zone).date().isoformat() != args.date:
+                continue
+        if args.collaboration_id and record.get("collaboration_id") != args.collaboration_id:
+            continue
+        if args.caller and record.get("caller") != args.caller:
+            continue
+        item = dict(record)
+        item["created_local"] = created.astimezone(zone).isoformat() if created else None
+        filtered.append(item)
+    return sorted(filtered, key=lambda item: (item.get("created_at") or "", item["job_id"]))
+
+
+def build_report(records: list[dict], args: argparse.Namespace) -> dict:
+    outcomes = Counter(record["outcome"] for record in records)
+    completed = outcomes["success"] + outcomes["failed"]
+    terminal = completed + outcomes["cancelled"]
+    success_rate = 100 * outcomes["success"] / completed if completed else None
+    delivery_rate = 100 * outcomes["success"] / terminal if terminal else None
+    successful_records = [record for record in records if record["outcome"] == "success"]
+    verdicts = Counter(
+        record.get("quality_verdict")
+        for record in successful_records
+        if record.get("quality_verdict") in {"accepted", "partial", "rejected"}
+    )
+    process_success = outcomes["success"]
+    evaluated = verdicts["accepted"] + verdicts["partial"] + verdicts["rejected"]
+    coverage = 100 * evaluated / process_success if process_success else None
+    fallback_attempted = sum(1 for record in records if record.get("fallback_used"))
+    fallback_recovered = sum(1 for record in records if record.get("fallback_recovered"))
+    terminal_records = [record for record in records if record["outcome"] in {"success", "failed", "cancelled"}]
+    terminal_verdicts = Counter()
+    for record in terminal_records:
+        verdict = record.get("quality_verdict")
+        if verdict not in {"accepted", "partial", "rejected"}:
+            continue
+        if verdict == "accepted" and record["outcome"] != "success":
+            continue
+        terminal_verdicts[verdict] += 1
+    terminal_evaluated = sum(terminal_verdicts.values())
+    terminal_evaluation_coverage = (
+        100 * terminal_evaluated / len(terminal_records) if terminal_records else None
+    )
+    collected_results = sum(1 for record in terminal_records if record.get("result_collected_at"))
+    effective_success_rate = None
+    effective_delivery_rate = None
+    if process_success and evaluated == process_success:
+        effective_denominator = evaluated + outcomes["failed"]
+        effective_delivery_denominator = effective_denominator + outcomes["cancelled"]
+        effective_success_rate = (
+            100 * verdicts["accepted"] / effective_denominator if effective_denominator else None
+        )
+        effective_delivery_rate = (
+            100 * verdicts["accepted"] / effective_delivery_denominator
+            if effective_delivery_denominator
+            else None
+        )
+    report = {
+        "schema_version": 3,
+        "date": args.date,
+        "timezone": args.timezone,
+        "filters": {
+            "collaboration_id": args.collaboration_id,
+            "caller": args.caller,
+        },
+        "totals": {
+            "submitted": len(records),
+            "success": outcomes["success"],
+            "failed": outcomes["failed"],
+            "cancelled": outcomes["cancelled"],
+            "running": outcomes["running"],
+            "queued": outcomes["queued"],
+            "unknown": outcomes["unknown"],
+            "execution_success_rate_pct": round(success_rate, 2) if success_rate is not None else None,
+            "delivery_rate_pct": round(delivery_rate, 2) if delivery_rate is not None else None,
+            "evaluated": evaluated,
+            "accepted": verdicts["accepted"],
+            "partial": verdicts["partial"],
+            "rejected": verdicts["rejected"],
+            "unevaluated_process_success": max(0, process_success - evaluated),
+            "quality_coverage_pct": round(coverage, 2) if coverage is not None else None,
+            "terminal_evaluated": terminal_evaluated,
+            "terminal_accepted": terminal_verdicts["accepted"],
+            "terminal_partial": terminal_verdicts["partial"],
+            "terminal_rejected": terminal_verdicts["rejected"],
+            "terminal_unevaluated": max(0, len(terminal_records) - terminal_evaluated),
+            "terminal_quality_coverage_pct": (
+                round(terminal_evaluation_coverage, 2)
+                if terminal_evaluation_coverage is not None
+                else None
+            ),
+            "attempts": sum(record.get("attempt_count") or 0 for record in records),
+            "fallback_attempted": fallback_attempted,
+            "fallback_recovered": fallback_recovered,
+            "fallback_recovery_rate_pct": (
+                round(100 * fallback_recovered / fallback_attempted, 2) if fallback_attempted else None
+            ),
+            "results_collected": collected_results,
+            "results_uncollected": max(0, len(terminal_records) - collected_results),
+            "result_collection_coverage_pct": (
+                round(100 * collected_results / len(terminal_records), 2) if terminal_records else None
+            ),
+            "effective_success_rate_pct": (
+                round(effective_success_rate, 2) if effective_success_rate is not None else None
+            ),
+            "effective_delivery_rate_pct": (
+                round(effective_delivery_rate, 2) if effective_delivery_rate is not None else None
+            ),
+        },
+        "timing": {
+            "queue_wait": timing_summary(
+                [record["queue_wait_seconds"] for record in records if record.get("queue_wait_seconds") is not None]
+            ),
+            "prestart": timing_summary(
+                [record["prestart_seconds"] for record in records if record.get("prestart_seconds") is not None]
+            ),
+            "run": timing_summary(
+                [record["run_seconds"] for record in records if record.get("run_seconds") is not None]
+            ),
+            "total": timing_summary(
+                [record["total_seconds"] for record in records if record.get("total_seconds") is not None]
+            ),
+            "ttft_ms": timing_summary(
+                [record["ttft_ms"] / 1000 for record in records if record.get("ttft_ms") is not None]
+            ),
+            "result_collection": timing_summary(
+                [
+                    record["result_collection_delay_seconds"]
+                    for record in records
+                    if record.get("result_collection_delay_seconds") is not None
+                ]
+            ),
+        },
+        "payload": {
+            "prompt": size_summary([record.get("prompt_bytes", 0) for record in records]),
+            "final": size_summary([record.get("final_bytes", 0) for record in records]),
+            "transcript": size_summary([record.get("transcript_bytes", 0) for record in records]),
+        },
+        "concurrency": concurrency_summary(records),
+        "by_requested_agent": group_outcomes(records, "requested_agent"),
+        "by_remote_agent": group_outcomes(records, "remote_agent"),
+        "by_effective_agent": group_outcomes(records, "effective_agent"),
+        "by_model": group_outcomes(records, "model"),
+        "by_effective_model": group_outcomes(records, "effective_model"),
+        "by_task_type": group_outcomes(records, "task_type"),
+        "by_complexity": group_outcomes(records, "complexity"),
+        "by_failure_class": dict(
+            sorted(Counter(record.get("failure_class") for record in records if record.get("failure_class")).items())
+        ),
+        "by_cancel_reason": dict(
+            sorted(Counter(record.get("cancel_reason") or "unspecified" for record in records if record["outcome"] == "cancelled").items())
+        ),
+        "by_caller": group_outcomes(records, "caller"),
+        "by_mode": group_outcomes(records, "mode"),
+        "provider_usage": {
+            "total_cost_usd": round(sum(record.get("total_cost_usd") or 0 for record in records), 6),
+            "input_tokens": sum(record.get("input_tokens") or 0 for record in records),
+            "cache_creation_input_tokens": sum(
+                record.get("cache_creation_input_tokens") or 0 for record in records
+            ),
+            "cache_read_input_tokens": sum(record.get("cache_read_input_tokens") or 0 for record in records),
+            "output_tokens": sum(record.get("output_tokens") or 0 for record in records),
+            "api_retries": sum(record.get("api_retries") or 0 for record in records),
+            "rate_limit_retries": sum(record.get("rate_limit_retries") or 0 for record in records),
+            "permission_denials": sum(record.get("permission_denials") or 0 for record in records),
+        },
+        "collaborations": collaboration_rows(records),
+    }
+    if args.include_jobs:
+        report["jobs"] = records
+    return report
+
+
+def format_seconds(value: float | None) -> str:
+    if value is None:
+        return "-"
+    seconds = int(round(value))
+    hours, seconds = divmod(seconds, 3600)
+    minutes, seconds = divmod(seconds, 60)
+    if hours:
+        return f"{hours}h{minutes:02d}m{seconds:02d}s"
+    if minutes:
+        return f"{minutes}m{seconds:02d}s"
+    return f"{seconds}s"
+
+
+def render_text(report: dict) -> str:
+    totals = report["totals"]
+    run = report["timing"]["run"]
+    concurrency = report["concurrency"]
+    lines = [
+        f"协同统计 date={report['date']} timezone={report['timezone']}",
+        (
+            f"submitted={totals['submitted']} success={totals['success']} failed={totals['failed']} "
+            f"cancelled={totals['cancelled']} running={totals['running']} queued={totals['queued']}"
+            f" unknown={totals['unknown']}"
+        ),
+        (
+            f"process_success_rate={totals['execution_success_rate_pct']}% "
+            f"process_delivery_rate={totals['delivery_rate_pct']}% "
+            f"quality_coverage={totals['quality_coverage_pct']}% "
+            f"effective_success_rate={totals['effective_success_rate_pct']}%"
+        ),
+        (
+            f"attempts={totals['attempts']} fallback_attempted={totals['fallback_attempted']} "
+            f"fallback_recovered={totals['fallback_recovered']} "
+            f"fallback_recovery_rate={totals['fallback_recovery_rate_pct']}% "
+            f"results_uncollected={totals['results_uncollected']}"
+        ),
+        (
+            f"run_total={format_seconds(run['total_seconds'])} run_avg={format_seconds(run['average_seconds'])} "
+            f"run_p50={format_seconds(run['p50_seconds'])} run_p95={format_seconds(run['p95_seconds'])} "
+            f"run_max={format_seconds(run['max_seconds'])}"
+        ),
+        (
+            f"busy_wall={format_seconds(concurrency['busy_wall_seconds'])} "
+            f"parallelism_factor={concurrency['parallelism_factor']} "
+            f"parallel_time_saved={format_seconds(concurrency['parallel_time_saved_seconds'])} "
+            f"peak_concurrency={concurrency['peak_concurrency']}"
+        ),
+        "--- by_remote_agent ---",
+    ]
+    for name, counts in report["by_remote_agent"].items():
+        lines.append(f"{name}\t{json.dumps(counts, ensure_ascii=False, sort_keys=True)}")
+    lines.append(f"--- by_effective_agent ---\n{json.dumps(report['by_effective_agent'], ensure_ascii=False, sort_keys=True)}")
+    lines.append(f"--- by_model ---\n{json.dumps(report['by_model'], ensure_ascii=False, sort_keys=True)}")
+    lines.append(f"--- provider_usage ---\n{json.dumps(report['provider_usage'], ensure_ascii=False, sort_keys=True)}")
+    lines.append(f"--- failures ---\n{json.dumps(report['by_failure_class'], ensure_ascii=False, sort_keys=True)}")
+    lines.append(f"--- cancellations ---\n{json.dumps(report['by_cancel_reason'], ensure_ascii=False, sort_keys=True)}")
+    lines.append("--- collaborations ---")
+    for row in report["collaborations"]:
+        lines.append(
+            f"{row['collaboration_id']}\tcaller={row['caller']}\tjobs={row['jobs']}\t"
+            f"success={row['success']}\tfailed={row['failed']}\tcancelled={row['cancelled']}\t"
+            f"run={format_seconds(row['run_seconds'])}\ttask={row['task_title']}\tlocal={row['local_work']}"
+        )
+    if "jobs" in report:
+        lines.append("--- jobs ---")
+        for job in report["jobs"]:
+            lines.append(
+                f"{job['job_id']}\t{job['outcome']}\tremote={job['remote_agent']}\teffective={job['effective_agent']}\tcaller={job['caller']}\t"
+                f"queue={format_seconds(job.get('queue_wait_seconds'))}\trun={format_seconds(job.get('run_seconds'))}\t"
+                f"total={format_seconds(job.get('total_seconds'))}\tmodel={job.get('model') or '-'}\t"
+                f"attempts={job.get('attempt_count') or 0}\tfallback={job.get('fallback_used', False)}\t"
+                f"collection={format_seconds(job.get('result_collection_delay_seconds'))}\t"
+                f"failure={job.get('failure_class') or '-'}\tquality={job.get('quality_verdict') or '-'}\t"
+                f"task={job['task_title']}"
+            )
+    return "\n".join(lines)
+
+
+def add_common_report_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--base", default=os.path.expanduser("~/.twin-agent"))
+    parser.add_argument("--history", default=None)
+    parser.add_argument("--evaluations", default=None)
+    parser.add_argument("--date", default="all")
+    parser.add_argument("--timezone", default="Asia/Taipei")
+    parser.add_argument("--collaboration-id")
+    parser.add_argument("--caller", choices=["codex", "claude", "opencode"])
+    parser.add_argument("--include-jobs", action="store_true")
+    parser.add_argument("--format", choices=["text", "json"], default="text")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    job_parser = subparsers.add_parser("job")
+    job_parser.add_argument("job_dir")
+
+    report_parser = subparsers.add_parser("report")
+    add_common_report_args(report_parser)
+
+    archive_parser = subparsers.add_parser("archive")
+    archive_parser.add_argument("job_dir")
+    archive_parser.add_argument("--history", required=True)
+
+    evaluation_parser = subparsers.add_parser("archive-evaluation")
+    evaluation_parser.add_argument("evaluation_file")
+    evaluation_parser.add_argument("--history", required=True)
+
+    archive_all_parser = subparsers.add_parser("archive-all")
+    archive_all_parser.add_argument("--base", default=os.path.expanduser("~/.twin-agent"))
+    archive_all_parser.add_argument("--history", default=None)
+
+    args = parser.parse_args()
+
+    if args.command == "job":
+        print(json.dumps(build_record(Path(args.job_dir), active_sessions()), ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "archive":
+        archived = archive_record(build_record(Path(args.job_dir), active_sessions()), Path(args.history))
+        print("archived=1" if archived else "archived=0")
+        return 0
+
+    if args.command == "archive-evaluation":
+        evaluation = read_json(Path(args.evaluation_file))
+        archive_evaluation(evaluation, Path(args.history))
+        print("archived=1")
+        return 0
+
+    if args.command == "archive-all":
+        base = Path(args.base).expanduser()
+        history = Path(args.history).expanduser() if args.history else base / "history" / "jobs.jsonl"
+        session_snapshot = active_sessions()
+        count = 0
+        jobs_dir = base / "jobs"
+        if jobs_dir.is_dir():
+            for job in sorted(jobs_dir.iterdir()):
+                if job.is_dir() and archive_record(build_record(job, session_snapshot), history):
+                    count += 1
+        print(f"archived={count}")
+        return 0
+
+    base = Path(args.base).expanduser()
+    history = Path(args.history).expanduser() if args.history else base / "history" / "jobs.jsonl"
+    evaluation_history = (
+        Path(args.evaluations).expanduser()
+        if args.evaluations
+        else base / "history" / "evaluations.jsonl"
+    )
+    try:
+        ZoneInfo(args.timezone)
+    except Exception as error:
+        print(f"invalid timezone: {error}", file=sys.stderr)
+        return 2
+    records = filter_records(collect_records(base, history, evaluation_history), args)
+    report = build_report(records, args)
+    if args.format == "json":
+        print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        print(render_text(report))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

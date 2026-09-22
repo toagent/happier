@@ -1,0 +1,276 @@
+#!/bin/bash
+set +e
+
+job="$1"
+primary_agent="$2"
+mode="$3"
+workspace_mode="$4"
+run_cwd="$5"
+work="$6"
+
+runtime_env="$HOME/.config/ai-runtime/env.zsh"
+runner_bin="${TWIN_AGENT_RUNNER_BIN:-$HOME/.lan-dev-machine/bin/twin-agent-runner}"
+output_bin="${TWIN_AGENT_OUTPUT_BIN:-$HOME/.lan-dev-machine/bin/twin-agent-output}"
+remote_helper="${TWIN_AGENT_REMOTE_HELPER:-$HOME/.lan-dev-machine/bin/twin-agent-remote}"
+stats_bin="${TWIN_AGENT_STATS_BIN:-$HOME/.lan-dev-machine/bin/twin-agent-stats}"
+
+read_value() {
+  local path="$1" default_value="$2"
+  if [[ -s "$path" ]]; then
+    cat "$path"
+  else
+    printf '%s\n' "$default_value"
+  fi
+}
+
+write_progress_phase() {
+  local phase="$1" attempt="$2" agent="$3" model="$4" detail="${5:-}"
+  python3 - "$job/progress.json" "$phase" "$attempt" "$agent" "$model" "$detail" <<'PY'
+import json, os, sys
+from datetime import datetime, timezone
+path, phase, attempt, agent, model, detail = sys.argv[1:]
+try:
+    value=json.load(open(path, encoding="utf-8"))
+except Exception:
+    value={}
+value.update({
+    "state": "finished" if phase in {"completed", "failed"} else "running",
+    "phase": phase,
+    "attempt": int(attempt),
+    "agent": agent,
+    "model": model,
+    "detail": detail,
+    "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+})
+tmp=f"{path}.{os.getpid()}.tmp"
+with open(tmp, "w", encoding="utf-8") as handle:
+    json.dump(value, handle, ensure_ascii=False, separators=(",", ":"))
+    handle.write("\n")
+os.replace(tmp, path)
+PY
+}
+
+record_attempt() {
+  local attempt="$1" agent="$2" model="$3" started_at="$4" finished_at="$5" rc="$6" reason="$7" final_file="$8" transcript_file="$9" metrics_file="${10}"
+  python3 - "$job/attempts.jsonl" "$attempt" "$agent" "$model" "$started_at" "$finished_at" "$rc" "$reason" "$final_file" "$transcript_file" "$metrics_file" <<'PY'
+import json, os, sys
+path, attempt, agent, model, started, finished, rc, reason, final_path, transcript_path, metrics_path = sys.argv[1:]
+try:
+    metrics=json.load(open(metrics_path, encoding="utf-8"))
+except Exception:
+    metrics={}
+def size(value):
+    try: return os.path.getsize(value)
+    except OSError: return 0
+row={
+    "attempt": int(attempt), "agent": agent, "model": model,
+    "started_at": started, "finished_at": finished, "exit_code": int(rc),
+    "reason": reason or None, "final_bytes": size(final_path),
+    "transcript_bytes": size(transcript_path), "provider_metrics": metrics,
+}
+with open(path, "a", encoding="utf-8") as handle:
+    handle.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n")
+PY
+}
+
+append_transcript() {
+  local attempt="$1" agent="$2" compact_file="$3" stderr_file="$4"
+  {
+    printf '\n=== attempt %s agent=%s ===\n' "$attempt" "$agent"
+    [[ -s "$compact_file" ]] && cat "$compact_file"
+    if [[ -s "$stderr_file" && "$stderr_file" != "$compact_file" ]]; then
+      printf '%s\n' '--- stderr ---'
+      cat "$stderr_file"
+    fi
+  } >> "$job/transcript.log"
+}
+
+finish_workspace() {
+  if [[ "$workspace_mode" == "local_snapshot" ]]; then
+    git -C "$work" status --short > "$job/git-status.txt" 2>&1
+    git -C "$work" add -A
+    git -C "$work" diff --cached --binary "$(cat "$job/baseline_commit")" > "$job/changes.patch" 2>&1
+  elif git -C "$work" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C "$work" status --short > "$job/git-status.txt" 2>&1
+    : > "$job/changes.patch"
+  else
+    find "$work" -mindepth 1 -maxdepth 3 -not -path '*/.git/*' -print | sort > "$job/workspace-files.txt"
+    : > "$job/git-status.txt"
+    : > "$job/changes.patch"
+  fi
+}
+
+date -u +%FT%TZ > "$job/started_at"
+: > "$job/transcript.log"
+: > "$job/attempts.jsonl"
+printf '0\n' > "$job/attempt_count"
+printf '0\n' > "$job/fallback_used"
+rm -f "$job/timed_out" "$job/idle_timed_out" "$job/result_collected_at" "$job/final.txt"
+
+model=$(read_value "$job/model" default)
+timeout_seconds=$(read_value "$job/timeout_seconds" 1200)
+primary_timeout_seconds=$(read_value "$job/primary_timeout_seconds" "$timeout_seconds")
+idle_timeout_seconds=$(read_value "$job/idle_timeout_seconds" 300)
+fallback_agent=$(read_value "$job/fallback_agent" none)
+max_attempts=$(read_value "$job/max_attempts" 1)
+
+[[ "$max_attempts" =~ ^[12]$ ]] || max_attempts=1
+[[ "$mode" == "read_only" ]] || { fallback_agent=none; max_attempts=1; }
+case "$fallback_agent" in none|codex|claude|opencode) ;; *) fallback_agent=none; max_attempts=1 ;; esac
+[[ "$fallback_agent" != "$primary_agent" ]] || { fallback_agent=none; max_attempts=1; }
+
+if [[ -r "$runtime_env" ]]; then
+  source "$runtime_env"
+fi
+AI_NODE_BIN="${AI_NODE_BIN:-/usr/local/bin}"
+export PATH="${AI_NODE_BIN:-/usr/local/bin}:$HOME/.opencode/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+final_rc=78
+effective_agent="$primary_agent"
+effective_model="$model"
+job_started_epoch=$(date +%s)
+
+for ((attempt=1; attempt<=max_attempts; attempt++)); do
+  attempt_agent="$primary_agent"
+  attempt_model="$model"
+  elapsed_budget=$(( $(date +%s) - job_started_epoch ))
+  remaining_timeout=$(( timeout_seconds - elapsed_budget ))
+  if (( remaining_timeout <= 0 )); then
+    final_rc=124
+    printf 'hard_timeout\n' > "$job/last_failure_reason"
+    printf 'hard_timeout\n' > "$job/timed_out"
+    break
+  fi
+  attempt_timeout="$remaining_timeout"
+  if (( attempt > 1 )); then
+    attempt_agent="$fallback_agent"
+    attempt_model=default
+    [[ "$attempt_agent" == "claude" ]] && attempt_model=sonnet
+    printf '1\n' > "$job/fallback_used"
+  elif (( max_attempts > 1 )); then
+    (( primary_timeout_seconds < attempt_timeout )) && attempt_timeout="$primary_timeout_seconds"
+  fi
+
+  effective_agent="$attempt_agent"
+  effective_model="$attempt_model"
+  printf '%s\n' "$attempt" > "$job/attempt_count"
+  printf '%s\n' "$attempt_agent" > "$job/current_agent"
+  printf '%s\n' "$attempt_model" > "$job/current_model"
+  attempt_prefix="$job/attempt-$attempt"
+  stdout_file="$attempt_prefix.stdout.log"
+  stderr_file="$attempt_prefix.stderr.log"
+  final_file="$attempt_prefix.final.txt"
+  compact_file="$attempt_prefix.compact.log"
+  metrics_file="$attempt_prefix.metrics.json"
+  timeout_marker="$attempt_prefix.timed_out"
+  timeout_reason="$attempt_prefix.timeout_reason"
+  attempt_started=$(date -u +%FT%TZ)
+  write_progress_phase starting "$attempt" "$attempt_agent" "$attempt_model" "timeout=${attempt_timeout}s idle=${idle_timeout_seconds}s"
+
+  rc=78
+  parser_rc=0
+  case "$attempt_agent" in
+    codex)
+      codex_model_args=()
+      codex_workspace_args=()
+      codex_permission_args=()
+      [[ "$attempt_model" != "default" ]] && codex_model_args+=(--model "$attempt_model")
+      [[ "$workspace_mode" == "remote_workspace" ]] && codex_workspace_args+=(--skip-git-repo-check)
+      if [[ "$mode" == "read_only" ]]; then
+        codex_permission_args+=(--sandbox read-only)
+      else
+        codex_permission_args+=(--approve-for-me)
+      fi
+      "$runner_bin" --timeout "$attempt_timeout" --idle-timeout "$idle_timeout_seconds" --startup-grace 120 \
+        --cwd "$run_cwd" --stdin "$job/prompt.txt" --stdout "$stdout_file" --stderr "$stdout_file" \
+        --timeout-marker "$timeout_marker" --timeout-reason "$timeout_reason" \
+        --progress "$job/progress.json" --pid-file "$job/runner.pid" -- \
+        "$AI_NODE_BIN/codex" exec "${codex_workspace_args[@]}" "${codex_model_args[@]}" -C "$run_cwd" \
+        "${codex_permission_args[@]}" --ephemeral --color never \
+        --output-last-message "$final_file" -
+      rc=$?
+      compact_file="$stdout_file"
+      : > "$metrics_file"
+      ;;
+    claude)
+      permission_mode=plan
+      [[ "$mode" == "write" ]] && permission_mode=acceptEdits
+      "$runner_bin" --timeout "$attempt_timeout" --idle-timeout "$idle_timeout_seconds" --startup-grace 120 \
+        --cwd "$run_cwd" --stdin "$job/prompt.txt" --stdout "$stdout_file" --stderr "$stderr_file" \
+        --timeout-marker "$timeout_marker" --timeout-reason "$timeout_reason" \
+        --progress "$job/progress.json" --pid-file "$job/runner.pid" -- \
+        "$AI_NODE_BIN/claude" -p --bare --no-session-persistence --disable-slash-commands \
+        --model "$attempt_model" --output-format stream-json --verbose --include-partial-messages \
+        --permission-mode "$permission_mode" --permission-prompts none
+      rc=$?
+      "$output_bin" claude "$stdout_file" "$final_file" "$metrics_file" "$compact_file"
+      parser_rc=$?
+      (( rc == 0 && parser_rc != 0 )) && rc=70
+      gzip -f "$stdout_file" >/dev/null 2>&1 || true
+      ;;
+    opencode)
+      opencode_model_args=()
+      [[ "$attempt_model" != "default" ]] && opencode_model_args+=(--model "$attempt_model")
+      opencode_write_args=()
+      [[ "$mode" == "write" ]] && opencode_write_args+=(--auto)
+      "$runner_bin" --timeout "$attempt_timeout" --idle-timeout "$idle_timeout_seconds" --startup-grace 120 \
+        --cwd "$run_cwd" --stdin /dev/null --stdout "$final_file" --stderr "$stderr_file" \
+        --timeout-marker "$timeout_marker" --timeout-reason "$timeout_reason" \
+        --progress "$job/progress.json" --pid-file "$job/runner.pid" -- \
+        "$HOME/.opencode/bin/opencode" run --pure --dir "$run_cwd" "${opencode_model_args[@]}" \
+        "${opencode_write_args[@]}" --format default "$(cat "$job/prompt.txt")"
+      rc=$?
+      compact_file="$final_file"
+      : > "$metrics_file"
+      ;;
+    *)
+      printf 'unsupported agent: %s\n' "$attempt_agent" > "$stderr_file"
+      : > "$metrics_file"
+      rc=64
+      ;;
+  esac
+
+  [[ -s "$final_file" ]] || (( rc != 0 )) || rc=70
+  reason=$(read_value "$timeout_reason" "")
+  [[ -n "$reason" ]] || { (( rc == 70 )) && reason=empty_output || reason="process_exit_$rc"; }
+  (( rc == 0 )) && reason=success
+  attempt_finished=$(date -u +%FT%TZ)
+  append_transcript "$attempt" "$attempt_agent" "$compact_file" "$stderr_file"
+  record_attempt "$attempt" "$attempt_agent" "$attempt_model" "$attempt_started" "$attempt_finished" "$rc" "$reason" "$final_file" "$compact_file" "$metrics_file"
+
+  if (( rc == 0 )); then
+    cp "$final_file" "$job/final.txt"
+    [[ -s "$metrics_file" ]] && cp "$metrics_file" "$job/provider-metrics.json"
+    final_rc=0
+    write_progress_phase completed "$attempt" "$attempt_agent" "$attempt_model" success
+    break
+  fi
+
+  final_rc="$rc"
+  printf '%s\n' "$reason" > "$job/last_failure_reason"
+  [[ -f "$timeout_marker" ]] && cp "$timeout_marker" "$job/timed_out"
+  [[ "$reason" == "idle_timeout" || "$reason" == "startup_timeout" ]] && printf '%s\n' "$reason" > "$job/idle_timed_out"
+  if (( attempt < max_attempts )); then
+    printf '%s\n' "$reason" > "$job/recovered_from"
+    write_progress_phase retrying "$attempt" "$attempt_agent" "$attempt_model" "$reason -> $fallback_agent"
+    sleep 1
+  fi
+done
+
+if (( final_rc != 0 )); then
+  write_progress_phase failed "$(read_value "$job/attempt_count" 0)" "$effective_agent" "$effective_model" "$(read_value "$job/last_failure_reason" unknown)"
+fi
+
+printf '%s\n' "$effective_agent" > "$job/effective_agent"
+printf '%s\n' "$effective_model" > "$job/effective_model"
+printf '%s\n' "$final_rc" > "$job/exit_code"
+if (( final_rc != 0 )) && [[ ! -s "$job/final.txt" ]]; then
+  printf '远端任务失败：agent=%s exit_code=%s reason=%s\n' "$effective_agent" "$final_rc" "$(read_value "$job/last_failure_reason" unknown)" > "$job/final.txt"
+fi
+
+finish_workspace
+date -u +%FT%TZ > "$job/finished_at"
+"$remote_helper" compact-one "${job##*/}" >/dev/null 2>&1 || true
+[[ -x "$stats_bin" ]] && "$stats_bin" archive "$job" --history "$HOME/.twin-agent/history/jobs.jsonl" >/dev/null 2>&1 || true
+"$remote_helper" start-scheduler >/dev/null 2>&1 || true
+exit "$final_rc"
