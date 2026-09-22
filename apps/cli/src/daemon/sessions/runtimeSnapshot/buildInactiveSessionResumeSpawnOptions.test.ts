@@ -44,6 +44,17 @@ describe('buildInactiveSessionResumeSpawnOptions', () => {
     });
   });
 
+  it('restores a valid scheduled execution target from the session authority snapshot', () => {
+    expect(build({
+      flavor: 'codex',
+      codexSessionId: 'codex-vendor-1',
+      schedulingTargetV1: { v: 1, workerId: 'twin-dev' },
+    })).toMatchObject({
+      existingSessionId: 'session-1',
+      schedulingTarget: { v: 1, workerId: 'twin-dev' },
+    });
+  });
+
   it('resumes a runtime-descriptor-declared session that still carries a stale foreign resume key', () => {
     expect(build({
       agentRuntimeDescriptorV1: codexRuntimeDescriptor,

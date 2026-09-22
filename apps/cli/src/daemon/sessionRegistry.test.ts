@@ -770,6 +770,35 @@ describe('sessionRegistry', () => {
     expect(existsSync(join(scopedDir, 'pid-5151.json'))).toBe(false);
   });
 
+  it('removes a marker only when its session identity still matches', async () => {
+    const {
+      readSessionMarkerForPid,
+      removeSessionMarkerForSession,
+      writeSessionMarker,
+    } = await import('./sessionRegistry');
+
+    await writeSessionMarker({
+      pid: 5152,
+      happySessionId: 'sess-current-owner',
+      startedBy: 'daemon',
+      cwd: '/tmp',
+    });
+
+    await expect(removeSessionMarkerForSession({
+      pid: 5152,
+      sessionId: 'sess-replaced-owner',
+    })).resolves.toBe(false);
+    await expect(readSessionMarkerForPid(5152)).resolves.toEqual(expect.objectContaining({
+      happySessionId: 'sess-current-owner',
+    }));
+
+    await expect(removeSessionMarkerForSession({
+      pid: 5152,
+      sessionId: 'sess-current-owner',
+    })).resolves.toBe(true);
+    await expect(readSessionMarkerForPid(5152)).resolves.toBeNull();
+  });
+
   it('tolerates older respawn markers with experimentalCodexResume', async () => {
     const { configuration } = await import('@/configuration');
     const { listSessionMarkers } = await import('./sessionRegistry');

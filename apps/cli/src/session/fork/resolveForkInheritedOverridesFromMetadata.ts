@@ -1,4 +1,5 @@
 import type { Metadata } from '@/api/types';
+import { SessionSchedulingTargetV1Schema } from '@happier-dev/protocol';
 
 import {
   CHILD_SESSION_INHERITANCE_FIELD_SETS,
@@ -75,9 +76,18 @@ export function resolveForkInheritedOverridesFromMetadata(
     fields: CHILD_SESSION_INHERITANCE_FIELD_SETS.fork,
   });
   const summary = resolveForkDisplayTitle(metadata);
+  const schedulingTarget = metadata?.schedulingTargetV1 === undefined
+    ? null
+    : SessionSchedulingTargetV1Schema.safeParse(metadata.schedulingTargetV1);
+  if (schedulingTarget && !schedulingTarget.success) {
+    throw new Error('Invalid scheduled execution target in parent session metadata');
+  }
 
   return {
-    spawn: inherited.spawn,
+    spawn: {
+      ...inherited.spawn,
+      ...(schedulingTarget?.success ? { schedulingTarget: schedulingTarget.data } : {}),
+    },
     metadata: {
       ...inherited.metadata,
       ...(summary ? { summary } : {}),

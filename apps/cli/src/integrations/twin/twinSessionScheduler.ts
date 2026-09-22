@@ -6,7 +6,11 @@ import {
   type SpawnSessionNonceResolution,
 } from '@happier-dev/protocol';
 
-import type { SpawnSessionOptions, SpawnSessionResult } from '@/rpc/handlers/registerSessionHandlers';
+import type {
+  SpawnSessionOptions,
+  SpawnSessionResult,
+  SpawnSessionRunnerAcceptanceHooks,
+} from '@/rpc/handlers/registerSessionHandlers';
 
 export type TwinSessionLeaseState = Readonly<{
   state: 'queued' | 'acquired' | 'released';
@@ -24,14 +28,34 @@ export type TwinSessionSchedulerAttempt = Readonly<{
   phase: 'created' | 'queued' | 'dispatching' | 'running' | 'failed' | 'released';
   options: SpawnSessionOptions;
   result?: SpawnSessionResult;
+  terminalSessionId?: string;
+  runnerAcceptanceRequired?: boolean;
+  runnerAcceptanceRecorded?: boolean;
 }>;
 
 export type TwinSessionSchedulerAttemptStore = Readonly<{
   createIfAbsent: (attempt: TwinSessionSchedulerAttempt) => Promise<TwinSessionSchedulerAttempt>;
   load: (spawnNonce: string) => Promise<TwinSessionSchedulerAttempt | null>;
   listRecoverable: () => Promise<readonly TwinSessionSchedulerAttempt[]>;
+  update: (
+    spawnNonce: string,
+    transition: (current: TwinSessionSchedulerAttempt) => TwinSessionSchedulerAttempt,
+  ) => Promise<TwinSessionSchedulerAttempt | null>;
   save: (attempt: TwinSessionSchedulerAttempt) => Promise<void>;
+  delete: (spawnNonce: string) => Promise<void>;
 }>;
+
+export type TwinSessionReleaseReceiptPayload = Readonly<{
+  v: 1;
+  purpose: 'twin_session_release_ack';
+  attemptLookupId: string;
+  leaseId: string;
+  sessionId: string;
+}>;
+
+export type TwinSessionReleaseResult =
+  | Readonly<{ status: 'released' | 'pending'; receipt: string }>
+  | Readonly<{ status: 'acknowledged' | 'not_found' | 'mismatch' }>;
 
 type TwinSessionSchedulerDeps = Readonly<{
   controllerMachineId: string;
@@ -40,6 +64,7 @@ type TwinSessionSchedulerDeps = Readonly<{
   acquireLease: (input: Readonly<{ leaseId: string; workerId: string; ownerToken: string }>) => Promise<TwinSessionLeaseState>;
   readLease: (input: Readonly<{ leaseId: string; ownerToken: string }>) => Promise<TwinSessionLeaseState>;
   releaseLease: (input: Readonly<{ leaseId: string; ownerToken: string }>) => Promise<TwinSessionLeaseState>;
+  forgetLease: (input: Readonly<{ leaseId: string; ownerToken: string }>) => Promise<void>;
   spawnTarget: (input: Readonly<{
     machineId: string;
     options: SpawnSessionOptions;
@@ -47,6 +72,11 @@ type TwinSessionSchedulerDeps = Readonly<{
   }>) => Promise<SpawnSessionResult>;
   resolveTargetSpawn: (input: Readonly<{ machineId: string; spawnNonce: string }>) => Promise<SpawnSessionNonceResolution>;
   createOwnerToken: () => string;
+  sealReleaseReceipt: (input: Readonly<{
+    attempt: TwinSessionSchedulerAttempt;
+    sessionId: string;
+  }>) => string;
+  openReleaseReceipt: (receipt: string) => TwinSessionReleaseReceiptPayload | null;
 }>;
 
 function stableValue(value: unknown): unknown {
@@ -109,9 +139,21 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
   const release = async (attempt: TwinSessionSchedulerAttempt): Promise<TwinSessionSchedulerAttempt> => {
     if (attempt.phase === 'released') return attempt;
     await deps.releaseLease({ leaseId: attempt.leaseId, ownerToken: attempt.ownerToken });
-    const released = { ...attempt, phase: 'released' as const };
-    await deps.store.save(released);
-    return released;
+    return (await deps.store.update(attempt.spawnNonce, (current) => ({
+      ...current,
+      phase: 'released' as const,
+    }))) ?? { ...attempt, phase: 'released' as const };
+  };
+
+  const releaseIfTerminal = async (
+    attempt: TwinSessionSchedulerAttempt,
+  ): Promise<TwinSessionSchedulerAttempt> => {
+    const terminalSessionId = attempt.terminalSessionId?.trim() ?? '';
+    const resolution = resolutionFromResult(attempt.result);
+    if (!terminalSessionId || resolution.status !== 'success' || resolution.sessionId !== terminalSessionId) {
+      return attempt;
+    }
+    return await release(attempt);
   };
 
   const settleTargetResolution = async (
@@ -119,31 +161,33 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
     resolution: SpawnSessionNonceResolution,
   ): Promise<TwinSessionSchedulerAttempt | null> => {
     if (resolution.status === 'success') {
-      const running = {
-        ...attempt,
-        phase: 'running' as const,
-        result: {
-          type: 'success' as const,
-          sessionId: resolution.sessionId,
-          spawnNonce: attempt.spawnNonce,
-          runnerAcceptance: 'same_request_runner' as const,
-        },
-      };
-      await deps.store.save(running);
-      return running;
+      const running = (await deps.store.update(attempt.spawnNonce, (current) => ({
+        ...current,
+        phase: current.phase === 'released' ? current.phase : 'running' as const,
+        result: current.phase === 'released'
+          ? current.result
+          : {
+              type: 'success' as const,
+              sessionId: resolution.sessionId,
+              spawnNonce: current.spawnNonce,
+              runnerAcceptance: 'same_request_runner' as const,
+            },
+      }))) ?? attempt;
+      return await releaseIfTerminal(running);
     }
     if (resolution.status === 'error') {
-      const failed = {
-        ...attempt,
-        phase: 'failed' as const,
-        result: {
-          type: 'error' as const,
-          errorCode: resolution.errorCode,
-          errorMessage: resolution.errorMessage,
-          ...(resolution.errorDetail ? { errorDetail: resolution.errorDetail } : {}),
-        },
-      };
-      await deps.store.save(failed);
+      const failed = (await deps.store.update(attempt.spawnNonce, (current) => ({
+        ...current,
+        phase: current.phase === 'released' ? current.phase : 'failed' as const,
+        result: current.phase === 'released'
+          ? current.result
+          : {
+              type: 'error' as const,
+              errorCode: resolution.errorCode,
+              errorMessage: resolution.errorMessage,
+              ...(resolution.errorDetail ? { errorDetail: resolution.errorDetail } : {}),
+            },
+      }))) ?? attempt;
       return await release(failed);
     }
     return null;
@@ -164,15 +208,17 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
             ownerToken: attempt.ownerToken,
           })
         : await deps.readLease({ leaseId: attempt.leaseId, ownerToken: attempt.ownerToken });
-      attempt = {
-        ...attempt,
-        phase: lease.state === 'acquired'
-          ? 'dispatching'
-          : lease.state === 'queued'
-            ? 'queued'
-            : 'released',
-      };
-      await deps.store.save(attempt);
+      attempt = (await deps.store.update(attempt.spawnNonce, (current) => {
+        if (current.phase !== 'created' && current.phase !== 'queued') return current;
+        return {
+          ...current,
+          phase: lease.state === 'acquired'
+            ? 'dispatching'
+            : lease.state === 'queued'
+              ? 'queued'
+              : 'released',
+        };
+      })) ?? attempt;
       if (attempt.phase !== 'dispatching') return attempt;
     }
 
@@ -192,27 +238,36 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
         options: attempt.options,
         lease: {
           v: 1,
+          attemptLookupId: attempt.spawnNonce,
           leaseId: attempt.leaseId,
           controllerMachineId: deps.controllerMachineId,
         },
       });
       if (result.type === 'error') {
-        const failed = { ...attempt, phase: 'failed' as const, result };
-        await deps.store.save(failed);
+        const failed = (await deps.store.update(attempt.spawnNonce, (current) => ({
+          ...current,
+          phase: current.phase === 'released' ? current.phase : 'failed' as const,
+          result: current.phase === 'released' ? current.result : result,
+        }))) ?? attempt;
         return await release(failed);
       }
       const sessionId = result.type === 'success' && typeof result.sessionId === 'string'
         ? result.sessionId.trim()
         : '';
-      const next = {
-        ...attempt,
-        phase: sessionId ? 'running' as const : 'dispatching' as const,
-        result: result.type === 'success'
-          ? { ...result, spawnNonce: attempt.spawnNonce }
-          : result,
-      };
-      await deps.store.save(next);
-      return next;
+      const next = (await deps.store.update(attempt.spawnNonce, (current) => ({
+        ...current,
+        phase: current.phase === 'released'
+          ? current.phase
+          : sessionId
+            ? 'running' as const
+            : 'dispatching' as const,
+        result: current.phase === 'released'
+          ? current.result
+          : result.type === 'success'
+            ? { ...result, spawnNonce: current.spawnNonce }
+            : result,
+      }))) ?? attempt;
+      return await releaseIfTerminal(next);
     } catch {
       const resolution = await deps.resolveTargetSpawn({
         machineId: attempt.machineId,
@@ -234,7 +289,10 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
   };
 
   return {
-    spawn: async (options: SpawnSessionOptions): Promise<SpawnSessionResult> => {
+    spawn: async (
+      options: SpawnSessionOptions,
+      acceptanceHooks?: SpawnSessionRunnerAcceptanceHooks,
+    ): Promise<SpawnSessionResult> => {
       const spawnNonce = typeof options.spawnNonce === 'string' ? options.spawnNonce.trim() : '';
       const workerId = options.schedulingTarget?.workerId.trim() ?? '';
       if (!spawnNonce) return invalidRequest('Scheduled session spawn requires a spawnNonce');
@@ -257,16 +315,34 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
         ownerToken: deps.createOwnerToken(),
         phase: 'created',
         options: { ...options, spawnNonce },
+        ...(acceptanceHooks ? { runnerAcceptanceRequired: true } : {}),
       };
       const attempt = await deps.store.createIfAbsent(requested);
       if (attempt.requestDigest !== requested.requestDigest) {
         return invalidRequest('The spawnNonce is already bound to a different scheduled session request');
       }
-      const progressed = await progress(attempt, { acquire: attempt.phase === 'created' });
+      if (Boolean(attempt.runnerAcceptanceRequired) !== Boolean(acceptanceHooks)) {
+        return invalidRequest('The spawnNonce is already bound to a different runner acceptance contract');
+      }
+      let acceptedAttempt = attempt;
+      if (acceptanceHooks) {
+        await acceptanceHooks.onBeforeRunnerLaunchAccepted();
+        acceptedAttempt = (await deps.store.update(attempt.spawnNonce, (current) => ({
+          ...current,
+          runnerAcceptanceRequired: true,
+          runnerAcceptanceRecorded: true,
+        }))) ?? attempt;
+      }
+      const progressed = await progress(acceptedAttempt, { acquire: acceptedAttempt.phase === 'created' });
       return progressed.result ?? pendingResult(spawnNonce);
     },
     recover: async (): Promise<void> => {
       for (const attempt of await deps.store.listRecoverable()) {
+        if (attempt.runnerAcceptanceRequired && !attempt.runnerAcceptanceRecorded) continue;
+        if (attempt.phase === 'failed') {
+          await release(attempt);
+          continue;
+        }
         if (attempt.phase === 'created' || attempt.phase === 'queued' || attempt.phase === 'dispatching') {
           await progress(attempt, { acquire: attempt.phase === 'created' });
         }
@@ -286,6 +362,73 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
     observeRespawnSuccess: async (_input: Readonly<{ sessionId: string }>): Promise<void> => {},
     observeRespawnTerminal: async (input: Readonly<{ sessionId: string }>): Promise<void> => {
       await releaseBySessionId(input.sessionId);
+    },
+    observeRemoteSessionExit: async (input: Readonly<{
+      attemptLookupId: string;
+      leaseId: string;
+      sessionId: string;
+      receipt?: string;
+    }>): Promise<TwinSessionReleaseResult> => {
+      const attemptLookupId = input.attemptLookupId.trim();
+      const leaseId = input.leaseId.trim();
+      const sessionId = input.sessionId.trim();
+      if (!attemptLookupId || !leaseId || !sessionId) return { status: 'not_found' };
+
+      if (input.receipt !== undefined) {
+        const receipt = input.receipt.trim();
+        const payload = receipt ? deps.openReleaseReceipt(receipt) : null;
+        if (
+          !payload
+          || payload.v !== 1
+          || payload.purpose !== 'twin_session_release_ack'
+          || payload.attemptLookupId !== attemptLookupId
+          || payload.leaseId !== leaseId
+          || payload.sessionId !== sessionId
+        ) {
+          return { status: 'mismatch' };
+        }
+        const acknowledgedAttempt = await deps.store.load(attemptLookupId);
+        if (!acknowledgedAttempt) return { status: 'acknowledged' };
+        if (
+          acknowledgedAttempt.leaseId !== leaseId
+          || acknowledgedAttempt.spawnNonce !== attemptLookupId
+          || acknowledgedAttempt.terminalSessionId !== sessionId
+        ) {
+          return { status: 'mismatch' };
+        }
+        if (acknowledgedAttempt.phase !== 'released') return { status: 'pending', receipt };
+        await deps.forgetLease({
+          leaseId: acknowledgedAttempt.leaseId,
+          ownerToken: acknowledgedAttempt.ownerToken,
+        });
+        await deps.store.delete(attemptLookupId);
+        return { status: 'acknowledged' };
+      }
+
+      const attempt = await deps.store.load(attemptLookupId);
+      if (!attempt) return { status: 'not_found' };
+      if (attempt.leaseId !== leaseId || attempt.spawnNonce !== attemptLookupId) {
+        return { status: 'mismatch' };
+      }
+      const receipt = deps.sealReleaseReceipt({ attempt, sessionId });
+      const resolution = resolutionFromResult(attempt.result);
+      if (resolution.status === 'success') {
+        if (resolution.sessionId !== sessionId) return { status: 'mismatch' };
+        const withTerminalIdentity = (await deps.store.update(attemptLookupId, (current) => ({
+          ...current,
+          terminalSessionId: sessionId,
+        }))) ?? attempt;
+        await release(withTerminalIdentity);
+        return { status: 'released', receipt };
+      }
+      if (attempt.phase !== 'dispatching') return { status: 'mismatch' };
+      const updated = await deps.store.update(attemptLookupId, (current) => {
+        if (current.terminalSessionId && current.terminalSessionId !== sessionId) return current;
+        return { ...current, terminalSessionId: sessionId };
+      });
+      if (!updated) return { status: 'not_found' };
+      if (updated.terminalSessionId !== sessionId) return { status: 'mismatch' };
+      return { status: 'pending', receipt };
     },
   };
 }

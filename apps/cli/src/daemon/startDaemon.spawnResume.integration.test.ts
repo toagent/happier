@@ -48,6 +48,8 @@ type CreateStopSessionInput = Parameters<typeof import('./sessions/stopSession')
 type CallSessionRpc = typeof callSessionRpc;
 type ReadProcessRunState = typeof import('./processRunState').readProcessRunState;
 type ReadSessionRunnerLockStatus = typeof import('./sessionRunnerLock').readSessionRunnerLockStatus;
+type SpawnSessionNonceResolution = import('@happier-dev/protocol').SpawnSessionNonceResolution;
+type CreateTwinSessionReleaseOutbox = typeof import('@/integrations/twin/twinSessionReleaseOutbox').createTwinSessionReleaseOutbox;
 
 function createRegisteredMachine(machineId: string) {
   return {
@@ -491,12 +493,18 @@ const sessionRespawnManagerCapture = vi.hoisted(() => {
         enabled: boolean;
         spawnSession: (options: import('@/rpc/handlers/registerSessionHandlers').SpawnSessionOptions) => Promise<unknown>;
         resolveRespawnOptions?: import('./processSupervision/sessionRunnerRespawn').SessionRunnerRespawnOptionsResolver;
-        onRespawnSuccess?: (input: { sessionId: string; previousPid: number; result: unknown }) => void;
+        onRespawnSuccess?: (input: {
+          sessionId: string;
+          previousPid: number;
+          result: unknown;
+          schedulingLease?: { v: 1; attemptLookupId: string; leaseId: string; controllerMachineId: string };
+        }) => void;
         onRespawnTerminal?: (input: {
           sessionId: string;
           previousPid: number;
           reason: string;
           detail?: string;
+          schedulingLease?: { v: 1; attemptLookupId: string; leaseId: string; controllerMachineId: string };
         }) => void;
       };
     }>,
@@ -504,12 +512,18 @@ const sessionRespawnManagerCapture = vi.hoisted(() => {
       enabled: boolean;
       spawnSession: (options: import('@/rpc/handlers/registerSessionHandlers').SpawnSessionOptions) => Promise<unknown>;
       resolveRespawnOptions?: import('./processSupervision/sessionRunnerRespawn').SessionRunnerRespawnOptionsResolver;
-      onRespawnSuccess?: (input: { sessionId: string; previousPid: number; result: unknown }) => void;
+      onRespawnSuccess?: (input: {
+        sessionId: string;
+        previousPid: number;
+        result: unknown;
+        schedulingLease?: { v: 1; attemptLookupId: string; leaseId: string; controllerMachineId: string };
+      }) => void;
       onRespawnTerminal?: (input: {
         sessionId: string;
         previousPid: number;
         reason: string;
         detail?: string;
+        schedulingLease?: { v: 1; attemptLookupId: string; leaseId: string; controllerMachineId: string };
       }) => void;
     }) => {
       const manager = {
@@ -524,10 +538,40 @@ const sessionRespawnManagerCapture = vi.hoisted(() => {
   };
   return capture;
 });
+const twinSessionSchedulingCapture = vi.hoisted(() => {
+  const adapter = {
+    spawn: vi.fn(async () => ({ type: 'success' as const, sessionId: 'scheduled-session' })),
+    resolve: vi.fn<(_spawnNonce: string) => Promise<SpawnSessionNonceResolution>>(
+      async () => ({ status: 'not_found' }),
+    ),
+    recover: vi.fn(async () => {}),
+    observeSessionExit: vi.fn(async () => {}),
+    observeRespawnSuccess: vi.fn(async () => {}),
+    observeRespawnTerminal: vi.fn(async () => {}),
+    observeRemoteSessionExit: vi.fn(async () => ({ status: 'released' as const, receipt: 'receipt-1' })),
+    start: vi.fn(async () => {}),
+    stop: vi.fn(),
+  };
+  const releaseOutbox = {
+    enqueue: vi.fn(async () => {}),
+    drain: vi.fn(async () => {}),
+    start: vi.fn(async () => {}),
+    stop: vi.fn(),
+  };
+  return {
+    adapter,
+    releaseOutbox,
+    createTwinSessionSchedulerAdapter: vi.fn(() => adapter),
+    createTwinSessionReleaseOutbox: vi.fn<CreateTwinSessionReleaseOutbox>(() => releaseOutbox),
+    callMachineRpc: vi.fn(async () => ({ status: 'released' as const, receipt: 'receipt-1' })),
+  };
+});
 const sessionRegistryCapture = vi.hoisted(() => ({
   clearSessionMarkerConnectedServiceRestartIntent: vi.fn(async (_pid: number) => {}),
+  readSessionMarkerForPid: vi.fn(async (_pid: number) => null as null | { happySessionId?: string }),
   refreshSessionMarkerRespawn: vi.fn(async () => {}),
   removeSessionMarker: vi.fn(async (_pid: number) => {}),
+  removeSessionMarkerForSession: vi.fn(async (_input: { pid: number; sessionId: string }) => true),
   writeSessionMarker: vi.fn(async (_marker: { respawn?: Record<string, unknown> }) => {}),
 }));
 const orphanedStartupSessionEndsCapture = vi.hoisted(() => ({
@@ -583,14 +627,36 @@ vi.mock('./processSupervision/sessionRunnerRespawn', () => ({
   createSessionRunnerRespawnManager: sessionRespawnManagerCapture.createSessionRunnerRespawnManager,
 }));
 
+vi.mock('@/integrations/twin/twinSessionSchedulerAdapter', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/integrations/twin/twinSessionSchedulerAdapter')>();
+  return {
+    ...actual,
+    createTwinSessionSchedulerAdapter: twinSessionSchedulingCapture.createTwinSessionSchedulerAdapter,
+  };
+});
+
+vi.mock('@/integrations/twin/twinSessionReleaseOutbox', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/integrations/twin/twinSessionReleaseOutbox')>();
+  return {
+    ...actual,
+    createTwinSessionReleaseOutbox: twinSessionSchedulingCapture.createTwinSessionReleaseOutbox,
+  };
+});
+
+vi.mock('@/session/transport/rpc/machineRpc', () => ({
+  callMachineRpc: twinSessionSchedulingCapture.callMachineRpc,
+}));
+
 vi.mock('./sessionRegistry', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./sessionRegistry')>();
   return {
     ...actual,
     clearSessionMarkerConnectedServiceRestartIntent:
       sessionRegistryCapture.clearSessionMarkerConnectedServiceRestartIntent,
+    readSessionMarkerForPid: sessionRegistryCapture.readSessionMarkerForPid,
     refreshSessionMarkerRespawn: sessionRegistryCapture.refreshSessionMarkerRespawn,
     removeSessionMarker: sessionRegistryCapture.removeSessionMarker,
+    removeSessionMarkerForSession: sessionRegistryCapture.removeSessionMarkerForSession,
     writeSessionMarker: sessionRegistryCapture.writeSessionMarker,
   };
 });
@@ -961,9 +1027,22 @@ describe('startDaemon spawn resume wiring (integration)', () => {
     cgroupMigrationCapture.lastParams = null;
     sessionRespawnManagerCapture.createSessionRunnerRespawnManager.mockClear();
     sessionRespawnManagerCapture.instances.length = 0;
+    twinSessionSchedulingCapture.createTwinSessionSchedulerAdapter.mockClear();
+    twinSessionSchedulingCapture.createTwinSessionReleaseOutbox.mockClear();
+    twinSessionSchedulingCapture.callMachineRpc.mockClear();
+    for (const value of Object.values(twinSessionSchedulingCapture.adapter)) {
+      if (typeof value === 'function' && 'mockClear' in value) value.mockClear();
+    }
+    for (const value of Object.values(twinSessionSchedulingCapture.releaseOutbox)) {
+      if (typeof value === 'function' && 'mockClear' in value) value.mockClear();
+    }
     sessionRegistryCapture.clearSessionMarkerConnectedServiceRestartIntent.mockClear();
+    sessionRegistryCapture.readSessionMarkerForPid.mockReset();
+    sessionRegistryCapture.readSessionMarkerForPid.mockResolvedValue(null);
     sessionRegistryCapture.refreshSessionMarkerRespawn.mockClear();
     sessionRegistryCapture.removeSessionMarker.mockClear();
+    sessionRegistryCapture.removeSessionMarkerForSession.mockClear();
+    sessionRegistryCapture.removeSessionMarkerForSession.mockResolvedValue(true);
     sessionRegistryCapture.writeSessionMarker.mockClear();
     orphanedStartupSessionEndsCapture.publishOrphanedStartupSessionEnds.mockClear();
     providerActivityRecorderCapture.createConnectedServiceProviderActivityProofRecorder.mockClear();
@@ -1015,6 +1094,294 @@ describe('startDaemon spawn resume wiring (integration)', () => {
     delete process.env.HAPPIER_DAEMON_SESSION_RESPAWN_ENABLED;
     delete process.env.HAPPIER_DAEMON_STOP_SESSION_WAIT_FOR_EXIT_MS;
     delete process.env.HAPPIER_DAEMON_STOP_SESSION_WAIT_FOR_EXIT_POLL_INTERVAL_MS;
+    delete process.env.HAPPIER_TWIN_SESSION_SCHEDULER_CONFIG_JSON;
+    delete process.env.HAPPIER_TWIN_SESSION_RELEASE_OUTBOX_CONFIG_JSON;
+  });
+
+  it('wires the configured twin scheduler through daemon RPC, exit custody, and shutdown', async () => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+    const refreshEnvOriginal = process.env.HAPPIER_CONNECTED_SERVICES_REFRESH_ENABLED;
+    process.env.HAPPIER_CONNECTED_SERVICES_REFRESH_ENABLED = 'false';
+    process.env.HAPPIER_TWIN_SESSION_SCHEDULER_CONFIG_JSON = JSON.stringify({
+      v: 1,
+      executable: '/opt/wetamp/bin/twin-agent-remote',
+      pollIntervalMs: 750,
+      workers: {
+        local: { machineId: 'machine-1' },
+        'twin-dev': { machineId: 'machine-dev' },
+        mini: { machineId: 'machine-mini' },
+      },
+    });
+    const onChildExitedModule = await import('./sessions/onChildExited');
+    const onHappySessionWebhookModule = await import('./sessions/onHappySessionWebhook');
+    let exitCallbacks: Record<string, unknown> | null = null;
+    const readExitCallbacks = (): Record<string, unknown> | null => exitCallbacks;
+    const trackedSessionCapture: {
+      current: Map<number, Record<string, unknown>> | null;
+    } = { current: null };
+    vi.mocked(onChildExitedModule.createOnChildExited).mockImplementation((params) => {
+      exitCallbacks = params as unknown as Record<string, unknown>;
+      return vi.fn();
+    });
+    vi.mocked(onHappySessionWebhookModule.createOnHappySessionWebhook).mockImplementation(({ pidToTrackedSession }) => {
+      trackedSessionCapture.current = pidToTrackedSession as unknown as Map<number, Record<string, unknown>>;
+      return vi.fn();
+    });
+    let run: Promise<void> | null = null;
+    const schedulingLease = {
+      v: 1 as const,
+      attemptLookupId: 'attempt-1',
+      leaseId: 'lease-1',
+      controllerMachineId: 'machine-controller',
+    };
+
+    try {
+      const { startDaemon } = await import('./startDaemon');
+      run = startDaemon();
+
+      await vi.waitFor(() => {
+        expect(twinSessionSchedulingCapture.adapter.start).toHaveBeenCalledTimes(1);
+        expect(twinSessionSchedulingCapture.releaseOutbox.start).toHaveBeenCalledTimes(1);
+        expect(harness.apiMachine.setRPCHandlers).toHaveBeenCalled();
+      });
+
+      const handlers = harness.apiMachine.setRPCHandlers.mock.calls.at(-1)?.[0];
+      expect(handlers?.spawnScheduledSession).toBe(twinSessionSchedulingCapture.adapter.spawn);
+      expect(twinSessionSchedulingCapture.createTwinSessionSchedulerAdapter).toHaveBeenCalledWith(
+        expect.objectContaining({
+          controllerMachineId: 'machine-1',
+          attemptDirectory: expect.stringContaining('twin-session-scheduler-attempts'),
+        }),
+      );
+      expect(twinSessionSchedulingCapture.createTwinSessionReleaseOutbox).toHaveBeenCalledWith(
+        expect.objectContaining({
+          directory: expect.stringContaining('twin-session-release-outbox'),
+          pollIntervalMs: 750,
+          deliver: expect.any(Function),
+        }),
+      );
+
+      twinSessionSchedulingCapture.adapter.resolve.mockResolvedValueOnce({
+        status: 'success',
+        sessionId: 'scheduled-resolution',
+      });
+      await expect(handlers?.resolveSpawnSessionByNonce?.('scheduled-nonce')).resolves.toEqual({
+        status: 'success',
+        sessionId: 'scheduled-resolution',
+      });
+
+      twinSessionSchedulingCapture.adapter.resolve.mockClear();
+      await handlers?.resolveScheduledTargetSpawnByNonce?.('target-nonce');
+      expect(twinSessionSchedulingCapture.adapter.resolve).not.toHaveBeenCalled();
+
+      await expect(handlers?.releaseScheduledSessionLease?.({
+        attemptLookupId: 'attempt-1',
+        leaseId: 'lease-1',
+        sessionId: 'session-1',
+      })).resolves.toEqual({ status: 'released', receipt: 'receipt-1' });
+      expect(twinSessionSchedulingCapture.adapter.observeRemoteSessionExit).toHaveBeenCalledWith({
+        attemptLookupId: 'attempt-1',
+        leaseId: 'lease-1',
+        sessionId: 'session-1',
+      });
+
+      const outboxParams = twinSessionSchedulingCapture.createTwinSessionReleaseOutbox.mock.calls[0]?.[0];
+      await expect(outboxParams?.deliver({ lease: schedulingLease, sessionId: 'session-1' })).resolves.toEqual({
+        status: 'released',
+        receipt: 'receipt-1',
+      });
+      expect(twinSessionSchedulingCapture.callMachineRpc).toHaveBeenCalledWith(expect.objectContaining({
+        machineId: 'machine-controller',
+        method: 'daemon.scheduledSession.release.v1',
+        request: { attemptLookupId: 'attempt-1', leaseId: 'lease-1', sessionId: 'session-1' },
+      }));
+
+      const onFinalTrackedSessionExitClassified = readExitCallbacks()?.onFinalTrackedSessionExitClassified as
+        | ((input: Record<string, unknown>) => Promise<void>)
+        | undefined;
+      await onFinalTrackedSessionExitClassified?.({
+        pid: 123,
+        trackedSession: {
+          happySessionId: 'session-normal',
+          spawnOptions: { schedulingLease },
+        },
+        exit: { reason: 'process-exited', code: 0, signal: null },
+        unexpected: false,
+      });
+      expect(twinSessionSchedulingCapture.releaseOutbox.enqueue).toHaveBeenCalledWith({
+        lease: schedulingLease,
+        sessionId: 'session-normal',
+      });
+
+      twinSessionSchedulingCapture.releaseOutbox.enqueue.mockClear();
+      await onFinalTrackedSessionExitClassified?.({
+        pid: 124,
+        trackedSession: {
+          happySessionId: 'session-crash',
+          spawnOptions: { schedulingLease },
+        },
+        exit: { reason: 'process-exited', code: 1, signal: null },
+        unexpected: true,
+      });
+      expect(twinSessionSchedulingCapture.releaseOutbox.enqueue).not.toHaveBeenCalled();
+
+      const shouldPreserveSessionMarkerOnExit = readExitCallbacks()?.shouldPreserveSessionMarkerOnExit as
+        | ((input: Record<string, unknown>) => boolean)
+        | undefined;
+      expect(shouldPreserveSessionMarkerOnExit?.({
+        pid: 124,
+        trackedSession: {
+          happySessionId: 'session-crash',
+          spawnOptions: { schedulingLease },
+        },
+        exit: { reason: 'process-exited', code: 1, signal: null },
+        unexpected: true,
+      })).toBe(true);
+
+      const respawn = sessionRespawnManagerCapture.instances[0]?.__params;
+      const trackedSessions = trackedSessionCapture.current;
+      if (!trackedSessions) throw new Error('Expected tracked session map from webhook wiring');
+      trackedSessions.set(224, {
+        pid: 224,
+        startedBy: 'daemon',
+        happySessionId: 'session-crash',
+      });
+      sessionRegistryCapture.readSessionMarkerForPid.mockResolvedValueOnce({
+        happySessionId: 'session-crash',
+      });
+      await respawn?.onRespawnSuccess?.({
+        sessionId: 'session-crash',
+        previousPid: 124,
+        result: { type: 'success' },
+        schedulingLease,
+      });
+      expect(twinSessionSchedulingCapture.releaseOutbox.enqueue).not.toHaveBeenCalled();
+      expect(sessionRegistryCapture.removeSessionMarkerForSession).toHaveBeenCalledWith({
+        pid: 124,
+        sessionId: 'session-crash',
+      });
+
+      sessionRegistryCapture.removeSessionMarkerForSession.mockClear();
+      let resolveReleasePersisted = (): void => {};
+      const releasePersisted = new Promise<void>((resolve) => {
+        resolveReleasePersisted = resolve;
+      });
+      twinSessionSchedulingCapture.releaseOutbox.enqueue.mockImplementationOnce(async () => {
+        await releasePersisted;
+      });
+      const terminal = respawn?.onRespawnTerminal?.({
+        sessionId: 'session-crash',
+        previousPid: 124,
+        reason: 'no_restart',
+        schedulingLease,
+      });
+      await vi.waitFor(() => expect(twinSessionSchedulingCapture.releaseOutbox.enqueue).toHaveBeenCalledWith({
+        lease: schedulingLease,
+        sessionId: 'session-crash',
+      }));
+      expect(sessionRegistryCapture.removeSessionMarkerForSession).not.toHaveBeenCalled();
+      resolveReleasePersisted();
+      await terminal;
+      expect(sessionRegistryCapture.removeSessionMarkerForSession).toHaveBeenCalledWith({
+        pid: 124,
+        sessionId: 'session-crash',
+      });
+
+      twinSessionSchedulingCapture.releaseOutbox.enqueue.mockClear();
+      sessionRegistryCapture.removeSessionMarkerForSession.mockClear();
+      await respawn?.onRespawnTerminal?.({
+        sessionId: 'session-crash',
+        previousPid: 124,
+        reason: 'already_running',
+        schedulingLease,
+      });
+      expect(twinSessionSchedulingCapture.releaseOutbox.enqueue).not.toHaveBeenCalled();
+      expect(sessionRegistryCapture.removeSessionMarkerForSession).not.toHaveBeenCalled();
+
+      harness.requestShutdown('happier-cli');
+      await run;
+      run = null;
+      expect(twinSessionSchedulingCapture.adapter.stop).toHaveBeenCalledTimes(1);
+      expect(twinSessionSchedulingCapture.releaseOutbox.stop).toHaveBeenCalledTimes(1);
+    } finally {
+      if (run) {
+        harness.requestShutdown('happier-cli');
+        await run.catch(() => {});
+      }
+      if (refreshEnvOriginal === undefined) {
+        delete process.env.HAPPIER_CONNECTED_SERVICES_REFRESH_ENABLED;
+      } else {
+        process.env.HAPPIER_CONNECTED_SERVICES_REFRESH_ENABLED = refreshEnvOriginal;
+      }
+      exitSpy.mockRestore();
+    }
+  });
+
+  it('starts release custody on a scheduled target without enabling controller scheduling', async () => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+    const refreshEnvOriginal = process.env.HAPPIER_CONNECTED_SERVICES_REFRESH_ENABLED;
+    process.env.HAPPIER_CONNECTED_SERVICES_REFRESH_ENABLED = 'false';
+    process.env.HAPPIER_TWIN_SESSION_RELEASE_OUTBOX_CONFIG_JSON = JSON.stringify({
+      v: 1,
+      pollIntervalMs: 750,
+    });
+    const schedulingLease = {
+      v: 1 as const,
+      attemptLookupId: 'attempt-orphaned-target',
+      leaseId: 'lease-orphaned-target',
+      controllerMachineId: 'machine-controller',
+    };
+    let run: Promise<void> | null = null;
+
+    try {
+      const reattachModule = await import('./sessions/reattachFromMarkers');
+      vi.mocked(reattachModule.reattachTrackedSessionsFromMarkers).mockImplementation(async () => ({
+        orphanedDeadDaemonSessions: [{
+          sessionId: 'session-orphaned-target',
+          pid: 7331,
+          schedulingLease,
+        }],
+        connectedServiceRestartIntents: [],
+      }));
+      const { startDaemon } = await import('./startDaemon');
+      run = startDaemon();
+
+      await vi.waitFor(() => {
+        expect(twinSessionSchedulingCapture.releaseOutbox.start).toHaveBeenCalledTimes(1);
+        expect(twinSessionSchedulingCapture.releaseOutbox.enqueue).toHaveBeenCalledWith({
+          lease: schedulingLease,
+          sessionId: 'session-orphaned-target',
+        });
+        expect(harness.apiMachine.setRPCHandlers).toHaveBeenCalled();
+      });
+
+      expect(twinSessionSchedulingCapture.createTwinSessionSchedulerAdapter).not.toHaveBeenCalled();
+      const handlers = harness.apiMachine.setRPCHandlers.mock.calls.at(-1)?.[0];
+      expect(handlers?.spawnScheduledSession).toBeUndefined();
+      expect(handlers?.releaseScheduledSessionLease).toBeUndefined();
+      expect(handlers?.spawnScheduledTargetSession).toEqual(expect.any(Function));
+
+      harness.requestShutdown('happier-cli');
+      await run;
+      run = null;
+      expect(twinSessionSchedulingCapture.releaseOutbox.stop).toHaveBeenCalledTimes(1);
+    } finally {
+      if (run) {
+        harness.requestShutdown('happier-cli');
+        await run.catch(() => {});
+      }
+      if (refreshEnvOriginal === undefined) {
+        delete process.env.HAPPIER_CONNECTED_SERVICES_REFRESH_ENABLED;
+      } else {
+        process.env.HAPPIER_CONNECTED_SERVICES_REFRESH_ENABLED = refreshEnvOriginal;
+      }
+      const reattachModule = await import('./sessions/reattachFromMarkers');
+      vi.mocked(reattachModule.reattachTrackedSessionsFromMarkers).mockImplementation(async () => ({
+        orphanedDeadDaemonSessions: [],
+        connectedServiceRestartIntents: [],
+      }));
+      exitSpy.mockRestore();
+    }
   });
 
   it('binds startup-reattached live sessions to the daemon final machine identity', async () => {

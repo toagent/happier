@@ -411,6 +411,34 @@ class WorkerSchedulingTest(unittest.TestCase):
         self.assertNotEqual("owner-a", owner_digest)
         self.assertEqual(64, len(owner_digest))
 
+    def test_only_a_released_owner_lease_can_be_forgotten_and_retries_are_idempotent(self):
+        self.acquire_lease("session-forget", "twin-dev", "owner-forget")
+
+        active = self.run_remote(
+            "lease-forget",
+            "session-forget",
+            "owner-forget",
+            check=False,
+        )
+        self.assertNotEqual(0, active.returncode)
+        self.assertTrue((self.base / "leases" / "session-forget").exists())
+
+        self.run_remote("lease-release", "session-forget", "owner-forget")
+        forgotten = self.run_remote(
+            "lease-forget",
+            "session-forget",
+            "owner-forget",
+        )
+        self.assertIn("state=forgotten", forgotten.stdout)
+        self.assertFalse((self.base / "leases" / "session-forget").exists())
+
+        repeated = self.run_remote(
+            "lease-forget",
+            "session-forget",
+            "owner-forget",
+        )
+        self.assertIn("state=forgotten", repeated.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

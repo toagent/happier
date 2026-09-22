@@ -17,6 +17,10 @@ import {
   HAPPIER_SESSION_CONNECTED_SERVICE_MATERIALIZATION_IDENTITY_ENV_KEY,
   serializeSessionConnectedServiceMaterializationIdentityForEnv,
 } from '@/agent/runtime/sessionConnectedServiceMaterializationIdentityEnv';
+import {
+  HAPPIER_SESSION_SCHEDULING_TARGET_ENV_KEY,
+  serializeSessionSchedulingTargetForEnv,
+} from '@/agent/runtime/sessionSchedulingTargetEnv';
 import { HAPPIER_SPAWN_EXPLICIT_ENV_KEYS_JSON_ENV_VAR } from './spawnExplicitEnvKeysMarker';
 import type { ConnectedServicesMaterializationDiagnostic } from '@/daemon/connectedServices/materialize/providerMaterializerTypes';
 
@@ -251,6 +255,10 @@ export async function resolveSpawnChildEnvironment(params: {
   }
   if (params.options.sessionConfigOptionOverrides) {
     extraEnvForChild.HAPPIER_SESSION_CONFIG_OPTION_OVERRIDES_JSON = JSON.stringify(params.options.sessionConfigOptionOverrides);
+  }
+  const schedulingTargetJson = serializeSessionSchedulingTargetForEnv(params.options.schedulingTarget);
+  if (schedulingTargetJson) {
+    extraEnvForChild[HAPPIER_SESSION_SCHEDULING_TARGET_ENV_KEY] = schedulingTargetJson;
   }
   const connectedServicesBindingsJson = serializeSessionConnectedServicesBindingsForEnv(params.options.connectedServices);
   if (connectedServicesBindingsJson) {

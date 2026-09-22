@@ -53,12 +53,23 @@ export function createOnChildExited(params: Readonly<{
   onUnexpectedExit?: (trackedSession: TrackedSession, exit: ChildExit) => void;
   isExitUnexpectedOverride?: (trackedSession: TrackedSession, exit: ChildExit) => boolean | null | undefined;
   onPidPromoted?: (input: Readonly<{ fromPid: number; toPid: number; trackedSession: TrackedSession }>) => void;
-  shouldPreserveSessionMarkerOnExit?: (input: Readonly<{ pid: number; trackedSession: TrackedSession; exit: ChildExit }>) => boolean;
+  shouldPreserveSessionMarkerOnExit?: (input: Readonly<{
+    pid: number;
+    trackedSession: TrackedSession;
+    exit: ChildExit;
+    unexpected: boolean;
+  }>) => boolean;
   onFinalTrackedSessionExitStaged?: (input: Readonly<{
     pid: number;
     trackedSession: TrackedSession;
     exit: ChildExit;
     observedAt: number;
+  }>) => Promise<void> | void;
+  onFinalTrackedSessionExitClassified?: (input: Readonly<{
+    pid: number;
+    trackedSession: TrackedSession;
+    exit: ChildExit;
+    unexpected: boolean;
   }>) => Promise<void> | void;
   removeSessionMarkerFn?: typeof removeSessionMarker;
   updateSessionMarkerActiveTurnFn?: typeof updateSessionMarkerActiveTurn;
@@ -74,6 +85,7 @@ export function createOnChildExited(params: Readonly<{
     onPidPromoted,
     shouldPreserveSessionMarkerOnExit,
     onFinalTrackedSessionExitStaged,
+    onFinalTrackedSessionExitClassified,
     removeSessionMarkerFn = removeSessionMarker,
     updateSessionMarkerActiveTurnFn = updateSessionMarkerActiveTurn,
     stageObservedExitFn = stageObservedExit,
@@ -130,9 +142,22 @@ export function createOnChildExited(params: Readonly<{
         });
       }
 
-      const preserveExitedMarker = shouldPreserveSessionMarkerOnExit?.({ pid, trackedSession: tracked, exit }) === true;
+      const preserveExitedMarker = shouldPreserveSessionMarkerOnExit?.({
+        pid,
+        trackedSession: tracked,
+        exit,
+        unexpected: isUnexpected,
+      }) === true;
       const apiMachineForSessions = getApiMachineForSessions();
       const observedAt = Date.now();
+      if (shouldReportSessionEnd && onFinalTrackedSessionExitClassified) {
+        await onFinalTrackedSessionExitClassified({
+          pid,
+          trackedSession: tracked,
+          exit,
+          unexpected: isUnexpected,
+        });
+      }
       try {
         await stageObservedExitFn({
           trackedSession: tracked,

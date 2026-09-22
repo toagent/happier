@@ -179,6 +179,10 @@ describe('session handoff schemas', () => {
       workspaceReplicationSourceControllerMetadata: {
         provider: 'git',
       },
+      schedulingTargetV1: {
+        v: 1,
+        workerId: 'twin-dev',
+      },
     };
     expect(mod.SessionHandoffMetadataV2Schema.safeParse(handoffMetadataV2).success).toBe(true);
 
@@ -243,9 +247,19 @@ describe('session handoff schemas', () => {
           resume: 'resume-token',
           transcriptStorage: 'persisted',
           approvedNewDirectoryCreation: true,
+          schedulingTarget: {
+            v: 1,
+            workerId: 'twin-dev',
+          },
         },
       }).success,
     ).toBe(true);
+
+    expect(
+      mod.SessionHandoffMetadataV2Schema.safeParse({
+        schedulingTargetV1: { v: 1, workerId: '   ' },
+      }).success,
+    ).toBe(false);
 
     expect(
       mod.TransferStreamEnvelopeSchema.safeParse({

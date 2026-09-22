@@ -227,20 +227,7 @@ class RemoteControlTest(unittest.TestCase):
 
     def test_health_reports_zero_cleanup_failures_without_stderr(self):
         home = self.root / "home"
-        runtime_config = home / ".config" / "ai-runtime"
-        runtime_config.mkdir(parents=True)
-        (runtime_config / "env.zsh").write_text(
-            f"AI_NODE_BIN={self.fake_bin}\n",
-            encoding="utf-8",
-        )
-        for name in ("codex", "claude"):
-            executable = self.fake_bin / name
-            executable.write_text("#!/bin/sh\necho test-version\n", encoding="utf-8")
-            executable.chmod(0o700)
-        opencode = home / ".opencode" / "bin" / "opencode"
-        opencode.parent.mkdir(parents=True)
-        opencode.write_text("#!/bin/sh\necho test-version\n", encoding="utf-8")
-        opencode.chmod(0o700)
+        home.mkdir()
         self.env["HOME"] = str(home)
         self.env["TWIN_AGENT_OUTPUT_BIN"] = "/usr/bin/true"
         self.env["TWIN_AGENT_JOB_RUNNER_BIN"] = "/usr/bin/true"
@@ -254,6 +241,9 @@ class RemoteControlTest(unittest.TestCase):
             timeout=10,
         )
 
+        self.assertIn("worker_id=twin-control", result.stdout)
+        self.assertIn("worker_id=twin-dev", result.stdout)
+        self.assertIn("worker_id=mac-mini", result.stdout)
         self.assertIn("cleanup_failures_total=0", result.stdout)
         self.assertEqual("", result.stderr)
 

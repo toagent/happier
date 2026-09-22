@@ -43,6 +43,7 @@ describe('requestInactiveSessionResume', () => {
         machineId: 'machine-session',
         path: '/repo',
         claudeSessionId: 'provider-session-1',
+        schedulingTargetV1: { v: 1, workerId: 'twin-dev' },
       },
     })).resolves.toEqual({ ok: true });
 
@@ -56,6 +57,7 @@ describe('requestInactiveSessionResume', () => {
         sessionId: 'session-1',
         directory: '/repo',
         backendTarget: { kind: 'builtInAgent', agentId: 'claude' },
+        schedulingTarget: { v: 1, workerId: 'twin-dev' },
         initialTranscriptAfterSeq: 17,
         executionAuthorization: {
           provenance: 'user_request',

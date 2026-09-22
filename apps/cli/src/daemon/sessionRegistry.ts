@@ -424,6 +424,21 @@ export async function removeSessionMarker(pid: number): Promise<void> {
   });
 }
 
+export async function removeSessionMarkerForSession(params: Readonly<{
+  pid: number;
+  sessionId: string;
+}>): Promise<boolean> {
+  const sessionId = normalizeSessionId(params.sessionId);
+  if (!sessionId) return false;
+
+  return await runWithSessionMarkerMutationLock(params.pid, async () => {
+    const existing = await readSessionMarkerForPid(params.pid);
+    if (normalizeSessionId(existing?.happySessionId) !== sessionId) return false;
+    await removeSessionMarkerUnlocked(params.pid);
+    return true;
+  });
+}
+
 export async function listSessionMarkers(): Promise<DaemonSessionMarker[]> {
   const markersByPid = new Map<number, DaemonSessionMarker>();
 

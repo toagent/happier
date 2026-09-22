@@ -30,6 +30,9 @@ export type SessionSchedulingTargetV1 = z.infer<typeof SessionSchedulingTargetV1
 /** Daemon-to-daemon lease custody attached only after the controller accepts a scheduled spawn. */
 export const SessionSchedulingLeaseV1Schema = z.object({
   v: z.literal(1),
+  attemptLookupId: z.string().refine((value) => value.trim().length > 0, {
+    message: 'Scheduling attempt lookup id must not be blank',
+  }),
   leaseId: z.string().refine((value) => value.trim().length > 0, {
     message: 'Scheduling lease id must not be blank',
   }),

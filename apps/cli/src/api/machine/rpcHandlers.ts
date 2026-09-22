@@ -230,6 +230,10 @@ function normalizeMachineStopSessionResult(result: MachineStopSessionHandlerResu
 export type MachineRpcHandlers = {
   spawnSession: (options: SpawnSessionOptions) => Promise<SpawnSessionResult>;
   spawnScheduledSession?: (options: SpawnSessionOptions) => Promise<SpawnSessionResult>;
+  spawnScheduledTargetSession?: (
+    options: SpawnSessionOptions,
+    lease: import('@happier-dev/protocol').SessionSchedulingLeaseV1,
+  ) => Promise<SpawnSessionResult>;
   spawnSessionForHandoff?: (
     options: SpawnSessionOptions,
     hooks: import('@/rpc/handlers/registerSessionHandlers').SpawnSessionRunnerAcceptanceHooks,
@@ -237,6 +241,15 @@ export type MachineRpcHandlers = {
   resolveSpawnSessionByNonce?: (spawnNonce: string) => Promise<
     import('@happier-dev/protocol').SpawnSessionNonceResolution
   >;
+  resolveScheduledTargetSpawnByNonce?: (spawnNonce: string) => Promise<
+    import('@happier-dev/protocol').SpawnSessionNonceResolution
+  >;
+  releaseScheduledSessionLease?: (input: Readonly<{
+    attemptLookupId: string;
+    leaseId: string;
+    sessionId: string;
+    receipt?: string;
+  }>) => Promise<import('@/integrations/twin/twinSessionReleaseOutbox').TwinSessionReleaseResult>;
   abandonSpawnSessionByNonce?: (spawnNonce: string) => Promise<
     | { status: 'completed'; sessionId: string }
     | { status: 'pending' | 'not_found' | 'unsupported' | 'failed' }
@@ -398,9 +411,12 @@ export function registerMachineRpcHandlers(params: Readonly<{
   const {
     spawnSession: spawnLocalSession,
     spawnScheduledSession,
+    spawnScheduledTargetSession,
     stopSession,
     requestShutdown,
     resolveSpawnSessionByNonce,
+    resolveScheduledTargetSpawnByNonce,
+    releaseScheduledSessionLease,
     abandonSpawnSessionByNonce,
   } = handlers;
   const spawnSession = async (options: SpawnSessionOptions): Promise<SpawnSessionResult> => {
@@ -428,10 +444,37 @@ export function registerMachineRpcHandlers(params: Readonly<{
         errorMessage: 'Invalid scheduled target spawn request',
       };
     }
-    return await spawnLocalSession({
-      ...parsed.data.options,
-      schedulingLease: parsed.data.lease,
-    });
+    if (!spawnScheduledTargetSession) {
+      return {
+        type: 'error' as const,
+        errorCode: SPAWN_SESSION_ERROR_CODES.SCHEDULING_TARGET_UNAVAILABLE,
+        errorMessage: 'Scheduled target release custody is unavailable on this daemon',
+      };
+    }
+    return await spawnScheduledTargetSession(parsed.data.options, parsed.data.lease);
+  });
+  rpcHandlerManager.registerHandler(RPC_METHODS.DAEMON_SCHEDULED_SESSION_RESOLVE_TARGET_V1, async (params: unknown) => {
+    const spawnNonce =
+      params && typeof params === 'object' && typeof (params as { spawnNonce?: unknown }).spawnNonce === 'string'
+        ? (params as { spawnNonce: string }).spawnNonce.trim()
+        : '';
+    if (!spawnNonce) return { status: 'not_found' as const };
+    if (!resolveScheduledTargetSpawnByNonce) return { status: 'unsupported' as const };
+    try {
+      return await resolveScheduledTargetSpawnByNonce(spawnNonce);
+    } catch {
+      return { status: 'unsupported' as const };
+    }
+  });
+  rpcHandlerManager.registerHandler(RPC_METHODS.DAEMON_SCHEDULED_SESSION_RELEASE_V1, async (raw: unknown) => {
+    const parsed = z.object({
+      attemptLookupId: z.string().trim().min(1),
+      leaseId: z.string().trim().min(1),
+      sessionId: z.string().trim().min(1),
+      receipt: z.string().trim().min(1).optional(),
+    }).strict().safeParse(raw);
+    if (!parsed.success || !releaseScheduledSessionLease) return { status: 'not_found' as const };
+    return await releaseScheduledSessionLease(parsed.data);
   });
   const stopSessionConfirmed = async (sessionId: string): Promise<boolean> => (
     normalizeMachineStopSessionResult(await stopSession(sessionId)).status === 'stopped'

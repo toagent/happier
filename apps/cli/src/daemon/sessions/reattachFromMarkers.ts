@@ -1,6 +1,6 @@
 import { logger } from '@/ui/logger';
 import type { Credentials } from '@/persistence';
-import { parseOptionalBooleanEnv } from '@happier-dev/protocol';
+import { parseOptionalBooleanEnv, type SessionSchedulingLeaseV1 } from '@happier-dev/protocol';
 import { readProcessInstanceFingerprintSync } from '@happier-dev/cli-common/processInstance';
 import {
   resolveTerminalAttachmentControlDescriptorStatusThroughCatalog,
@@ -358,6 +358,7 @@ type OrphanedDeadDaemonSession = Readonly<{
   sessionId: string;
   pid: number;
   activeTurnId?: string;
+  schedulingLease?: SessionSchedulingLeaseV1;
 }>;
 
 export type ReattachTrackedSessionsFromMarkersResult = Readonly<{
@@ -468,6 +469,7 @@ export async function reattachTrackedSessionsFromMarkers(params: Readonly<{
             sessionId,
             pid: marker.pid,
             ...(marker.activeTurnId ? { activeTurnId: marker.activeTurnId } : {}),
+            ...(marker.respawn?.schedulingLease ? { schedulingLease: marker.respawn.schedulingLease } : {}),
           });
         }
         continue;
@@ -497,10 +499,47 @@ export async function reattachTrackedSessionsFromMarkers(params: Readonly<{
     });
     if (adopted > 0) logger.debug(`[DAEMON RUN] Reattached ${adopted} sessions from disk markers`);
     const adoptedPidSet = new Set(adoptedPids);
+    const observedProcessInstanceFingerprintByPid = new Map(
+      aliveMarkers
+        .filter((marker) => !adoptedPidSet.has(marker.pid) && !!marker.processInstanceFingerprint)
+        .map((marker) => [marker.pid, readProcessInstanceFingerprintSync(marker.pid)] as const),
+    );
+    const processInstanceMismatchedMarkerPidSet = new Set(
+      aliveMarkers
+        .filter((marker) => !adoptedPidSet.has(marker.pid))
+        .filter((marker) => {
+          if (!marker.processInstanceFingerprint) return false;
+          const observed = observedProcessInstanceFingerprintByPid.get(marker.pid);
+          return typeof observed === 'string' && observed !== marker.processInstanceFingerprint;
+        })
+        .map((marker) => marker.pid),
+    );
+    const processInstanceUnverifiedMarkerPidSet = new Set(
+      aliveMarkers
+        .filter((marker) => !adoptedPidSet.has(marker.pid) && !!marker.processInstanceFingerprint)
+        .filter((marker) => !observedProcessInstanceFingerprintByPid.get(marker.pid))
+        .map((marker) => marker.pid),
+    );
+    for (const marker of aliveMarkers) {
+      if (!processInstanceMismatchedMarkerPidSet.has(marker.pid)) continue;
+      const sessionId = normalizeSessionId(marker.happySessionId);
+      if (marker.startedBy === 'daemon' && sessionId) {
+        orphanedDeadDaemonSessions.push({
+          sessionId,
+          pid: marker.pid,
+          ...(marker.activeTurnId ? { activeTurnId: marker.activeTurnId } : {}),
+          ...(marker.respawn?.schedulingLease ? { schedulingLease: marker.respawn.schedulingLease } : {}),
+        });
+      }
+    }
     const safetyBlockedMarkerPidSet = new Set(
       aliveMarkers
         .filter((marker) => !adoptedPidSet.has(marker.pid))
         .filter((marker) => {
+          if (
+            processInstanceMismatchedMarkerPidSet.has(marker.pid)
+            || processInstanceUnverifiedMarkerPidSet.has(marker.pid)
+          ) return true;
           const hasProcessCommandHash = typeof marker.processCommandHash === 'string' && marker.processCommandHash.trim().length > 0;
           const hasRespawnDescriptor = typeof marker.respawn === 'object' && marker.respawn !== null;
           return hasProcessCommandHash && !hasRespawnDescriptor;

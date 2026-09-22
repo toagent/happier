@@ -19,6 +19,7 @@ describe('sessionRunnerRespawnDescriptor', () => {
       schedulingTarget: { v: 1, workerId: 'twin-dev' },
       schedulingLease: {
         v: 1,
+        attemptLookupId: 'attempt-1',
         leaseId: 'lease-1',
         controllerMachineId: 'controller-machine',
       },
@@ -27,6 +28,7 @@ describe('sessionRunnerRespawnDescriptor', () => {
     expect(descriptor?.schedulingTarget).toEqual({ v: 1, workerId: 'twin-dev' });
     expect(descriptor?.schedulingLease).toEqual({
       v: 1,
+      attemptLookupId: 'attempt-1',
       leaseId: 'lease-1',
       controllerMachineId: 'controller-machine',
     });
@@ -38,6 +40,7 @@ describe('sessionRunnerRespawnDescriptor', () => {
       },
       schedulingLease: {
         v: 1,
+        attemptLookupId: 'attempt-1',
         leaseId: 'lease-1',
         controllerMachineId: 'controller-machine',
       },

@@ -16,6 +16,7 @@ import { ensureMachineRegistered } from '@/api/machine/ensureMachineRegistered';
 import { ensureSessionMachineAccessKeyBinding } from '@/api/session/ensureSessionMachineAccessKeyBinding';
 import { isRpcMethodNotAvailableError } from '@happier-dev/protocol/rpcErrors';
 import { callSessionRpc } from '@/session/transport/rpc/sessionRpc';
+import { callMachineRpc } from '@/session/transport/rpc/machineRpc';
 import { resolveSessionTransportContext } from '@/session/services/resolveSessionTransportContext';
 import {
   probeSessionPendingQueueWakeCapabilityV1,
@@ -42,6 +43,15 @@ import { logger } from '@/ui/logger';
 import { authAndSetupMachineIfNeeded } from '@/ui/auth';
 import { configuration, reloadConfiguration } from '@/configuration';
 import { startCaffeinate, stopCaffeinate } from '@/integrations/caffeinate';
+import {
+  createTwinSessionSchedulerAdapter,
+  resolveTwinSessionSchedulerConfig,
+} from '@/integrations/twin/twinSessionSchedulerAdapter';
+import {
+  createTwinSessionReleaseOutbox,
+  resolveTwinSessionReleaseOutboxConfig,
+  type TwinSessionReleaseResult,
+} from '@/integrations/twin/twinSessionReleaseOutbox';
 import packageJson from '../../package.json';
 import { getEnvironmentInfo } from '@/ui/doctor';
 import {
@@ -223,6 +233,7 @@ import {
   readSessionMarkerForPid,
   refreshSessionMarkerRespawn,
   removeSessionMarker,
+  removeSessionMarkerForSession,
   writeSessionMarker,
 } from './sessionRegistry';
 import {
@@ -408,6 +419,7 @@ import {
   ConnectedServiceIdSchema,
   RestartAllSessionRunnersResultV1Schema,
   RestartSessionRunnerResultV1Schema,
+  RPC_METHODS,
   type ConnectedServiceBindingsV1,
   type ConnectedServiceCredentialRevisionV1,
   type ConnectedServiceExecutionAuthorityV1,
@@ -1817,6 +1829,77 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
         const pidToTrackedSession = new Map<number, TrackedSession>();
         const spawnResourceCleanupByPid = new Map<number, () => void>();
         const sessionAttachCleanupByPid = new Map<number, () => Promise<void>>();
+      const twinSessionSchedulerConfig = resolveTwinSessionSchedulerConfig(process.env);
+      const twinSessionReleaseOutboxConfig = resolveTwinSessionReleaseOutboxConfig(process.env)
+        ?? (twinSessionSchedulerConfig
+          ? { v: 1 as const, pollIntervalMs: twinSessionSchedulerConfig.pollIntervalMs }
+          : null);
+      const twinSessionScheduler = twinSessionSchedulerConfig
+        ? createTwinSessionSchedulerAdapter({
+            config: twinSessionSchedulerConfig,
+            attemptDirectory: join(configuration.happyHomeDir, 'daemon', 'twin-session-scheduler-attempts'),
+            encryptionMaterial: credentials.encryption,
+            credentials,
+            controllerMachineId: machineId,
+            logWarning: (message, error) => logger.warn(message, { error: serializeAxiosErrorForLog(error) }),
+          })
+        : null;
+      const twinSessionReleaseOutbox = twinSessionReleaseOutboxConfig
+        ? createTwinSessionReleaseOutbox({
+            directory: join(configuration.happyHomeDir, 'daemon', 'twin-session-release-outbox'),
+            pollIntervalMs: twinSessionReleaseOutboxConfig.pollIntervalMs,
+            deliver: async ({ lease, sessionId, receipt }): Promise<TwinSessionReleaseResult> => {
+              const result = await callMachineRpc({
+                credentials,
+                machineId: lease.controllerMachineId,
+                method: RPC_METHODS.DAEMON_SCHEDULED_SESSION_RELEASE_V1,
+                request: {
+                  attemptLookupId: lease.attemptLookupId,
+                  leaseId: lease.leaseId,
+                  sessionId,
+                  ...(receipt ? { receipt } : {}),
+                },
+              });
+              if (
+                result
+                && typeof result === 'object'
+                && 'status' in result
+                && (
+                  result.status === 'released'
+                  || result.status === 'pending'
+                  || result.status === 'acknowledged'
+                  || result.status === 'not_found'
+                  || result.status === 'mismatch'
+                )
+              ) {
+                return result as TwinSessionReleaseResult;
+              }
+              throw new Error('Twin session release RPC returned an invalid result');
+            },
+            logWarning: (message, error) => logger.warn(message, { error: serializeAxiosErrorForLog(error) }),
+          })
+        : null;
+      let twinSessionReleaseOutboxStarted = false;
+      let twinSessionSchedulerStarted = false;
+      const enqueueTwinSessionReleaseByIdentity = async (
+        lease: NonNullable<SpawnSessionOptions['schedulingLease']>,
+        sessionIdRaw: string,
+      ): Promise<void> => {
+        const sessionId = sessionIdRaw.trim();
+        if (!lease || !sessionId) return;
+        if (!twinSessionReleaseOutbox) {
+          throw new Error('Twin session release outbox is unavailable for a scheduled session');
+        }
+        await twinSessionReleaseOutbox.enqueue({ lease, sessionId });
+      };
+      const enqueueTwinSessionRelease = async (trackedSession: TrackedSession): Promise<void> => {
+        const lease = trackedSession.spawnOptions?.schedulingLease;
+        const sessionId = typeof trackedSession.happySessionId === 'string'
+          ? trackedSession.happySessionId
+          : '';
+        if (!lease) return;
+        await enqueueTwinSessionReleaseByIdentity(lease, sessionId);
+      };
       const connectedServicesMaterializationBaseDir = join(configuration.happyHomeDir, 'daemon', 'connected-services', 'materialized');
       let connectedServiceRefreshCoordinator: ConnectedServiceRefreshCoordinator | null = null;
       const prepareAuthGroupCandidateForSwitch = async (input: Readonly<{
@@ -2655,6 +2738,10 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
           if (sessions.length === 0) return;
           sessions.forEach((session) => publishingStartupOrphanedSessionIds.add(stagingKey(session)));
           try {
+            for (const session of sessions) {
+              if (!session.schedulingLease) continue;
+              await enqueueTwinSessionReleaseByIdentity(session.schedulingLease, session.sessionId);
+            }
             await publishOrphanedStartupSessionEnds({
               apiMachine,
               orphanedDeadDaemonSessions: sessions,
@@ -4644,8 +4731,21 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
           { min: 0, max: 10_000 },
         );
 
-        const isSessionAlreadyRunning = async (sessionId: string): Promise<boolean> => {
-          return await isSessionRunnerActive(sessionId);
+        const isSessionAlreadyRunning = async (input: Readonly<{
+          sessionId: string;
+          schedulingLease?: NonNullable<SpawnSessionOptions['schedulingLease']>;
+        }>): Promise<boolean | 'same_lease_successor' | 'different_lease_or_unleased'> => {
+          if (!input.schedulingLease) return await isSessionRunnerActive(input.sessionId);
+          const runners = getCurrentChildren().filter((child) => child.happySessionId === input.sessionId);
+          if (runners.length === 0) return false;
+          return runners.some((child) => {
+            const childLease = child.spawnOptions?.schedulingLease;
+            if (!childLease) return false;
+            return childLease.leaseId === input.schedulingLease?.leaseId
+              && childLease.controllerMachineId === input.schedulingLease?.controllerMachineId;
+          })
+            ? 'same_lease_successor'
+            : 'different_lease_or_unleased';
         };
         // A stopped runner marker is diagnostic state, not authorization to
         // recreate provider execution after a later daemon start.
@@ -4780,20 +4880,38 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
               readCredentials,
             });
           },
-          onRespawnSuccess: ({ sessionId, previousPid }) => {
+          onRespawnSuccess: async ({ sessionId, previousPid, schedulingLease }) => {
             connectedServicesRestartRequestedPids.delete(previousPid);
             connectedServiceRestartAmplificationGuard.completePid(previousPid, { status: 'success' });
             clearConnectedServiceRestartIntentForPid(
               previousPid,
               '[DAEMON RUN] Failed to clear connected-service restart intent after respawn success',
             );
-            const next = getCurrentChildren().find((child) => child.happySessionId === sessionId) ?? null;
+            const next = getCurrentChildren().find((child) => (
+              child.pid !== previousPid && child.happySessionId === sessionId
+            )) ?? null;
             settleSessionRunnerRestartCompletion(sessionId, previousPid, {
               ok: true,
               ...(next ? { next: summarizeSessionRunnerEndpoint(next) } : {}),
             });
+            if (!schedulingLease || !next) return;
+            try {
+              const nextMarker = await readSessionMarkerForPid(next.pid);
+              if (
+                typeof nextMarker?.happySessionId !== 'string'
+                || nextMarker.happySessionId.trim() !== sessionId
+              ) return;
+              await removeSessionMarkerForSession({ pid: previousPid, sessionId });
+            } catch (error) {
+              logger.warn('[DAEMON RUN] Failed to retire scheduled session marker after confirmed respawn', {
+                sessionId,
+                previousPid,
+                nextPid: next.pid,
+                error: serializeAxiosErrorForLog(error),
+              });
+            }
           },
-          onRespawnTerminal: ({ sessionId, previousPid, reason, detail }) => {
+          onRespawnTerminal: async ({ sessionId, previousPid, reason, detail, schedulingLease }) => {
             connectedServicesRestartRequestedPids.delete(previousPid);
             connectedServiceRestartAmplificationGuard.completePid(
               previousPid,
@@ -4810,6 +4928,17 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
               previousPid,
               buildSessionRunnerRestartTerminalCompletion(reason, detail),
             );
+            if (schedulingLease && reason !== 'already_running') {
+              try {
+                await enqueueTwinSessionReleaseByIdentity(schedulingLease, sessionId);
+                await removeSessionMarkerForSession({ pid: previousPid, sessionId });
+              } catch (error) {
+                logger.warn('[DAEMON RUN] Failed to persist scheduled session release after terminal respawn outcome', {
+                  sessionId,
+                  error: serializeAxiosErrorForLog(error),
+                });
+              }
+            }
           },
           random: () => Math.random(),
           logDebug: (message, payload) => logger.debug(message, payload),
@@ -5442,8 +5571,9 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
             }
             connectedServiceRestartAmplificationGuard.transferPid(fromPid, toPid);
           },
-          shouldPreserveSessionMarkerOnExit: ({ pid, trackedSession }) => {
+          shouldPreserveSessionMarkerOnExit: ({ pid, trackedSession, unexpected }) => {
             if (connectedServicesRestartRequestedPids.has(pid)) return true;
+            if (unexpected && trackedSession.spawnOptions?.schedulingLease) return true;
             const terminal = trackedSession.happySessionMetadataFromLocalWebhook?.terminal
               ?? trackedSession.hostedTerminal;
             return Boolean(trackedSession.publishedTerminalControlServiceabilityAttachmentId)
@@ -5494,6 +5624,10 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
               handle: attachmentInfo.handle,
               controlDescriptorStatus,
             });
+          },
+          onFinalTrackedSessionExitClassified: async ({ trackedSession, unexpected }) => {
+            if (unexpected) return;
+            await enqueueTwinSessionRelease(trackedSession);
           },
             });
         const onChildExited = async (pid: number, exit: { reason: string; code: number | null; signal: string | null }) => {
@@ -8286,8 +8420,37 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
               });
               connectedApiMachine.setRPCHandlers({
                 spawnSession,
-                spawnSessionForHandoff: spawnSession,
-                resolveSpawnSessionByNonce: resolveDaemonSpawnSessionByNonce,
+                ...(twinSessionScheduler ? { spawnScheduledSession: twinSessionScheduler.spawn } : {}),
+                ...(twinSessionReleaseOutbox
+                  ? {
+                      spawnScheduledTargetSession: async (options, lease) => await spawnSession({
+                        ...options,
+                        schedulingLease: lease,
+                      }),
+                    }
+                  : {}),
+                spawnSessionForHandoff: async (options, hooks) => {
+                  if (!options.schedulingTarget) return await spawnSession(options, hooks);
+                  if (!twinSessionScheduler) {
+                    return {
+                      type: 'error',
+                      errorCode: SPAWN_SESSION_ERROR_CODES.SCHEDULING_TARGET_UNAVAILABLE,
+                      errorMessage: `The daemon scheduling adapter is unavailable for worker ${options.schedulingTarget.workerId}`,
+                    };
+                  }
+                  return await twinSessionScheduler.spawn(options, hooks);
+                },
+                resolveSpawnSessionByNonce: async (spawnNonce) => {
+                  if (twinSessionScheduler) {
+                    const scheduled = await twinSessionScheduler.resolve(spawnNonce);
+                    if (scheduled.status !== 'not_found') return scheduled;
+                  }
+                  return await resolveDaemonSpawnSessionByNonce(spawnNonce);
+                },
+                resolveScheduledTargetSpawnByNonce: resolveDaemonSpawnSessionByNonce,
+                ...(twinSessionScheduler
+                  ? { releaseScheduledSessionLease: twinSessionScheduler.observeRemoteSessionExit }
+                  : {}),
                 abandonSpawnSessionByNonce: async (spawnNonce) => await abandonSpawnedSessionUntilCompleted({
                   spawnNonce,
                   resolveSpawnSessionByNonce: resolveDaemonSpawnSessionByNonce,
@@ -8301,7 +8464,9 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
                   },
                 }),
                 stopSession,
-                isSessionActive: isSessionAlreadyRunning,
+                isSessionActive: async (sessionId) => (
+                  await isSessionAlreadyRunning({ sessionId })
+                ) === true,
                 loadLocalSessionMetadata: loadLocalSessionMetadataForHandoff,
                 requestShutdown: () => {
                   void beforeShutdown().finally(() => requestShutdown('happier-app'));
@@ -8398,6 +8563,23 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
                   await temporaryThrottleRecoveryScheduler.stopRetrying(input),
               });
 
+              if (twinSessionReleaseOutbox && !twinSessionReleaseOutboxStarted) {
+                await twinSessionReleaseOutbox.start();
+                twinSessionReleaseOutboxStarted = true;
+              }
+              if (twinSessionScheduler && !twinSessionSchedulerStarted) {
+                try {
+                  await twinSessionScheduler.start();
+                  twinSessionSchedulerStarted = true;
+                } catch (error) {
+                  if (twinSessionReleaseOutboxStarted) {
+                    twinSessionReleaseOutbox?.stop();
+                    twinSessionReleaseOutboxStarted = false;
+                  }
+                  throw error;
+                }
+              }
+
               connectedApiMachine.onUpdate((update) => {
                 if (!automationWorker) return false;
                 const t = (update?.body as any)?.t;
@@ -8433,7 +8615,13 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
                     sessionId: hint.sessionId,
                     requestId: hint.requestId,
                     pendingVersion: hint.pendingVersion,
-                    spawnSession: async (options) => await spawnSession(options),
+                    spawnSession: async (options) => {
+                      if (!options.schedulingTarget) return await spawnSession(options);
+                      if (!twinSessionScheduler) {
+                        throw new Error('Scheduled session activation requires the configured scheduler');
+                      }
+                      return await twinSessionScheduler.spawn(options);
+                    },
                   });
                   if (result.status === 'rejected') {
                     logger.warn('[DAEMON RUN] Exact Pending runtime activation was rejected', {
@@ -8636,6 +8824,8 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
                 const cleanupAndShutdown = async (source: 'happier-app' | 'happier-cli' | 'os-signal' | 'exception', errorMessage?: string) => {
           shutdownInitiated = true;
           eventLoopStallMonitor.stop();
+          twinSessionScheduler?.stop();
+          twinSessionReleaseOutbox?.stop();
           connectedServiceTurnDeferralQueue.cancelAll('daemon_shutdown');
           // Lane F: stop exposing turn-in-flight state once the queue is torn down so a tearing-down
           // daemon never reports a stale in-flight turn to the managed-server release path.

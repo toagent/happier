@@ -10,6 +10,7 @@ import type { TrackedSession } from '@/daemon/types';
 import {
   SPAWN_SESSION_ERROR_CODES,
   isConnectedServiceResumeUnreachableSpawnErrorDetail,
+  type SessionSchedulingLeaseV1,
 } from '@happier-dev/protocol';
 
 import { RestartController } from '@/subprocess/supervision/restartController';
@@ -37,6 +38,7 @@ export type SessionRunnerRespawnOptionsResolver = (input: Readonly<{
 
 export type SessionRunnerRespawnTerminalReason =
   | 'already_running'
+  | 'scheduling_lease_lost'
   | 'stop_requested'
   | 'missing_spawn_options'
   | 'directory_approval_required'
@@ -142,19 +144,24 @@ export function createSessionRunnerRespawnManager(params: Readonly<{
   baseDelayMs: number;
   maxDelayMs: number;
   jitterMs: number;
-  isSessionAlreadyRunning: (sessionId: string) => boolean | Promise<boolean>;
+  isSessionAlreadyRunning: (input: Readonly<{
+    sessionId: string;
+    schedulingLease?: SessionSchedulingLeaseV1;
+  }>) => boolean | 'same_lease_successor' | 'different_lease_or_unleased' | Promise<boolean | 'same_lease_successor' | 'different_lease_or_unleased'>;
   spawnSession: (opts: SpawnSessionOptions) => Promise<unknown>;
   resolveRespawnOptions?: SessionRunnerRespawnOptionsResolver;
   onRespawnSuccess?: (input: Readonly<{
     sessionId: string;
     previousPid: number;
     result: unknown;
+    schedulingLease?: SessionSchedulingLeaseV1;
   }>) => void;
   onRespawnTerminal?: (input: Readonly<{
     sessionId: string;
     previousPid: number;
     reason: SessionRunnerRespawnTerminalReason;
     detail?: string;
+    schedulingLease?: SessionSchedulingLeaseV1;
   }>) => void;
   random: () => number;
   logDebug: (message: string, payload?: unknown) => void;
@@ -252,7 +259,13 @@ export function createSessionRunnerRespawnManager(params: Readonly<{
         params.logWarn(`[DAEMON RUN] Session ${sessionId} crashed; respawn suppressed (${decision.reason})`);
       }
       endRespawnCycle(sessionId);
-      params.onRespawnTerminal?.({ sessionId, previousPid, reason: 'no_restart', detail: decision.reason });
+      params.onRespawnTerminal?.({
+        sessionId,
+        previousPid,
+        reason: 'no_restart',
+        detail: decision.reason,
+        ...(spawnOptions.schedulingLease ? { schedulingLease: spawnOptions.schedulingLease } : {}),
+      });
       return;
     }
 
@@ -274,16 +287,39 @@ export function createSessionRunnerRespawnManager(params: Readonly<{
 
     const timer = setTimeout(() => {
       void (async () => {
-        const alreadyRunning = await params.isSessionAlreadyRunning(sessionId);
-        if (alreadyRunning) {
+        const runningStatus = await params.isSessionAlreadyRunning({
+          sessionId,
+          ...(spawnOptions.schedulingLease ? { schedulingLease: spawnOptions.schedulingLease } : {}),
+        });
+        if (runningStatus === 'different_lease_or_unleased') {
           endRespawnCycle(sessionId);
-          params.onRespawnTerminal?.({ sessionId, previousPid, reason: 'already_running' });
+          params.onRespawnTerminal?.({
+            sessionId,
+            previousPid,
+            reason: 'scheduling_lease_lost',
+            ...(spawnOptions.schedulingLease ? { schedulingLease: spawnOptions.schedulingLease } : {}),
+          });
+          return;
+        }
+        if (runningStatus === true || runningStatus === 'same_lease_successor') {
+          endRespawnCycle(sessionId);
+          params.onRespawnTerminal?.({
+            sessionId,
+            previousPid,
+            reason: 'already_running',
+            ...(spawnOptions.schedulingLease ? { schedulingLease: spawnOptions.schedulingLease } : {}),
+          });
           return;
         }
         const stopRequest = stopRequestedBySessionId.get(sessionId);
         if (stopRequest) {
           endRespawnCycle(sessionId);
-          params.onRespawnTerminal?.({ sessionId, previousPid, reason: 'stop_requested' });
+          params.onRespawnTerminal?.({
+            sessionId,
+            previousPid,
+            reason: 'stop_requested',
+            ...(spawnOptions.schedulingLease ? { schedulingLease: spawnOptions.schedulingLease } : {}),
+          });
           return;
         }
 
@@ -300,7 +336,12 @@ export function createSessionRunnerRespawnManager(params: Readonly<{
           .spawnSession(respawnOptions)
           .then((result) => {
             if (result && typeof result === 'object' && (result as any).type === 'success') {
-              params.onRespawnSuccess?.({ sessionId, previousPid, result });
+              params.onRespawnSuccess?.({
+                sessionId,
+                previousPid,
+                result,
+                ...(spawnOptions.schedulingLease ? { schedulingLease: spawnOptions.schedulingLease } : {}),
+              });
               // Cycle end, NOT a full reset: the intended-restart window must survive a successful
               // respawn or a "successful" intended-restart loop is unbounded across cycles (RR-2).
               endRespawnCycle(sessionId);
@@ -310,21 +351,36 @@ export function createSessionRunnerRespawnManager(params: Readonly<{
             if (result && typeof result === 'object' && (result as any).type === 'requestToApproveDirectoryCreation') {
               params.logWarn(`[DAEMON RUN] Respawn suppressed for session ${sessionId} (directory approval required)`);
               endRespawnCycle(sessionId);
-              params.onRespawnTerminal?.({ sessionId, previousPid, reason: 'directory_approval_required' });
+              params.onRespawnTerminal?.({
+                sessionId,
+                previousPid,
+                reason: 'directory_approval_required',
+                ...(spawnOptions.schedulingLease ? { schedulingLease: spawnOptions.schedulingLease } : {}),
+              });
               return;
             }
 
             if (isNotAuthenticatedSpawnResult(result)) {
               params.logWarn(`[DAEMON RUN] Respawn suppressed for session ${sessionId} (auth:not_authenticated)`);
               endRespawnCycle(sessionId);
-              params.onRespawnTerminal?.({ sessionId, previousPid, reason: 'not_authenticated' });
+              params.onRespawnTerminal?.({
+                sessionId,
+                previousPid,
+                reason: 'not_authenticated',
+                ...(spawnOptions.schedulingLease ? { schedulingLease: spawnOptions.schedulingLease } : {}),
+              });
               return;
             }
 
             if (isResumeUnreachableSpawnResult(result)) {
               params.logWarn(`[DAEMON RUN] Respawn suppressed for session ${sessionId} (resume unreachable)`);
               endRespawnCycle(sessionId);
-              params.onRespawnTerminal?.({ sessionId, previousPid, reason: 'resume_unreachable' });
+              params.onRespawnTerminal?.({
+                sessionId,
+                previousPid,
+                reason: 'resume_unreachable',
+                ...(spawnOptions.schedulingLease ? { schedulingLease: spawnOptions.schedulingLease } : {}),
+              });
               return;
             }
 
@@ -394,10 +450,22 @@ export function createSessionRunnerRespawnManager(params: Readonly<{
       }
     },
     handleUnexpectedExit: (trackedSession: TrackedSession, exit: DaemonChildExit, options) => {
-      if (!params.enabled && options?.forceRestart !== true) return;
       if (trackedSession.startedBy !== 'daemon') return;
       const sessionId = normalizeSessionId(trackedSession.happySessionId);
       if (!sessionId) return;
+      const schedulingLease = trackedSession.spawnOptions?.schedulingLease;
+      if (!params.enabled && options?.forceRestart !== true) {
+        if (schedulingLease) {
+          params.onRespawnTerminal?.({
+            sessionId,
+            previousPid: trackedSession.pid,
+            schedulingLease,
+            reason: 'no_restart',
+            detail: 'respawn_disabled',
+          });
+        }
+        return;
+      }
       const forceRestart = options?.forceRestart === true;
       if (forceRestart) {
         // A connected-service-initiated forced restart explicitly supersedes any prior stop request
@@ -441,6 +509,7 @@ export function createSessionRunnerRespawnManager(params: Readonly<{
           previousPid: trackedSession.pid,
           reason: 'no_restart',
           detail: decision.reason,
+          ...(schedulingLease ? { schedulingLease } : {}),
         });
         return;
       }

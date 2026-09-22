@@ -31,6 +31,7 @@ import {
   type SessionHandoffResumePlan,
   type SessionHandoffWorkspaceTransfer,
   SessionHandoffStartRequestSchema,
+  SessionSchedulingTargetV1Schema,
   SessionHandoffStatusGetRequestSchema,
   type SessionHandoffStatus,
   type WorkspaceManifest,
@@ -647,6 +648,7 @@ export function createUnregisteredSessionHandoffTargetResumeV2FoundationHandler(
       transcriptStorage: resumePlan.transcriptStorage,
       ...(resumePlan.environmentVariables ? { environmentVariables: resumePlan.environmentVariables } : {}),
       ...(resumePlan.codexBackendMode ? { codexBackendMode: resumePlan.codexBackendMode } : {}),
+      ...(resumePlan.schedulingTarget ? { schedulingTarget: resumePlan.schedulingTarget } : {}),
       ...(job.prepareTargetResult.agentRuntimeDescriptorV1
         ? { agentRuntimeDescriptorV1: job.prepareTargetResult.agentRuntimeDescriptorV1 }
         : {}),
@@ -686,6 +688,22 @@ export function createUnregisteredSessionHandoffTargetResumeV2FoundationHandler(
     });
 
     if (spawnResult.type !== 'success') return spawnResult;
+    if (spawnResult.sessionIdStatus === 'pending' && resumePlan.schedulingTarget) {
+      const latest = await prepareJobStore.read(job.jobId);
+      if (
+        latest?.schemaVersion !== 2
+        || latest.recordKind !== 'prepared_target'
+        || latest.resume.status !== 'attempted'
+        || latest.resume.attemptId !== parsed.data.attemptId
+      ) {
+        return { ok: false, errorCode: 'ambiguous_runner_ownership' } as const;
+      }
+      return SessionHandoffTargetResumeResponseV2Schema.parse({
+        handoffId: job.handoffId,
+        sessionId: job.sessionId,
+        disposition: 'scheduling_pending',
+      });
+    }
     if (spawnResult.runnerAcceptance === 'preexisting_or_adopted' || !spawnResult.runnerAcceptance) {
       const classified = await prepareJobStore.transitionV2(job.jobId, (current) => {
         if (current.recordKind !== 'prepared_target' || current.resume.status !== 'not_attempted') {
@@ -1781,9 +1799,12 @@ export function registerMachineSessionHandoffRpcHandlers(params: Readonly<{
               requestedTargetMachineId: input.request.targetMachineId,
             }) ?? undefined;
 
-			      const handoffMetadataV2: SessionHandoffMetadataV2 | undefined =
-			        providerBundleTransferPublication || preparedWorkspaceTransfer.handoffMetadataV2
-			          ? {
+              const schedulingTarget = input.metadata.schedulingTargetV1 === undefined
+                ? undefined
+                : SessionSchedulingTargetV1Schema.parse(input.metadata.schedulingTargetV1);
+				      const handoffMetadataV2: SessionHandoffMetadataV2 | undefined =
+				        providerBundleTransferPublication || preparedWorkspaceTransfer.handoffMetadataV2 || schedulingTarget
+				          ? {
 			              ...(providerBundleTransferPublication ? { providerBundleTransferPublication } : {}),
 			              ...(preparedWorkspaceTransfer.handoffMetadataV2?.workspaceReplicationSourceRootPath
 			                ? { workspaceReplicationSourceRootPath: preparedWorkspaceTransfer.handoffMetadataV2.workspaceReplicationSourceRootPath }
@@ -1796,10 +1817,11 @@ export function registerMachineSessionHandoffRpcHandlers(params: Readonly<{
 			                : (workspaceTransferEnabled
 			                    ? { workspaceReplicationManifestTransferPublication: { transferId: buildSessionHandoffWorkspaceManifestTransferId({ handoffId: input.handoffId }) } }
 			                    : {})),
-			              ...(workspaceReplicationMetadata?.sourceControllerMetadata
-			                ? { workspaceReplicationSourceControllerMetadata: workspaceReplicationMetadata.sourceControllerMetadata }
-			                : {}),
-			            }
+				              ...(workspaceReplicationMetadata?.sourceControllerMetadata
+				                ? { workspaceReplicationSourceControllerMetadata: workspaceReplicationMetadata.sourceControllerMetadata }
+				                : {}),
+				              ...(schedulingTarget ? { schedulingTargetV1: schedulingTarget } : {}),
+				            }
 			          : undefined;
 
 	      const status = buildStartPendingStatus({
@@ -3072,7 +3094,12 @@ export function registerMachineSessionHandoffRpcHandlers(params: Readonly<{
             remoteSessionId: imported.remoteSessionId,
             directSource,
             ...(imported.agentRuntimeDescriptorV1 ? { agentRuntimeDescriptorV1: imported.agentRuntimeDescriptorV1 } : {}),
-            resume: imported.resume,
+            resume: {
+              ...imported.resume,
+              ...(parsed.data.handoffMetadataV2?.schedulingTargetV1
+                ? { schedulingTarget: parsed.data.handoffMetadataV2.schedulingTargetV1 }
+                : {}),
+            },
           };
           const afterImportJob = await prepareJobStore.read(jobId);
           if (afterImportJob?.cancelRequestedAtMs) {

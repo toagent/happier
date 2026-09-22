@@ -1,4 +1,5 @@
 import { sealAccountScopedBlobCiphertext } from '@happier-dev/protocol';
+import { readProcessInstanceFingerprintSync } from '@happier-dev/cli-common/processInstance';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { reattachTrackedSessionsFromMarkers } from './reattachFromMarkers';
@@ -65,6 +66,10 @@ function mockTerminalAttachmentState(state: TerminalAttachmentReadState): void {
 vi.mock('../doctor', () => ({
   findAllHappyProcesses: vi.fn(async () => []),
   findHappyProcessByPid: vi.fn(async () => null),
+}));
+
+vi.mock('@happier-dev/cli-common/processInstance', () => ({
+  readProcessInstanceFingerprintSync: vi.fn(() => 'darwin-ps:test-process-instance'),
 }));
 
 vi.mock('../reattach', () => ({
@@ -515,6 +520,44 @@ describe('reattachTrackedSessionsFromMarkers', () => {
     expect(removeSessionMarker).not.toHaveBeenCalledWith(43213);
   });
 
+  it('preserves scheduling lease custody for a dead daemon marker', async () => {
+    const schedulingLease = {
+      v: 1 as const,
+      attemptLookupId: 'attempt-dead-session',
+      leaseId: 'lease-dead-session',
+      controllerMachineId: 'machine-controller',
+    };
+    vi.mocked(listSessionMarkers).mockResolvedValue([{
+      pid: 43214,
+      happySessionId: 'session-scheduled-dead',
+      happyHomeDir: '/tmp/happy',
+      createdAt: 1,
+      updatedAt: 1,
+      startedBy: 'daemon',
+      cwd: '/workspace/project',
+      respawn: {
+        version: 1,
+        directory: '/workspace/project',
+        backendTarget: { kind: 'builtInAgent', agentId: 'codex' },
+        schedulingTarget: { v: 1, workerId: 'twin-dev' },
+        schedulingLease,
+      },
+    } satisfies DaemonSessionMarker]);
+    mockHappyProcessesForDiscovery([]);
+    vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' });
+    });
+
+    await expect(reattachTrackedSessionsFromMarkers({ pidToTrackedSession: new Map() }))
+      .resolves.toMatchObject({
+        orphanedDeadDaemonSessions: [{
+          sessionId: 'session-scheduled-dead',
+          pid: 43214,
+          schedulingLease,
+        }],
+      });
+  });
+
   it('reattaches a live marker and clears a stale connected-service restart intent without replaying it', async () => {
     vi.mocked(listSessionMarkers).mockResolvedValue([
       {
@@ -870,6 +913,7 @@ describe('reattachTrackedSessionsFromMarkers', () => {
       cwd: '/tmp/project',
       processCommandHash:
         'hash:/home/guest/.happier/cli-preview/current/happier opencode --happy-starting-mode remote --started-by daemon --resume vendor-1 --existing-session session-123',
+      processInstanceFingerprint: 'darwin-ps:test-process-instance',
       processCommand:
         '/home/guest/.happier/cli-preview/current/happier opencode --happy-starting-mode remote --started-by daemon --resume vendor-1 --existing-session session-123',
       respawn: {
@@ -1071,6 +1115,7 @@ describe('reattachTrackedSessionsFromMarkers', () => {
       cwd: '/tmp/project',
       processCommandHash:
         'hash:/home/guest/.happier/cli-preview/current/happier opencode --happy-starting-mode remote --started-by daemon --resume vendor-1 --existing-session session-123',
+      processInstanceFingerprint: 'darwin-ps:test-process-instance',
       processCommand:
         '/home/guest/.happier/cli-preview/current/happier opencode --happy-starting-mode remote --started-by daemon --resume vendor-1 --existing-session session-123',
       respawn: {
@@ -1254,6 +1299,7 @@ describe('reattachTrackedSessionsFromMarkers', () => {
       cwd: '/tmp/project',
       processCommandHash:
         'hash:C:\\hq\\windetachedfix-007\\happier-v0.2.4-windows-x64\\happier.exe C:\\hq\\windetachedfix-007\\happier-v0.2.4-windows-x64\\package-dist\\index.mjs opencode --happy-starting-mode remote --started-by daemon',
+      processInstanceFingerprint: 'darwin-ps:test-process-instance',
       processCommand:
         'C:\\hq\\windetachedfix-007\\happier-v0.2.4-windows-x64\\happier.exe C:\\hq\\windetachedfix-007\\happier-v0.2.4-windows-x64\\package-dist\\index.mjs opencode --happy-starting-mode remote --started-by daemon',
       respawn: {
@@ -1377,6 +1423,7 @@ describe('reattachTrackedSessionsFromMarkers', () => {
       cwd: '/tmp/project',
       processCommandHash:
         'hash:C:\\hq\\windetachedfix-007\\happier-v0.2.4-windows-x64\\happier.exe C:\\hq\\windetachedfix-007\\happier-v0.2.4-windows-x64\\package-dist\\index.mjs opencode --happy-starting-mode remote --started-by daemon --existing-session session-123',
+      processInstanceFingerprint: 'darwin-ps:test-process-instance',
       processCommand:
         'C:\\hq\\windetachedfix-007\\happier-v0.2.4-windows-x64\\happier.exe C:\\hq\\windetachedfix-007\\happier-v0.2.4-windows-x64\\package-dist\\index.mjs opencode --happy-starting-mode remote --started-by daemon --existing-session session-123',
       respawn: expect.objectContaining({
@@ -1657,6 +1704,102 @@ describe('reattachTrackedSessionsFromMarkers', () => {
         reattachedFromDiskMarker: true,
       }),
     );
+  });
+
+  it('does not transfer an incomplete marker respawn lease across a reused pid with a different process instance', async () => {
+    const schedulingLease = {
+      v: 1 as const,
+      attemptLookupId: 'attempt-session-a',
+      leaseId: 'lease-session-a',
+      controllerMachineId: 'machine-controller',
+    };
+    vi.mocked(readProcessInstanceFingerprintSync).mockReturnValue('darwin-ps:session-b');
+    vi.mocked(listSessionMarkers).mockResolvedValue([
+      {
+        pid: 76547,
+        happySessionId: 'session-a',
+        happyHomeDir: '/tmp/happy',
+        createdAt: 1,
+        updatedAt: 1,
+        startedBy: 'daemon',
+        cwd: '/tmp/project',
+        processCommandHash: 'marker-a-command-hash',
+        processInstanceFingerprint: 'darwin-ps:session-a',
+        respawn: {
+          version: 1,
+          directory: '/tmp/project',
+          backendTarget: { kind: 'builtInAgent', agentId: 'claude' },
+          schedulingTarget: { v: 1, workerId: 'twin-dev' },
+          schedulingLease,
+        },
+      } satisfies DaemonSessionMarker,
+    ]);
+    mockHappyProcessesForDiscovery([
+      {
+        pid: 76547,
+        type: 'daemon-spawned-session',
+        cwd: '/tmp/other-project',
+        command: 'happier claude --started-by daemon --existing-session session-b',
+      } satisfies HappyProcessInfo,
+    ]);
+    vi.spyOn(process, 'kill').mockImplementation(() => true);
+
+    const pidToTrackedSession = new Map<number, TrackedSession>();
+    await expect(reattachTrackedSessionsFromMarkers({ pidToTrackedSession })).resolves.toMatchObject({
+      orphanedDeadDaemonSessions: [{
+        sessionId: 'session-a',
+        pid: 76547,
+        schedulingLease,
+      }],
+    });
+
+    expect(pidToTrackedSession).toEqual(new Map());
+    expect(writeSessionMarker).not.toHaveBeenCalled();
+    expect(removeSessionMarker).not.toHaveBeenCalledWith(76547);
+  });
+
+  it('retains a fingerprinted lease marker when the live process instance cannot be verified', async () => {
+    const schedulingLease = {
+      v: 1 as const,
+      attemptLookupId: 'attempt-unverified-session',
+      leaseId: 'lease-unverified-session',
+      controllerMachineId: 'machine-controller',
+    };
+    vi.mocked(readProcessInstanceFingerprintSync).mockReturnValue(null);
+    vi.mocked(listSessionMarkers).mockResolvedValue([{
+      pid: 76548,
+      happySessionId: 'session-unverified',
+      happyHomeDir: '/tmp/happy',
+      createdAt: 1,
+      updatedAt: 1,
+      startedBy: 'daemon',
+      cwd: '/tmp/project',
+      processCommandHash: 'unverified-command-hash',
+      processInstanceFingerprint: 'darwin-ps:expected-instance',
+      respawn: {
+        version: 1,
+        directory: '/tmp/project',
+        backendTarget: { kind: 'builtInAgent', agentId: 'claude' },
+        schedulingTarget: { v: 1, workerId: 'twin-dev' },
+        schedulingLease,
+      },
+    } satisfies DaemonSessionMarker]);
+    mockHappyProcessesForDiscovery([{
+      pid: 76548,
+      type: 'daemon-spawned-session',
+      cwd: '/tmp/project',
+      command: 'happier claude --started-by daemon --existing-session session-unverified',
+    } satisfies HappyProcessInfo]);
+    vi.spyOn(process, 'kill').mockImplementation(() => true);
+
+    const pidToTrackedSession = new Map<number, TrackedSession>();
+    await expect(reattachTrackedSessionsFromMarkers({ pidToTrackedSession })).resolves.toMatchObject({
+      orphanedDeadDaemonSessions: [],
+    });
+
+    expect(pidToTrackedSession).toEqual(new Map());
+    expect(writeSessionMarker).not.toHaveBeenCalled();
+    expect(removeSessionMarker).not.toHaveBeenCalledWith(76548);
   });
 
   it('uses marker pid lookups without a full process-table scan when markerless recovery is disabled', async () => {

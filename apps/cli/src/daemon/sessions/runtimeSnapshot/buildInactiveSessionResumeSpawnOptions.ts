@@ -5,6 +5,7 @@ import {
 import {
   AgentRuntimeDescriptorV1Schema,
   readAcpConfiguredBackendV1FromMetadata,
+  SessionSchedulingTargetV1Schema,
 } from '@happier-dev/protocol';
 
 import type { SpawnSessionOptions } from '@/rpc/handlers/registerSessionHandlers';
@@ -117,6 +118,10 @@ export function buildInactiveSessionResumeSpawnOptions(
   const machineId = rawMachineId ?? metadataMachineId ?? readNonEmptyString(params.fallbackMachineId);
   const runtimeIdentity = resolveExactPersistedRuntimeIdentity(params.metadata);
   if (!runtimeIdentity || !directory || !machineId) return null;
+  const schedulingTarget = params.metadata.schedulingTargetV1 === undefined
+    ? undefined
+    : SessionSchedulingTargetV1Schema.safeParse(params.metadata.schedulingTargetV1);
+  if (schedulingTarget && !schedulingTarget.success) return null;
 
   const baseOptions: SpawnSessionOptions = {
     existingSessionId: params.sessionId,
@@ -124,6 +129,7 @@ export function buildInactiveSessionResumeSpawnOptions(
     directory,
     backendTarget: runtimeIdentity.backendTarget,
     approvedNewDirectoryCreation: true,
+    ...(schedulingTarget?.success ? { schedulingTarget: schedulingTarget.data } : {}),
     ...(runtimeIdentity.agentRuntimeDescriptorV1
       ? { agentRuntimeDescriptorV1: runtimeIdentity.agentRuntimeDescriptorV1 }
       : {}),

@@ -167,7 +167,7 @@ describe('accountScopedCipher', () => {
     expect(opened?.value).toEqual(payload);
   });
 
-  it('keeps existing account-scoped v1 kind bytes stable while adding provider usage snapshots, session organization display, and first intent', () => {
+  it('keeps account-scoped v1 kind bytes stable while adding scheduler attempts', () => {
     const machineKey = new Uint8Array(32).fill(7);
     const material: AccountScopedCryptoMaterial = { type: 'dataKey', machineKey };
     const randomBytes = deterministicRandomBytesFactory();
@@ -196,11 +196,25 @@ describe('accountScopedCipher', () => {
       payload: { localId: 'first-turn-1', content: { type: 'text', text: 'private prompt' } },
       randomBytes,
     });
+    const schedulerAttemptCiphertext = sealAccountScopedBlobCiphertext({
+      kind: 'twin_session_scheduler_attempt',
+      material,
+      payload: { v: 1, ownerToken: 'private-owner-token' },
+      randomBytes,
+    });
+    const schedulerReceiptCiphertext = sealAccountScopedBlobCiphertext({
+      kind: 'twin_session_release_receipt',
+      material,
+      payload: { v: 1, attemptLookupId: 'attempt-1' },
+      randomBytes,
+    });
 
     expect(decodeBase64(sessionRespawnCiphertext, 'base64')[1]).toBe(5);
     expect(decodeBase64(providerUsageCiphertext, 'base64')[1]).toBe(6);
     expect(decodeBase64(sessionOrganizationDisplayCiphertext, 'base64')[1]).toBe(7);
     expect(decodeBase64(sessionFirstIntentCiphertext, 'base64')[1]).toBe(8);
+    expect(decodeBase64(schedulerAttemptCiphertext, 'base64')[1]).toBe(11);
+    expect(decodeBase64(schedulerReceiptCiphertext, 'base64')[1]).toBe(12);
     expect(openAccountScopedBlobCiphertext({
       kind: 'session_organization_display',
       material,
@@ -216,6 +230,16 @@ describe('accountScopedCipher', () => {
       material,
       ciphertext: sessionFirstIntentCiphertext,
     })).toBeNull();
+    expect(openAccountScopedBlobCiphertext({
+      kind: 'twin_session_scheduler_attempt',
+      material,
+      ciphertext: schedulerAttemptCiphertext,
+    })?.value).toEqual({ v: 1, ownerToken: 'private-owner-token' });
+    expect(openAccountScopedBlobCiphertext({
+      kind: 'twin_session_release_receipt',
+      material,
+      ciphertext: schedulerReceiptCiphertext,
+    })?.value).toEqual({ v: 1, attemptLookupId: 'attempt-1' });
   });
 
   it('allows legacy and dataKey devices to read the same v1 ciphertext', () => {

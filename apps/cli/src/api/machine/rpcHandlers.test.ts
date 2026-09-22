@@ -409,6 +409,91 @@ describe('registerMachineRpcHandlers', () => {
     expect(spawnSession).not.toHaveBeenCalled();
   });
 
+  it('keeps scheduled target resolution and controller release on dedicated RPC handlers', async () => {
+    const registered = new Map<string, (params: any) => Promise<any>>();
+    const resolveSpawnSessionByNonce = vi.fn(async () => ({ status: 'success' as const, sessionId: 'controller' }));
+    const resolveScheduledTargetSpawnByNonce = vi.fn(async () => ({ status: 'success' as const, sessionId: 'target' }));
+    const releaseScheduledSessionLease = vi.fn(async () => ({ status: 'pending' as const, receipt: 'receipt-1' }));
+    registerMachineRpcHandlers({
+      rpcHandlerManager: {
+        registerHandler: (method: string, handler: (params: any) => Promise<any>) => registered.set(method, handler),
+      } as any,
+      handlers: {
+        spawnSession: async () => ({ type: 'success', sessionId: 'local' } as const),
+        resolveSpawnSessionByNonce,
+        resolveScheduledTargetSpawnByNonce,
+        releaseScheduledSessionLease,
+        stopSession: async () => true,
+        requestShutdown: () => {},
+      },
+    });
+
+    await expect(registered.get('daemon.scheduledSession.resolveTarget.v1')?.({ spawnNonce: ' nonce-1 ' }))
+      .resolves.toEqual({ status: 'success', sessionId: 'target' });
+    await expect(registered.get(RPC_METHODS.DAEMON_SPAWN_SESSION_RESOLVE)?.({ spawnNonce: 'nonce-1' }))
+      .resolves.toEqual({ status: 'success', sessionId: 'controller' });
+    await expect(registered.get('daemon.scheduledSession.release.v1')?.({
+      attemptLookupId: ' attempt-1 ',
+      leaseId: ' lease-1 ',
+      sessionId: ' session-1 ',
+    })).resolves.toEqual({ status: 'pending', receipt: 'receipt-1' });
+
+    expect(resolveScheduledTargetSpawnByNonce).toHaveBeenCalledWith('nonce-1');
+    expect(resolveSpawnSessionByNonce).toHaveBeenCalledWith('nonce-1');
+    expect(releaseScheduledSessionLease).toHaveBeenCalledWith({
+      attemptLookupId: 'attempt-1',
+      leaseId: 'lease-1',
+      sessionId: 'session-1',
+    });
+  });
+
+  it('fails scheduled target spawn closed without target release custody and uses the dedicated target handler when present', async () => {
+    const registered = new Map<string, (params: any) => Promise<any>>();
+    const spawnSession = vi.fn(async () => ({ type: 'success', sessionId: 'local' } as const));
+    const register = (spawnScheduledTargetSession?: (options: any, lease: any) => Promise<any>) => {
+      registered.clear();
+      registerMachineRpcHandlers({
+        rpcHandlerManager: {
+          registerHandler: (method: string, handler: (params: any) => Promise<any>) => registered.set(method, handler),
+        } as any,
+        handlers: {
+          spawnSession,
+          ...(spawnScheduledTargetSession ? { spawnScheduledTargetSession } : {}),
+          stopSession: async () => true,
+          requestShutdown: () => {},
+        },
+      });
+    };
+    const request = {
+      options: {
+        directory: '/workspace/project',
+        spawnNonce: 'target-nonce',
+      },
+      lease: {
+        v: 1,
+        attemptLookupId: 'target-nonce',
+        leaseId: 'lease-target',
+        controllerMachineId: 'machine-controller',
+      },
+    };
+
+    register();
+    await expect(registered.get('daemon.scheduledSession.spawnTarget.v1')?.(request)).resolves.toMatchObject({
+      type: 'error',
+      errorCode: SPAWN_SESSION_ERROR_CODES.SCHEDULING_TARGET_UNAVAILABLE,
+    });
+    expect(spawnSession).not.toHaveBeenCalled();
+
+    const spawnScheduledTargetSession = vi.fn(async () => ({ type: 'success', sessionId: 'target' } as const));
+    register(spawnScheduledTargetSession);
+    await expect(registered.get('daemon.scheduledSession.spawnTarget.v1')?.(request)).resolves.toEqual({
+      type: 'success',
+      sessionId: 'target',
+    });
+    expect(spawnScheduledTargetSession).toHaveBeenCalledWith(request.options, request.lease);
+    expect(spawnSession).not.toHaveBeenCalled();
+  });
+
   it('normalizes empty modelId to undefined when spawning a session', async () => {
     const registered = new Map<string, (params: any) => Promise<any>>();
     const rpcHandlerManager = {

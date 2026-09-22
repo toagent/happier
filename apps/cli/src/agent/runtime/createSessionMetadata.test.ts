@@ -2,11 +2,25 @@ import { describe, expect, it } from 'vitest';
 
 import { createSessionMetadata } from './createSessionMetadata';
 import { HAPPIER_SESSION_CONNECTED_SERVICES_BINDINGS_ENV_KEY } from './sessionConnectedServicesBindingsEnv';
+import { HAPPIER_SESSION_SCHEDULING_TARGET_ENV_KEY } from './sessionSchedulingTargetEnv';
 
 const HAPPIER_SESSION_CONNECTED_SERVICE_MATERIALIZATION_IDENTITY_ENV_KEY =
     'HAPPIER_SESSION_CONNECTED_SERVICE_MATERIALIZATION_IDENTITY_V1_JSON';
 
 describe('createSessionMetadata', () => {
+    it('persists a daemon-supplied scheduled execution target as session authority', () => {
+        const previous = process.env[HAPPIER_SESSION_SCHEDULING_TARGET_ENV_KEY];
+        process.env[HAPPIER_SESSION_SCHEDULING_TARGET_ENV_KEY] = JSON.stringify({ v: 1, workerId: 'twin-dev' });
+        try {
+            expect(createSessionMetadata({
+                flavor: 'claude', machineId: 'machine-1', startedBy: 'daemon', directory: '/repo',
+            }).metadata).toMatchObject({ schedulingTargetV1: { v: 1, workerId: 'twin-dev' } });
+        } finally {
+            if (previous === undefined) delete process.env[HAPPIER_SESSION_SCHEDULING_TARGET_ENV_KEY];
+            else process.env[HAPPIER_SESSION_SCHEDULING_TARGET_ENV_KEY] = previous;
+        }
+    });
+
     it('does not seed legacy messageQueueV1 metadata', () => {
         const { metadata } = createSessionMetadata({
             flavor: 'claude',

@@ -121,6 +121,105 @@ describe('createOnChildExited', () => {
     expect(onUnexpectedExit).not.toHaveBeenCalled();
   });
 
+  it('classifies final tracked exits', async () => {
+    const classified = vi.fn();
+    const create = (pid: number) => createOnChildExited({
+      pidToTrackedSession: new Map<number, any>([ [pid, {
+        pid,
+        startedBy: 'daemon',
+        happySessionId: `session-${pid}`,
+      }] ]),
+      spawnResourceCleanupByPid: new Map(),
+      sessionAttachCleanupByPid: new Map(),
+      getApiMachineForSessions: () => ({} as any),
+      stageObservedExitFn: vi.fn(async () => ({ status: 'staged' as const, markerPid: pid })),
+      onFinalTrackedSessionExitClassified: classified,
+    });
+
+    await create(126)(126, { reason: 'process-exited', code: 0, signal: null });
+    await create(127)(127, { reason: 'process-exited', code: 1, signal: null });
+
+    expect(classified).toHaveBeenNthCalledWith(1, expect.objectContaining({ unexpected: false }));
+    expect(classified).toHaveBeenNthCalledWith(2, expect.objectContaining({ unexpected: true }));
+  });
+
+  it('acquires final-exit custody before staging can release marker evidence', async () => {
+    const pid = 128;
+    const stageObservedExitFn = vi.fn(async () => ({ status: 'staged' as const, markerPid: pid }));
+    const onFinalTrackedSessionExitClassified = vi.fn(async () => {
+      throw new Error('release outbox unavailable');
+    });
+    const onChildExited = createOnChildExited({
+      pidToTrackedSession: new Map<number, any>([[pid, {
+        pid,
+        startedBy: 'daemon',
+        happySessionId: 'session-custody-before-staging',
+      }]]),
+      spawnResourceCleanupByPid: new Map(),
+      sessionAttachCleanupByPid: new Map(),
+      getApiMachineForSessions: () => ({} as any),
+      stageObservedExitFn,
+      onFinalTrackedSessionExitClassified,
+    });
+
+    await expect(onChildExited(pid, { reason: 'process-exited', code: 0, signal: null }))
+      .rejects.toThrow('release outbox unavailable');
+
+    expect(onFinalTrackedSessionExitClassified).toHaveBeenCalledTimes(1);
+    expect(stageObservedExitFn).not.toHaveBeenCalled();
+  });
+
+  it('preserves scheduled marker evidence across an unexpected exit until respawn settles', async () => {
+    const pid = 129;
+    const schedulingLease = {
+      v: 1 as const,
+      leaseId: 'lease-preserve-unexpected',
+      controllerMachineId: 'machine-controller',
+    };
+    const tracked = {
+      pid,
+      startedBy: 'daemon',
+      happySessionId: 'session-preserve-unexpected',
+      spawnOptions: {
+        directory: '/tmp',
+        schedulingLease,
+      },
+    };
+    const removeSessionMarkerFn = vi.fn(async () => {});
+    const shouldPreserveSessionMarkerOnExit = vi.fn((input: { unexpected?: boolean }) => (
+      input.unexpected === true
+    ));
+    const stageObservedExitFn = vi.fn(async (input: {
+      releaseMarkerEvidence: (evidence: { markerPid: number; sessionId: string; turnId: string | null }) => Promise<void>;
+    }) => {
+      await input.releaseMarkerEvidence({
+        markerPid: pid,
+        sessionId: tracked.happySessionId,
+        turnId: null,
+      });
+      return { status: 'staged' as const, markerPid: pid };
+    });
+    const onChildExited = createOnChildExited({
+      pidToTrackedSession: new Map<number, any>([[pid, tracked]]),
+      spawnResourceCleanupByPid: new Map(),
+      sessionAttachCleanupByPid: new Map(),
+      getApiMachineForSessions: () => ({} as any),
+      shouldPreserveSessionMarkerOnExit,
+      stageObservedExitFn: stageObservedExitFn as any,
+      removeSessionMarkerFn,
+      isExitUnexpectedOverride: () => true,
+    } as any);
+
+    await onChildExited(pid, { reason: 'process-exited', code: 1, signal: null });
+
+    expect(shouldPreserveSessionMarkerOnExit).toHaveBeenCalledWith(expect.objectContaining({
+      pid,
+      trackedSession: tracked,
+      unexpected: true,
+    }));
+    expect(removeSessionMarkerFn).not.toHaveBeenCalled();
+  });
+
   it('routes child-exit custody through awaited exact-turn staging and never emits full session end', async () => {
     const pid = 123;
     const tracked = {

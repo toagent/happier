@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { Machine } from '@/api/types';
 import { encodeBase64, encrypt } from '@/api/encryption';
+import type { SpawnSessionOptions } from '@/rpc/handlers/registerSessionHandlers';
 
 import { ApiMachineClient } from './apiMachine';
 
@@ -55,11 +56,18 @@ describe('ApiMachineClient spawn-happy-session handler', () => {
       daemonStateVersion: 0,
     };
     const client = new ApiMachineClient('token', machine);
-    const localSpawn = vi.fn(async () => ({ type: 'success' as const, sessionId: 'target-session' }));
+    const localSpawn = vi.fn(async (_options: SpawnSessionOptions) => ({
+      type: 'success' as const,
+      sessionId: 'target-session',
+    }));
     const scheduledSpawn = vi.fn(async () => ({ type: 'success' as const, sessionId: 'recursive-session' }));
     client.setRPCHandlers({
       spawnSession: localSpawn,
       spawnScheduledSession: scheduledSpawn,
+      spawnScheduledTargetSession: async (options, lease) => await localSpawn({
+        ...options,
+        schedulingLease: lease,
+      }),
       stopSession: async () => true,
       requestShutdown: () => {},
     });
@@ -73,6 +81,7 @@ describe('ApiMachineClient spawn-happy-session handler', () => {
       },
       lease: {
         v: 1,
+        attemptLookupId: 'scheduled-target-nonce',
         leaseId: 'lease-1',
         controllerMachineId: 'controller-machine',
       },
@@ -89,6 +98,7 @@ describe('ApiMachineClient spawn-happy-session handler', () => {
       schedulingTarget: { v: 1, workerId: 'twin-dev' },
       schedulingLease: {
         v: 1,
+        attemptLookupId: 'scheduled-target-nonce',
         leaseId: 'lease-1',
         controllerMachineId: 'controller-machine',
       },

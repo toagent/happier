@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { DirectSessionsSourceSchema } from '../../directSessions/daemonRpcV1.js';
 import { AgentProviderIdV1Schema } from '../../providers/agentProviderIdsV1.js';
 import { AgentRuntimeDescriptorV1Schema } from '../../sessionMetadata/agentRuntimeDescriptorV1.js';
+import { SessionSchedulingTargetV1Schema } from '../../spawnSession.js';
 
 import {
   SessionHandoffCodexAffinitySchema,
@@ -111,6 +112,7 @@ export const SessionHandoffMetadataV2Schema = z
         }
       })
       .optional(),
+    schedulingTargetV1: SessionSchedulingTargetV1Schema.optional(),
   })
   .strict();
 export type SessionHandoffMetadataV2 = z.infer<typeof SessionHandoffMetadataV2Schema>;
@@ -124,6 +126,7 @@ const SessionHandoffResumePlanSchema = z
     transcriptStorage: z.enum(['direct', 'persisted']),
     approvedNewDirectoryCreation: z.literal(true),
     codexBackendMode: SessionHandoffCodexBackendModeSchema.optional(),
+    schedulingTarget: SessionSchedulingTargetV1Schema.optional(),
   })
   .strict();
 export type SessionHandoffResumePlan = z.infer<typeof SessionHandoffResumePlanSchema>;
@@ -219,7 +222,7 @@ export type SessionHandoffTargetResumeRequestV2 = z.infer<typeof SessionHandoffT
 export const SessionHandoffTargetResumeResponseV2Schema = z.object({
   handoffId: z.string().min(1).max(MAX_HANDOFF_ID_LENGTH),
   sessionId: z.string().min(1).max(MAX_HANDOFF_ID_LENGTH),
-  disposition: z.enum(['started_for_handoff', 'same_request_runner', 'preexisting_or_adopted']),
+  disposition: z.enum(['started_for_handoff', 'scheduling_pending', 'same_request_runner', 'preexisting_or_adopted']),
 }).strict();
 export type SessionHandoffTargetResumeResponseV2 = z.infer<typeof SessionHandoffTargetResumeResponseV2Schema>;
 

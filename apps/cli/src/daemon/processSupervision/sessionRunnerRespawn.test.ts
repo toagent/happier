@@ -13,6 +13,47 @@ import type { SpawnSessionOptions } from '@/rpc/handlers/registerSessionHandlers
 import { createSessionRunnerRespawnManager, type SessionRunnerRespawnOptionsResolver } from './sessionRunnerRespawn';
 
 describe('createSessionRunnerRespawnManager', () => {
+  it('reports a terminal outcome for a scheduled session when generic respawn is disabled', () => {
+    const onRespawnTerminal = vi.fn();
+    const schedulingLease = {
+      v: 1 as const,
+      attemptLookupId: 'attempt-1',
+      leaseId: 'lease-1',
+      controllerMachineId: 'machine-controller',
+    };
+    const manager = createSessionRunnerRespawnManager({
+      enabled: false,
+      maxRestarts: 10,
+      baseDelayMs: 50,
+      maxDelayMs: 50,
+      jitterMs: 0,
+      isSessionAlreadyRunning: async () => false,
+      spawnSession: async () => ({ type: 'success' as const }),
+      onRespawnTerminal,
+      random: () => 0,
+      logDebug: () => {},
+      logWarn: () => {},
+    });
+
+    manager.handleUnexpectedExit({
+      startedBy: 'daemon',
+      pid: 111,
+      happySessionId: 'scheduled-session',
+      spawnOptions: {
+        directory: '/tmp',
+        schedulingLease,
+      },
+    }, { reason: 'process-exited', code: 1, signal: null });
+
+    expect(onRespawnTerminal).toHaveBeenCalledWith({
+      sessionId: 'scheduled-session',
+      previousPid: 111,
+      schedulingLease,
+      reason: 'no_restart',
+      detail: 'respawn_disabled',
+    });
+  });
+
   it('spawns a replacement runner after an unexpected termination', async () => {
     vi.useFakeTimers();
     const spawnSession = vi.fn(async (_opts: unknown) => ({ type: 'success' as const, pid: 123 }));
@@ -538,6 +579,43 @@ describe('createSessionRunnerRespawnManager', () => {
       sessionId: 'sess-connected-service-clear-intent',
       previousPid: 111,
       result: spawnResult,
+    });
+  });
+
+  it('releases scheduled custody instead of accepting an unrelated live runner as its successor', async () => {
+    vi.useFakeTimers();
+    const spawnSession = vi.fn();
+    const onRespawnTerminal = vi.fn();
+    const schedulingLease = {
+      v: 1 as const,
+      attemptLookupId: 'attempt-a',
+      leaseId: 'lease-a',
+      controllerMachineId: 'controller-a',
+    };
+    const manager = createSessionRunnerRespawnManager({
+      enabled: true,
+      maxRestarts: 1,
+      baseDelayMs: 50,
+      maxDelayMs: 50,
+      jitterMs: 0,
+      isSessionAlreadyRunning: vi.fn(async () => 'different_lease_or_unleased' as const),
+      spawnSession,
+      onRespawnTerminal,
+      random: () => 0,
+      logDebug: () => {},
+      logWarn: () => {},
+    });
+    manager.handleUnexpectedExit({
+      startedBy: 'daemon', pid: 111, happySessionId: 'sess-lease-custody',
+      spawnOptions: {
+        directory: '/tmp', backendTarget: { kind: 'builtInAgent', agentId: 'claude' }, schedulingLease,
+      },
+    }, { reason: 'process-exited', code: 1, signal: null });
+
+    await vi.advanceTimersByTimeAsync(50);
+    expect(spawnSession).not.toHaveBeenCalled();
+    expect(onRespawnTerminal).toHaveBeenCalledWith({
+      sessionId: 'sess-lease-custody', previousPid: 111, reason: 'scheduling_lease_lost', schedulingLease,
     });
   });
 

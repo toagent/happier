@@ -5,6 +5,20 @@ import { buildCodexAgentRuntimeDescriptor } from '@happier-dev/agents';
 import { resolveForkInheritedOverridesFromMetadata } from './resolveForkInheritedOverridesFromMetadata';
 
 describe('resolveForkInheritedOverridesFromMetadata', () => {
+  it('inherits the scheduled execution target so a fork re-enters the scheduler', () => {
+    expect(resolveForkInheritedOverridesFromMetadata({
+      schedulingTargetV1: { v: 1, workerId: 'twin-dev' },
+    }).spawn).toMatchObject({
+      schedulingTarget: { v: 1, workerId: 'twin-dev' },
+    });
+  });
+
+  it('fails closed when scheduled execution metadata is malformed', () => {
+    expect(() => resolveForkInheritedOverridesFromMetadata({
+      schedulingTargetV1: { v: 1, workerId: '   ' },
+    })).toThrow(/invalid scheduled execution target/i);
+  });
+
   it('returns spawn seeds plus metadata overrides for valid parent overrides', () => {
     const result = resolveForkInheritedOverridesFromMetadata({
       summary: { text: '  Migrate Hermes Lite to Happier  ', updatedAt: 122 },

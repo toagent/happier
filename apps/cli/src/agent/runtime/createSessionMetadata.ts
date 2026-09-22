@@ -24,6 +24,10 @@ import {
 
 import type { AgentState, Metadata, PermissionMode } from '@/api/types';
 import { configuration } from '@/configuration';
+import {
+    HAPPIER_SESSION_SCHEDULING_TARGET_ENV_KEY,
+    parseSessionSchedulingTargetJson,
+} from './sessionSchedulingTargetEnv';
 import { projectPath } from '@/projectPath';
 import { logger } from '@/ui/logger';
 import packageJson from '../../../package.json';
@@ -84,6 +88,7 @@ function consumeSessionEnv(
     name:
         | 'HAPPIER_SESSION_CONFIG_OPTION_OVERRIDES_JSON'
         | 'HAPPIER_SESSION_MCP_SELECTION_JSON'
+        | typeof HAPPIER_SESSION_SCHEDULING_TARGET_ENV_KEY
         | typeof HAPPIER_SESSION_CONNECTED_SERVICE_BROKER_SELECTION_IDENTITY_ENV_KEY
         | typeof HAPPIER_SESSION_CONNECTED_SERVICE_MATERIALIZATION_IDENTITY_ENV_KEY
         | typeof HAPPIER_SESSION_CONNECTED_SERVICES_BINDINGS_ENV_KEY,
@@ -165,6 +170,9 @@ export function createSessionMetadata(opts: CreateSessionMetadataOptions): Sessi
     const profileIdEnv = process.env.HAPPIER_SESSION_PROFILE_ID;
     const profileId = profileIdEnv === undefined ? undefined : (profileIdEnv.trim() || null);
     const mcpSelection = parseSessionMcpSelectionV1Json(consumeSessionEnv('HAPPIER_SESSION_MCP_SELECTION_JSON'));
+    const schedulingTarget = parseSessionSchedulingTargetJson(
+        consumeSessionEnv(HAPPIER_SESSION_SCHEDULING_TARGET_ENV_KEY),
+    );
     const connectedServices = parseSessionConnectedServicesBindingsJson(
         consumeSessionEnv(HAPPIER_SESSION_CONNECTED_SERVICES_BINDINGS_ENV_KEY),
     );
@@ -231,6 +239,7 @@ export function createSessionMetadata(opts: CreateSessionMetadataOptions): Sessi
               }
             : {}),
         ...(mcpSelection ? { mcpSelectionV1: mcpSelection } : {}),
+        ...(schedulingTarget ? { schedulingTargetV1: schedulingTarget } : {}),
         ...(connectedServices ? { connectedServices } : {}),
         ...(connectedServiceMaterializationIdentityV1
             ? { connectedServiceMaterializationIdentityV1 }

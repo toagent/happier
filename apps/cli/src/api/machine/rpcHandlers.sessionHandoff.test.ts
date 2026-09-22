@@ -1079,6 +1079,109 @@ function createLoopbackMachineTransferChannels() {
     }
   });
 
+  it('passes the inherited scheduling target through the handoff resume choke point', async () => {
+    const activeServerDir = await mkdtemp(join(os.tmpdir(), 'happier-session-handoff-scheduled-resume-'));
+    try {
+      const handoffId = 'handoff_scheduled_resume';
+      const jobId = 'prepare_scheduled_resume';
+      const sessionId = 'session_scheduled_resume';
+      const attemptId = 'attempt_scheduled_resume';
+      const store = createSessionHandoffPrepareTargetJobStore({ activeServerDir });
+      const status = { handoffId, jobId, status: 'ready_for_cutover' as const, phase: 'cutover' as const, recoveryActions: [] };
+      await store.writePreparedV2({
+        jobId, handoffId, sessionId, createdAtMs: 1, updatedAtMs: 1, transitionRevision: 0,
+        resume: { status: 'not_attempted' }, terminal: { status: 'open' }, targetCleanup: { status: 'not_required' }, status,
+        prepareTargetResult: {
+          handoffId, status, remoteSessionId: 'remote_scheduled_resume',
+          directSource: { kind: 'claudeConfig', configDir: null, projectId: null },
+          resume: {
+            directory: '/repo',
+            agent: 'claude',
+            resume: 'remote_scheduled_resume',
+            transcriptStorage: 'direct',
+            approvedNewDirectoryCreation: true,
+            schedulingTarget: { v: 1, workerId: 'twin-dev' },
+          } as any,
+        },
+      });
+      const spawn = vi.fn(async (_options, hooks) => {
+        await hooks.onBeforeRunnerLaunchAccepted();
+        return {
+          type: 'success' as const,
+          sessionId,
+          runnerAcceptance: 'newly_accepted' as const,
+        };
+      });
+      const { createUnregisteredSessionHandoffTargetResumeV2FoundationHandler } = await import('./rpcHandlers.sessionHandoff');
+      const resume = createUnregisteredSessionHandoffTargetResumeV2FoundationHandler({ activeServerDir, spawnSessionForHandoff: spawn });
+
+      await expect(resume({ handoffId, sessionId, attemptId })).resolves.toMatchObject({
+        disposition: 'started_for_handoff',
+      });
+      expect(spawn).toHaveBeenCalledWith(expect.objectContaining({
+        schedulingTarget: { v: 1, workerId: 'twin-dev' },
+      }), expect.any(Object));
+    } finally {
+      await rm(activeServerDir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  });
+
+  it('keeps a queued scheduled handoff on the same durable attempt instead of claiming it started', async () => {
+    const activeServerDir = await mkdtemp(join(os.tmpdir(), 'happier-session-handoff-scheduled-pending-'));
+    try {
+      const handoffId = 'handoff_scheduled_pending';
+      const jobId = 'prepare_scheduled_pending';
+      const sessionId = 'session_scheduled_pending';
+      const attemptId = 'attempt_scheduled_pending';
+      const store = createSessionHandoffPrepareTargetJobStore({ activeServerDir });
+      const status = { handoffId, jobId, status: 'ready_for_cutover' as const, phase: 'cutover' as const, recoveryActions: [] };
+      await store.writePreparedV2({
+        jobId, handoffId, sessionId, createdAtMs: 1, updatedAtMs: 1, transitionRevision: 0,
+        resume: { status: 'not_attempted' }, terminal: { status: 'open' }, targetCleanup: { status: 'not_required' }, status,
+        prepareTargetResult: {
+          handoffId, status, remoteSessionId: 'remote_scheduled_pending',
+          directSource: { kind: 'claudeConfig', configDir: null, projectId: null },
+          resume: {
+            directory: '/repo',
+            agent: 'claude',
+            resume: 'remote_scheduled_pending',
+            transcriptStorage: 'direct',
+            approvedNewDirectoryCreation: true,
+            schedulingTarget: { v: 1, workerId: 'twin-dev' },
+          },
+        },
+      });
+      const spawn = vi.fn(async (_options, hooks) => {
+        await hooks.onBeforeRunnerLaunchAccepted();
+        return {
+          type: 'success' as const,
+          sessionIdStatus: 'pending' as const,
+          spawnNonce: `session-handoff:${handoffId}:${attemptId}`,
+          runnerAcceptance: 'same_request_runner' as const,
+        };
+      });
+      const { createUnregisteredSessionHandoffTargetResumeV2FoundationHandler } = await import('./rpcHandlers.sessionHandoff');
+      const resume = createUnregisteredSessionHandoffTargetResumeV2FoundationHandler({ activeServerDir, spawnSessionForHandoff: spawn });
+
+      await expect(resume({ handoffId, sessionId, attemptId })).resolves.toEqual({
+        handoffId,
+        sessionId,
+        disposition: 'scheduling_pending',
+      });
+      await expect(resume({ handoffId, sessionId, attemptId })).resolves.toEqual({
+        handoffId,
+        sessionId,
+        disposition: 'scheduling_pending',
+      });
+      await expect(store.read(jobId)).resolves.toMatchObject({
+        transitionRevision: 1,
+        resume: { status: 'attempted', attemptId },
+      });
+    } finally {
+      await rm(activeServerDir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  });
+
   it('classifies a preexisting target as permanently unowned without invoking the acceptance hook', async () => {
     const activeServerDir = await mkdtemp(join(os.tmpdir(), 'happier-session-handoff-resume-v2-unowned-'));
     try {
@@ -4112,6 +4215,7 @@ function createLoopbackMachineTransferChannels() {
           homeDir: '/Users/tester',
           flavor: 'claude',
           claudeSessionId: 'claude_session_1',
+          schedulingTargetV1: { v: 1, workerId: 'twin-dev' },
         }),
         exportSessionBundle: async () => ({
           providerBundle: {
@@ -4186,6 +4290,13 @@ function createLoopbackMachineTransferChannels() {
         });
       }
 
+      expect(started.handoffMetadataV2).toMatchObject({
+        schedulingTargetV1: { v: 1, workerId: 'twin-dev' },
+      });
+      expect(prepared.resume).toMatchObject({
+        schedulingTarget: { v: 1, workerId: 'twin-dev' },
+      });
+
 	      expect(prepareTargetWorkspace).toHaveBeenCalledWith(expect.objectContaining({
 	        activeServerDir: expect.any(String),
 	        actualTransportStrategy: 'server_routed_stream',
@@ -4218,6 +4329,9 @@ function createLoopbackMachineTransferChannels() {
       });
       const persisted = await prepareJobStore.findByHandoffId(started.handoffId);
       expect(persisted?.workspaceReplicationJobId).toBe('job_wsrepl_1');
+      expect(persisted?.prepareTargetResult?.resume).toMatchObject({
+        schedulingTarget: { v: 1, workerId: 'twin-dev' },
+      });
     } finally {
       vi.doUnmock('../../session/handoff/workspaceReplicationAdapter/sessionHandoffWorkspaceReplicationAdapter');
       vi.resetModules();

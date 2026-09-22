@@ -70,6 +70,7 @@ function buildMachineResumeRequest(
     sessionId: options.existingSessionId,
     directory: options.directory,
     backendTarget: options.backendTarget,
+    ...(options.schedulingTarget ? { schedulingTarget: options.schedulingTarget } : {}),
     ...(spawnNonce ? { spawnNonce } : {}),
     ...(options.resume ? { resume: options.resume } : {}),
     ...(options.agentRuntimeDescriptorV1 ? { agentRuntimeDescriptorV1: options.agentRuntimeDescriptorV1 } : {}),

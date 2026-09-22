@@ -407,6 +407,34 @@ release_lease() {
   printf 'lease_id=%s\nstate=%s\nworker_id=%s\n' "$id" "$state" "$(cat "$lease/worker_id")"
 }
 
+forget_lease() {
+  local id="$1" owner_token="$2" lease state
+  valid_lease_owner_token "$owner_token" || { echo "invalid lease owner token" >&2; exit 2; }
+  lease=$(lease_dir "$id")
+  if [[ ! -d "$lease" ]]; then
+    printf 'lease_id=%s\nstate=forgotten\n' "$id"
+    return 0
+  fi
+  acquire_scheduler_lock
+  if ! require_lease_owner "$lease" "$owner_token"; then
+    release_scheduler_lock
+    exit 1
+  fi
+  state=$(lease_state "$lease")
+  if [[ "$state" != "released" ]]; then
+    release_scheduler_lock
+    echo "only released leases can be forgotten" >&2
+    exit 1
+  fi
+  if ! rm -rf -- "$lease"; then
+    release_scheduler_lock
+    echo "failed to forget released lease" >&2
+    exit 1
+  fi
+  release_scheduler_lock
+  printf 'lease_id=%s\nstate=forgotten\n' "$id"
+}
+
 schedule_jobs() {
   local oldest kind id active empty_checks=0
   while true; do
@@ -948,10 +976,6 @@ health() {
   local running="unknown"
   printf 'host=%s\n' "$(hostname)"
   printf 'tmux=%s\n' "$(tmux -V)"
-  source "$HOME/.config/ai-runtime/env.zsh"
-  printf 'codex=%s\n' "$("$AI_NODE_BIN/codex" --version)"
-  printf 'claude=%s\n' "$("$AI_NODE_BIN/claude" --version)"
-  printf 'opencode=%s\n' "$("$HOME/.opencode/bin/opencode" --version)"
   printf 'jobs=%s\n' "$(find "$BASE/jobs" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
   echo "retention_days=7"
   running=$(running_count 2>/dev/null || echo unknown)
@@ -986,6 +1010,7 @@ case "${1:-}" in
   lease-acquire) shift; acquire_lease "$@" ;;
   lease-status) shift; show_lease_status "$@" ;;
   lease-release) shift; release_lease "$@" ;;
+  lease-forget) shift; forget_lease "$@" ;;
   result) shift; show_result "$@" ;;
   wait) shift; wait_job "$@" ;;
   pending) shift; pending_results "$@" ;;
@@ -999,5 +1024,5 @@ case "${1:-}" in
   cleanup-old) shift; cleanup_old_jobs "${1:-7}" ;;
   compact) shift; compact_jobs "$@" ;;
   compact-one) shift; remove_job_workspace "$@" ;;
-  *) echo "usage: twin-agent-remote {start|dispatch|watch|schedule|start-scheduler|status|lease-acquire|lease-status|lease-release|result|wait|pending|collaboration-state|cancel|list|queue|stats|evaluate|health|cleanup-old|compact|compact-one}" >&2; exit 2 ;;
+  *) echo "usage: twin-agent-remote {start|dispatch|watch|schedule|start-scheduler|status|lease-acquire|lease-status|lease-release|lease-forget|result|wait|pending|collaboration-state|cancel|list|queue|stats|evaluate|health|cleanup-old|compact|compact-one}" >&2; exit 2 ;;
 esac
