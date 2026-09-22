@@ -12,18 +12,35 @@ import type { Credentials } from '@/persistence';
 import { HAPPIER_SESSION_CONNECTED_SERVICE_MATERIALIZATION_IDENTITY_ENV_KEY } from '@/agent/runtime/sessionConnectedServiceMaterializationIdentityEnv';
 
 describe('sessionRunnerRespawnDescriptor', () => {
-  it('preserves the daemon scheduling target across runner recovery', () => {
+  it('preserves daemon scheduling custody across runner recovery', () => {
     const descriptor = buildSessionRunnerRespawnDescriptorV1FromSpawnOptions({
       directory: '/tmp/project',
       backendTarget: { kind: 'builtInAgent', agentId: 'codex' },
       schedulingTarget: { v: 1, workerId: 'twin-dev' },
+      schedulingLease: {
+        v: 1,
+        leaseId: 'lease-1',
+        controllerMachineId: 'controller-machine',
+      },
     });
 
     expect(descriptor?.schedulingTarget).toEqual({ v: 1, workerId: 'twin-dev' });
-    expect(SessionRunnerRespawnDescriptorV1Schema.safeParse(descriptor).success).toBe(true);
-    expect(buildSpawnSessionOptionsFromRespawnDescriptorV1(descriptor!).schedulingTarget).toEqual({
+    expect(descriptor?.schedulingLease).toEqual({
       v: 1,
-      workerId: 'twin-dev',
+      leaseId: 'lease-1',
+      controllerMachineId: 'controller-machine',
+    });
+    expect(SessionRunnerRespawnDescriptorV1Schema.safeParse(descriptor).success).toBe(true);
+    expect(buildSpawnSessionOptionsFromRespawnDescriptorV1(descriptor!)).toMatchObject({
+      schedulingTarget: {
+        v: 1,
+        workerId: 'twin-dev',
+      },
+      schedulingLease: {
+        v: 1,
+        leaseId: 'lease-1',
+        controllerMachineId: 'controller-machine',
+      },
     });
   });
 

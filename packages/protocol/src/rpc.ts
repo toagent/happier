@@ -5,6 +5,7 @@ export const RPC_METHODS = {
   STOP_DAEMON: 'stop-daemon',
   DAEMON_SPAWN_SESSION_RESOLVE: 'daemon.spawnSession.resolve',
   DAEMON_SPAWN_SESSION_ABANDON: 'daemon.spawnSession.abandon',
+  DAEMON_SCHEDULED_SESSION_SPAWN_TARGET_V1: 'daemon.scheduledSession.spawnTarget.v1',
   DAEMON_EXECUTION_RUNS_LIST: 'daemon.executionRuns.list',
   DAEMON_TERMINAL_ENSURE: 'daemon.terminal.ensure',
   DAEMON_TERMINAL_STREAM_READ: 'daemon.terminal.stream.read',

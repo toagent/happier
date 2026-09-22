@@ -1339,6 +1339,7 @@ export {
 
 export {
   PendingFirstInputV1Schema,
+  SessionSchedulingLeaseV1Schema,
   SessionSchedulingTargetV1Schema,
   SPAWN_SESSION_ERROR_CODES,
   SPAWN_SESSION_ERROR_DETAIL_KINDS,
@@ -1349,6 +1350,7 @@ export {
   normalizeSpawnSessionErrorDetail,
   type ConnectedServiceResumeUnreachableContinuityCode,
   type PendingFirstInputV1,
+  type SessionSchedulingLeaseV1,
   type SessionSchedulingTargetV1,
   type ConnectedServiceResumeUnreachableSpawnErrorDetail,
   type ConnectedServiceUxDiagnosticSpawnErrorDetail,

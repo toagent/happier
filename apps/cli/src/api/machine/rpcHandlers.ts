@@ -31,6 +31,7 @@ import {
   SessionForkRpcParamsSchema,
   SessionInitialGoalRequestV1Schema,
   SessionMcpSelectionV1Schema,
+  SessionSchedulingLeaseV1Schema,
   SessionSchedulingTargetV1Schema,
   SessionRunnerStatusGetRequestV1Schema,
   SessionSpawnSourceContextV1Schema,
@@ -70,6 +71,7 @@ import {
   type StopSessionResult,
 } from '@/daemon/sessions/stopSessionContract';
 import type { DaemonExecutionRunEntry, DaemonExecutionRunProcessInfo } from '@happier-dev/protocol';
+import { SpawnDaemonSessionRequestSchema } from '@/rpc/handlers/spawnSessionOptionsContract';
 
 import type { RpcHandlerManager } from '../rpc/RpcHandlerManager';
 import type { MemoryWorkerHandle } from '@/daemon/memory/memoryWorker';
@@ -414,6 +416,23 @@ export function registerMachineRpcHandlers(params: Readonly<{
     }
     return await spawnScheduledSession(options);
   };
+  rpcHandlerManager.registerHandler(RPC_METHODS.DAEMON_SCHEDULED_SESSION_SPAWN_TARGET_V1, async (raw: unknown) => {
+    const parsed = z.object({
+      options: SpawnDaemonSessionRequestSchema,
+      lease: SessionSchedulingLeaseV1Schema,
+    }).strict().safeParse(raw);
+    if (!parsed.success) {
+      return {
+        type: 'error' as const,
+        errorCode: SPAWN_SESSION_ERROR_CODES.INVALID_REQUEST,
+        errorMessage: 'Invalid scheduled target spawn request',
+      };
+    }
+    return await spawnLocalSession({
+      ...parsed.data.options,
+      schedulingLease: parsed.data.lease,
+    });
+  });
   const stopSessionConfirmed = async (sessionId: string): Promise<boolean> => (
     normalizeMachineStopSessionResult(await stopSession(sessionId)).status === 'stopped'
   );

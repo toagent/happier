@@ -27,6 +27,18 @@ export const SessionSchedulingTargetV1Schema = z.object({
 }).strict();
 export type SessionSchedulingTargetV1 = z.infer<typeof SessionSchedulingTargetV1Schema>;
 
+/** Daemon-to-daemon lease custody attached only after the controller accepts a scheduled spawn. */
+export const SessionSchedulingLeaseV1Schema = z.object({
+  v: z.literal(1),
+  leaseId: z.string().refine((value) => value.trim().length > 0, {
+    message: 'Scheduling lease id must not be blank',
+  }),
+  controllerMachineId: z.string().refine((value) => value.trim().length > 0, {
+    message: 'Scheduling controller machine id must not be blank',
+  }),
+}).strict();
+export type SessionSchedulingLeaseV1 = z.infer<typeof SessionSchedulingLeaseV1Schema>;
+
 /**
  * One-shot first user input carried by a fresh-session spawn until the runner can commit it to
  * Pending. The opaque local id is the cross-boundary de-duplication identity.

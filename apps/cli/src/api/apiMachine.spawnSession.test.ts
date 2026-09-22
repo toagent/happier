@@ -44,6 +44,58 @@ describe('ApiMachineClient spawn-happy-session handler', () => {
     expect(localSpawn).not.toHaveBeenCalled();
   });
 
+  it('uses the local spawn owner for the dedicated scheduled-target RPC without re-entering scheduling', async () => {
+    const machine: Machine = {
+      id: 'machine-test',
+      encryptionKey: new Uint8Array(32).fill(7),
+      encryptionVariant: 'legacy',
+      metadata: null,
+      metadataVersion: 0,
+      daemonState: null,
+      daemonStateVersion: 0,
+    };
+    const client = new ApiMachineClient('token', machine);
+    const localSpawn = vi.fn(async () => ({ type: 'success' as const, sessionId: 'target-session' }));
+    const scheduledSpawn = vi.fn(async () => ({ type: 'success' as const, sessionId: 'recursive-session' }));
+    client.setRPCHandlers({
+      spawnSession: localSpawn,
+      spawnScheduledSession: scheduledSpawn,
+      stopSession: async () => true,
+      requestShutdown: () => {},
+    });
+
+    const params = {
+      options: {
+        directory: '/tmp/isolated',
+        spawnNonce: 'scheduled-target-nonce',
+        backendTarget: { kind: 'builtInAgent', agentId: 'codex' },
+        schedulingTarget: { v: 1, workerId: 'twin-dev' },
+      },
+      lease: {
+        v: 1,
+        leaseId: 'lease-1',
+        controllerMachineId: 'controller-machine',
+      },
+    };
+    const encrypted = encodeBase64(encrypt(machine.encryptionKey, machine.encryptionVariant, params));
+    await (client as any).rpcHandlerManager.handleRequest({
+      method: `${machine.id}:daemon.scheduledSession.spawnTarget.v1`,
+      params: encrypted,
+    });
+
+    expect(localSpawn).toHaveBeenCalledWith(expect.objectContaining({
+      directory: '/tmp/isolated',
+      spawnNonce: 'scheduled-target-nonce',
+      schedulingTarget: { v: 1, workerId: 'twin-dev' },
+      schedulingLease: {
+        v: 1,
+        leaseId: 'lease-1',
+        controllerMachineId: 'controller-machine',
+      },
+    }));
+    expect(scheduledSpawn).not.toHaveBeenCalled();
+  });
+
   it('forwards terminal spawn options to daemon spawnSession handler', async () => {
     const machine: Machine = {
       id: 'machine-test',

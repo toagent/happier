@@ -12,6 +12,7 @@ import {
     BackendTargetRefV1,
     type ConnectedServiceMaterializationIdentityV1,
     type SessionInitialGoalRequestV1,
+    type SessionSchedulingLeaseV1,
     type SessionAttachMetadataIdentityPolicy,
     SessionMcpSelectionV1,
     type SessionSchedulingTargetV1,
@@ -53,6 +54,8 @@ export interface SpawnSessionOptions {
     directory: string;
     /** Optional daemon-owned worker target. Presence requires a configured scheduling adapter. */
     schedulingTarget?: SessionSchedulingTargetV1;
+    /** Internal daemon-to-daemon lease custody. Public spawn ingress never accepts this field. */
+    schedulingLease?: SessionSchedulingLeaseV1;
     /**
      * Daemon-only spawn idempotency salt.
      *
