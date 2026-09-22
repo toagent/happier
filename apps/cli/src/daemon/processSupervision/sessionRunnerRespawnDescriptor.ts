@@ -9,6 +9,7 @@ import {
   openAccountScopedBlobCiphertext,
   sealAccountScopedBlobCiphertext,
   SessionMcpSelectionV1Schema,
+  SessionSchedulingTargetV1Schema,
   type AccountScopedCryptoMaterial,
 } from '@happier-dev/protocol';
 import { randomBytes as nodeRandomBytes } from 'node:crypto';
@@ -163,6 +164,7 @@ export const SessionRunnerRespawnDescriptorV1Schema = z
     version: z.literal(1),
     directory: z.string(),
     backendTarget: BackendTargetRefSchema.optional(),
+    schedulingTarget: SessionSchedulingTargetV1Schema.optional(),
     resume: z.string().optional(),
     vendorResumeId: z.string().optional(),
     existingSessionId: z.string().optional(),
@@ -236,6 +238,7 @@ export function buildSessionRunnerRespawnDescriptorV1FromSpawnOptions(
     version: 1,
     directory,
     ...(spawnOptions.backendTarget ? { backendTarget: spawnOptions.backendTarget } : {}),
+    ...(spawnOptions.schedulingTarget ? { schedulingTarget: spawnOptions.schedulingTarget } : {}),
     ...(resume ? { resume } : {}),
     ...(vendorResumeId ? { vendorResumeId } : {}),
     ...(existingSessionId ? { existingSessionId } : {}),
@@ -291,6 +294,7 @@ export function buildSpawnSessionOptionsFromRespawnDescriptorV1(
   return {
     directory: descriptor.directory,
     ...(descriptor.backendTarget ? { backendTarget: descriptor.backendTarget } : {}),
+    ...(descriptor.schedulingTarget ? { schedulingTarget: descriptor.schedulingTarget } : {}),
     ...(typeof descriptor.resume === 'string' ? { resume: descriptor.resume } : {}),
     ...(typeof descriptor.existingSessionId === 'string' ? { existingSessionId: descriptor.existingSessionId } : {}),
     ...(typeof descriptor.spawnNonce === 'string' ? { spawnNonce: descriptor.spawnNonce } : {}),

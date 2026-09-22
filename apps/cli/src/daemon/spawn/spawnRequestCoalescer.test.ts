@@ -93,6 +93,40 @@ describe('computeDaemonSpawnRequestKey', () => {
     expect(a.key).toBe(b.key);
   });
 
+  it('keeps scheduling targets distinct for new and existing-session requests', () => {
+    const localNew = computeDaemonSpawnRequestKey({
+      directory: '/tmp/repo',
+      backendTarget: { kind: 'builtInAgent', agentId: 'codex' },
+      schedulingTarget: { v: 1, workerId: 'twin-control' },
+    } satisfies SpawnSessionOptions);
+    const remoteNew = computeDaemonSpawnRequestKey({
+      directory: '/tmp/repo',
+      backendTarget: { kind: 'builtInAgent', agentId: 'codex' },
+      schedulingTarget: { v: 1, workerId: 'twin-dev' },
+    } satisfies SpawnSessionOptions);
+    const localExisting = computeDaemonSpawnRequestKey({
+      directory: '/tmp/repo',
+      existingSessionId: 'sess_1',
+      executionAuthorization: { provenance: 'user_request', requestId: 'local-1' },
+      schedulingTarget: { v: 1, workerId: 'twin-control' },
+    } satisfies SpawnSessionOptions);
+    const remoteExisting = computeDaemonSpawnRequestKey({
+      directory: '/tmp/repo',
+      existingSessionId: 'sess_1',
+      executionAuthorization: { provenance: 'user_request', requestId: 'local-1' },
+      schedulingTarget: { v: 1, workerId: 'twin-dev' },
+    } satisfies SpawnSessionOptions);
+
+    expect(localNew.key).not.toBe(remoteNew.key);
+    expect(localExisting.key).not.toBe(remoteExisting.key);
+    expect(localExisting.kind).toBe('existing');
+    expect(remoteExisting.kind).toBe('existing');
+    if (localExisting.kind !== 'existing' || remoteExisting.kind !== 'existing') {
+      throw new Error('Expected existing-session keys');
+    }
+    expect(localExisting.serializationKey).toBe(remoteExisting.serializationKey);
+  });
+
   it('incorporates spawnNonce when provided', () => {
     const a = computeDaemonSpawnRequestKey({
       directory: '/tmp/repo',
