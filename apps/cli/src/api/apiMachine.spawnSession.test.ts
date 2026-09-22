@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { Machine } from '@/api/types';
 import { encodeBase64, encrypt } from '@/api/encryption';
@@ -6,6 +6,44 @@ import { encodeBase64, encrypt } from '@/api/encryption';
 import { ApiMachineClient } from './apiMachine';
 
 describe('ApiMachineClient spawn-happy-session handler', () => {
+  it('forwards scheduling targets to the daemon scheduled-session handler without local fallback', async () => {
+    const machine: Machine = {
+      id: 'machine-test',
+      encryptionKey: new Uint8Array(32).fill(7),
+      encryptionVariant: 'legacy',
+      metadata: null,
+      metadataVersion: 0,
+      daemonState: null,
+      daemonStateVersion: 0,
+    };
+    const client = new ApiMachineClient('token', machine);
+    const localSpawn = vi.fn(async () => ({ type: 'success' as const, sessionId: 'local-session' }));
+    const scheduledSpawn = vi.fn(async () => ({ type: 'success' as const, sessionId: 'remote-session' }));
+    client.setRPCHandlers({
+      spawnSession: localSpawn,
+      spawnScheduledSession: scheduledSpawn,
+      stopSession: async () => true,
+      requestShutdown: () => {},
+    });
+
+    const params = {
+      directory: '/tmp',
+      backendTarget: { kind: 'builtInAgent', agentId: 'codex' },
+      schedulingTarget: { v: 1, workerId: 'twin-dev' },
+    };
+    const encrypted = encodeBase64(encrypt(machine.encryptionKey, machine.encryptionVariant, params));
+    await (client as any).rpcHandlerManager.handleRequest({
+      method: `${machine.id}:spawn-happy-session`,
+      params: encrypted,
+    });
+
+    expect(scheduledSpawn).toHaveBeenCalledWith(expect.objectContaining({
+      directory: '/tmp',
+      schedulingTarget: { v: 1, workerId: 'twin-dev' },
+    }));
+    expect(localSpawn).not.toHaveBeenCalled();
+  });
+
   it('forwards terminal spawn options to daemon spawnSession handler', async () => {
     const machine: Machine = {
       id: 'machine-test',

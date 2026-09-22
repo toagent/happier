@@ -401,6 +401,7 @@ export class ApiMachineClient {
 
     setRPCHandlers({
         spawnSession,
+        spawnScheduledSession,
         spawnSessionForHandoff,
         resolveSpawnSessionByNonce,
         abandonSpawnSessionByNonce,
@@ -417,6 +418,7 @@ export class ApiMachineClient {
             rpcHandlerManager: this.rpcHandlerManager,
             handlers: {
                 spawnSession,
+                ...(spawnScheduledSession ? { spawnScheduledSession } : {}),
                 ...(spawnSessionForHandoff ? { spawnSessionForHandoff } : {}),
                 ...(resolveSpawnSessionByNonce ? { resolveSpawnSessionByNonce } : {}),
                 ...(abandonSpawnSessionByNonce ? { abandonSpawnSessionByNonce } : {}),
