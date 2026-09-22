@@ -359,18 +359,26 @@ function printJson(data: unknown): void {
   process.stdout.write(`${JSON.stringify(data)}\n`);
 }
 
-function shouldStopCurrentWindowsServiceOwnerBeforeLifecycleAction(params: Readonly<{
+function shouldStopCurrentServiceOwnerBeforeLifecycleAction(params: Readonly<{
   platform: SupportedPlatform;
   ownership: Awaited<ReturnType<typeof evaluateCurrentDaemonOwner>>;
   expectedServiceLabel: string;
   action: 'install' | 'uninstall' | 'start' | 'stop' | 'restart';
 }>): boolean {
-  if (params.platform !== 'win32' || params.ownership.kind === 'none') {
+  if (params.ownership.kind === 'none') {
     return false;
   }
 
   const owner = params.ownership.owner;
   if (owner.serviceManaged !== true || owner.state.serviceLabel !== params.expectedServiceLabel) {
+    return false;
+  }
+
+  if (params.platform === 'darwin') {
+    return params.action === 'restart';
+  }
+
+  if (params.platform !== 'win32') {
     return false;
   }
 
@@ -396,13 +404,13 @@ function describeDaemonServiceLifecycleAction(action: 'install' | 'uninstall' | 
   }
 }
 
-async function stopCurrentWindowsServiceOwnerIfNeeded(params: Readonly<{
+async function stopCurrentServiceOwnerIfNeeded(params: Readonly<{
   platform: SupportedPlatform;
   ownership: Awaited<ReturnType<typeof evaluateCurrentDaemonOwner>>;
   expectedServiceLabel: string;
   action: 'install' | 'uninstall' | 'start' | 'stop' | 'restart';
 }>): Promise<void> {
-  if (!shouldStopCurrentWindowsServiceOwnerBeforeLifecycleAction(params)) {
+  if (!shouldStopCurrentServiceOwnerBeforeLifecycleAction(params)) {
     return;
   }
 
@@ -1596,7 +1604,7 @@ export async function runDaemonServiceCliCommand(params: Readonly<{
         shouldTakeOverManualOwner: takeoverDecision.kind === 'manual-owner-takeover',
         action: 'install',
         run: async () => {
-          await stopCurrentWindowsServiceOwnerIfNeeded({
+          await stopCurrentServiceOwnerIfNeeded({
             platform: installRuntime.platform,
             ownership,
             expectedServiceLabel: paths.label,
@@ -1749,7 +1757,7 @@ export async function runDaemonServiceCliCommand(params: Readonly<{
           userHomeDir: runtime.userHomeDir,
           happierHomeDir: runtime.happierHomeDir,
         };
-        await stopCurrentWindowsServiceOwnerIfNeeded({
+        await stopCurrentServiceOwnerIfNeeded({
           platform: runtime.platform,
           ownership: await evaluateCurrentDaemonOwner(),
           expectedServiceLabel: entry.label,
@@ -1798,7 +1806,7 @@ export async function runDaemonServiceCliCommand(params: Readonly<{
       return;
     }
 
-    await stopCurrentWindowsServiceOwnerIfNeeded({
+    await stopCurrentServiceOwnerIfNeeded({
       platform: runtime.platform,
       ownership: await evaluateCurrentDaemonOwner(),
       expectedServiceLabel: paths.label,
@@ -2036,7 +2044,7 @@ export async function runDaemonServiceCliCommand(params: Readonly<{
         shouldTakeOverManualOwner: takeoverDecision.kind === 'manual-owner-takeover',
         action,
         run: async () => {
-          await stopCurrentWindowsServiceOwnerIfNeeded({
+          await stopCurrentServiceOwnerIfNeeded({
             platform: runtime.platform,
             ownership,
             expectedServiceLabel: paths.label,
@@ -2127,7 +2135,7 @@ export async function runDaemonServiceCliCommand(params: Readonly<{
       return;
     }
 
-    await stopCurrentWindowsServiceOwnerIfNeeded({
+    await stopCurrentServiceOwnerIfNeeded({
       platform: runtime.platform,
       ownership,
       expectedServiceLabel: paths.label,

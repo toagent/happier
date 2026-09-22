@@ -1966,6 +1966,109 @@ describe('runDaemonServiceCliCommand', () => {
     });
   });
 
+  it('stops the current Darwin service owner before restarting the same service label', async () => {
+    await withTempDir('happier-service-restart-darwin-same-owner-', async (homeDir) => {
+      const happierHomeDir = `${homeDir}/.happier`;
+      const lifecycleEvents: string[] = [];
+      let expectedServiceLabel = '';
+      let writeDaemonStateImpl: ((state: DaemonLocallyPersistedState) => void) | null = null;
+      envScope.patch({
+        HAPPIER_HOME_DIR: happierHomeDir,
+        HAPPIER_DAEMON_SERVICE_PLATFORM: 'darwin',
+        HAPPIER_DAEMON_SERVICE_USER_HOME_DIR: homeDir,
+        HAPPIER_DAEMON_SERVICE_HAPPIER_HOME_DIR: happierHomeDir,
+        HAPPIER_DAEMON_SERVICE_TARGET_MODE: 'default-following',
+        HAPPIER_DAEMON_SERVICE_OWNERSHIP_WAIT_TIMEOUT_MS: '500',
+        HAPPIER_DAEMON_SERVICE_OWNERSHIP_WAIT_POLL_MS: '10',
+        HAPPIER_DAEMON_SERVICE_OWNERSHIP_STABLE_MS: '20',
+      });
+      vi.resetModules();
+      doMockChildProcessSpawnSync((command: string, args: readonly string[] = []) => {
+        if (command !== 'launchctl') {
+          return { status: 0, stdout: Buffer.from(''), stderr: Buffer.from('') };
+        }
+
+        const action = String(args[0] ?? '');
+        lifecycleEvents.push(action);
+        if (action === 'kickstart') {
+          writeDaemonStateImpl?.({
+            pid: process.pid,
+            httpPort: 43144,
+            startedAt: Date.now(),
+            startedWithCliVersion: configuration.currentCliVersion,
+            startedWithPublicReleaseChannel: 'stable',
+            startupSource: 'background-service',
+            serviceLabel: expectedServiceLabel,
+            runtimeId: 'runtime-darwin-restarted',
+          });
+        }
+        return { status: 0, stdout: Buffer.from('state = running'), stderr: Buffer.from('') };
+      });
+      vi.doMock('./commandExistsInPath', () => ({
+        commandExistsInPath: vi.fn(() => true),
+      }));
+
+      const controlClient = await import('@/daemon/controlClient');
+      const [{ clearDaemonStateForTests: clearDaemonState, writeDaemonState }, { configuration }] = await Promise.all([
+        import('@/persistence'),
+        import('@/configuration'),
+      ]);
+      vi.spyOn(controlClient, 'stopDaemon').mockImplementation(async () => {
+        lifecycleEvents.push('stopDaemon');
+        await clearDaemonState();
+      });
+
+      const [{ runDaemonServiceCliCommand, resolveDaemonServiceCliRuntimeFromEnv, resolveDaemonServicePaths }] = await Promise.all([
+        loadCliModule(),
+      ]);
+      writeDaemonStateImpl = writeDaemonState;
+
+      const runtime = resolveDaemonServiceCliRuntimeFromEnv({ targetMode: 'default-following' });
+      const paths = resolveDaemonServicePaths(runtime);
+      expectedServiceLabel = paths.label;
+      mkdirSync(dirname(paths.installedPath), { recursive: true });
+      const expectedInstallPlan = planDaemonServiceInstall({
+        platform: runtime.platform,
+        channel: runtime.channel,
+        targetMode: runtime.targetMode,
+        instanceId: runtime.instanceId,
+        activeServerId: runtime.activeServerId,
+        uid: runtime.uid ?? undefined,
+        userHomeDir: runtime.userHomeDir,
+        happierHomeDir: runtime.happierHomeDir,
+        serverUrl: runtime.serverUrl,
+        webappUrl: runtime.webappUrl,
+        publicServerUrl: runtime.publicServerUrl,
+        nodePath: runtime.nodePath,
+        entryPath: runtime.entryPath,
+      });
+      writeFileSync(paths.installedPath, expectedInstallPlan.files[0]?.content ?? '', 'utf-8');
+      writeDaemonState({
+        pid: process.pid,
+        httpPort: 43143,
+        startedAt: Date.now(),
+        startedWithCliVersion: configuration.currentCliVersion,
+        startedWithPublicReleaseChannel: 'stable',
+        startupSource: 'background-service',
+        serviceLabel: paths.label,
+        runtimeId: 'runtime-darwin-stale-owner',
+      });
+
+      const output = captureStdoutJsonOutput<{ ok: boolean; platform: string }>();
+      try {
+        await runDaemonServiceCliCommand({ argv: ['restart', '--json'] });
+        const payload = output.json();
+        expect(payload.ok).toBe(true);
+        expect(payload.platform).toBe('darwin');
+      } finally {
+        output.restore();
+      }
+
+      expect(lifecycleEvents).toContain('stopDaemon');
+      expect(lifecycleEvents.indexOf('stopDaemon')).toBeLessThan(lifecycleEvents.indexOf('kickstart'));
+    });
+  });
+
   it('allows taking over a manual daemon when starting a background service with --takeover', async () => {
     await withTempDir('happier-service-start-owner-takeover-', async (homeDir) => {
       stopDaemonMock.mockReset();
