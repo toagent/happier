@@ -12,8 +12,9 @@ queue owner 使用 `TWIN_AGENT_WORKERS_FILE` 指定 worker 配置；仓库内生
 `../config/twin-agent-workers.json`。`twin-dev` 是 local transport，另外两台机器走 SSH
 transport。SSH worker 在 `$HOME/.twin-agent-worker/jobs/<job_id>` 运行隔离副本，完成或取消后
 把结果、日志和 binary-safe patch 单向回收到 queue owner；不会直接写本机主 checkout。
-SSH 非交互 shell 不负责补齐工具 PATH，因此每个 SSH worker 在配置中显式记录绝对 `tmux`
-路径；launch、状态轮询、取消和 health 共用该路径，避免探活成功而真实任务无法启动。
+非交互 shell 不负责补齐工具 PATH，因此每个 worker 在配置中显式记录绝对
+`ai_node_bin`，SSH worker 另记录绝对 `tmux` 路径。launch 与 health 共用这些路径，health
+同时检查 worker runtime、Codex、Claude 和 OpenCode，避免探活成功而真实任务无法启动。
 
 `delegate_agent` 支持两种工作区模式：
 

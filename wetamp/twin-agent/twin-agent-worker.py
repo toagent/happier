@@ -35,6 +35,7 @@ class Worker:
     worker_id: str
     transport: str
     home: PurePosixPath
+    ai_node_bin: PurePosixPath
     host: str | None = None
     tmux: PurePosixPath | None = None
 
@@ -49,6 +50,23 @@ class Worker:
     @property
     def workspace_root(self) -> PurePosixPath:
         return self.home / "work" / "_mcp_workspace"
+
+    @property
+    def required_executables(self) -> tuple[PurePosixPath, ...]:
+        executables = [
+            self.runtime_bin / "twin-agent-job-runner",
+            self.runtime_bin / "twin-agent-worker",
+            self.runtime_bin / "twin-agent-remote",
+            self.runtime_bin / "twin-agent-runner",
+            self.runtime_bin / "twin-agent-output",
+            self.runtime_bin / "twin-agent-stats",
+            self.ai_node_bin / "codex",
+            self.ai_node_bin / "claude",
+            self.home / ".opencode" / "bin" / "opencode",
+        ]
+        if self.tmux is not None:
+            executables.insert(0, self.tmux)
+        return tuple(executables)
 
 
 def fail(message: str, code: int = 2) -> NoReturn:
@@ -73,12 +91,17 @@ def load_workers(path: Path) -> dict[str, Worker]:
         home = item.get("home")
         host = item.get("host")
         tmux = item.get("tmux")
+        ai_node_bin = item.get("ai_node_bin")
         if worker_id not in REQUIRED_WORKER_IDS or worker_id in workers:
             raise WorkerConfigError(f"invalid or duplicate worker id: {worker_id}")
         if transport not in {"local", "ssh"}:
             raise WorkerConfigError(f"invalid transport for {worker_id}: {transport}")
         if not isinstance(home, str) or not home.startswith("/") or "\n" in home:
             raise WorkerConfigError(f"invalid home for {worker_id}")
+        if not isinstance(ai_node_bin, str) or not SAFE_ABSOLUTE_PATH_PATTERN.fullmatch(
+            ai_node_bin
+        ):
+            raise WorkerConfigError(f"invalid ai_node_bin for {worker_id}")
         if transport == "ssh" and (
             not isinstance(host, str) or not SAFE_HOST_PATTERN.fullmatch(host)
         ):
@@ -95,6 +118,7 @@ def load_workers(path: Path) -> dict[str, Worker]:
             worker_id=worker_id,
             transport=transport,
             home=PurePosixPath(home),
+            ai_node_bin=PurePosixPath(ai_node_bin),
             host=host,
             tmux=PurePosixPath(tmux) if tmux is not None else None,
         )
@@ -214,7 +238,7 @@ def launch_local(
     os.execvpe(
         runner,
         [runner, str(job), agent, mode, workspace_mode, run_cwd, work],
-        os.environ.copy(),
+        {**os.environ, "AI_NODE_BIN": str(worker.ai_node_bin)},
     )
 
 
@@ -351,6 +375,7 @@ def launch_ssh(
         f"TWIN_AGENT_RUNNER_BIN={runner_helper}",
         f"TWIN_AGENT_OUTPUT_BIN={output_helper}",
         f"TWIN_AGENT_STATS_BIN={stats_helper}",
+        f"AI_NODE_BIN={worker.ai_node_bin}",
         str(runner),
         str(remote_job),
         agent,
@@ -414,6 +439,7 @@ def command_validate(worker_id: str) -> int:
     print(f"home={worker.home}")
     if worker.tmux is not None:
         print(f"tmux={worker.tmux}")
+    print(f"ai_node_bin={worker.ai_node_bin}")
     print(f"workspace_root={worker.workspace_root}")
     return 0
 
@@ -459,20 +485,17 @@ def command_health() -> int:
     for worker_id in sorted(workers):
         worker = workers[worker_id]
         if worker.transport == "local":
-            state = "ready"
+            state = (
+                "ready"
+                if all(
+                    Path(path).is_file() and os.access(path, os.X_OK)
+                    for path in worker.required_executables
+                )
+                else "unavailable"
+            )
         else:
-            assert worker.tmux is not None
-            required_executables = [
-                worker.tmux,
-                worker.runtime_bin / "twin-agent-job-runner",
-                worker.runtime_bin / "twin-agent-worker",
-                worker.runtime_bin / "twin-agent-remote",
-                worker.runtime_bin / "twin-agent-runner",
-                worker.runtime_bin / "twin-agent-output",
-                worker.runtime_bin / "twin-agent-stats",
-            ]
             test_args = ["test"]
-            for index, executable in enumerate(required_executables):
+            for index, executable in enumerate(worker.required_executables):
                 if index:
                     test_args.append("-a")
                 test_args.extend(["-x", str(executable)])

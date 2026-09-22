@@ -6,19 +6,22 @@
       "transport": "ssh",
       "host": "twin-control",
       "home": "/Users/yong",
-      "tmux": "/opt/homebrew/bin/tmux"
+      "tmux": "/opt/homebrew/bin/tmux",
+      "ai_node_bin": "/Users/yong/.nvm/versions/node/v24.21.0/bin"
     },
     {
       "id": "twin-dev",
       "transport": "local",
-      "home": "/Users/yong"
+      "home": "/Users/yong",
+      "ai_node_bin": "/Users/yong/.nvm/versions/node/v24.21.0/bin"
     },
     {
       "id": "mac-mini",
       "transport": "ssh",
       "host": "twin-mini",
       "home": "/Users/bubei",
-      "tmux": "/opt/homebrew/bin/tmux"
+      "tmux": "/opt/homebrew/bin/tmux",
+      "ai_node_bin": "/Users/bubei/.npm-global/bin"
     }
   ]
 }

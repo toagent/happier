@@ -19,6 +19,27 @@ class WorkerAdapterTest(unittest.TestCase):
         self.fake_bin = self.root / "bin"
         self.fake_bin.mkdir()
         self.command_log = self.root / "commands.jsonl"
+        self.dev_home = self.root / "dev-home"
+        self.dev_node_bin = self.root / "dev-node-bin"
+        executable_paths = [
+            *(self.dev_node_bin / name for name in ("codex", "claude")),
+            self.dev_home / ".opencode" / "bin" / "opencode",
+            *(
+                self.dev_home / ".lan-dev-machine" / "bin" / name
+                for name in (
+                    "twin-agent-job-runner",
+                    "twin-agent-worker",
+                    "twin-agent-remote",
+                    "twin-agent-runner",
+                    "twin-agent-output",
+                    "twin-agent-stats",
+                )
+            ),
+        ]
+        for executable in executable_paths:
+            executable.parent.mkdir(parents=True, exist_ok=True)
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            executable.chmod(0o700)
         self.config = self.root / "workers.json"
         self.config.write_text(
             json.dumps(
@@ -31,14 +52,21 @@ class WorkerAdapterTest(unittest.TestCase):
                             "host": "control-host",
                             "home": "/Users/control",
                             "tmux": "/opt/homebrew/bin/tmux",
+                            "ai_node_bin": "/Users/control/.nvm/versions/node/v24.21.0/bin",
                         },
-                        {"id": "twin-dev", "transport": "local", "home": "/Users/dev"},
+                        {
+                            "id": "twin-dev",
+                            "transport": "local",
+                            "home": str(self.dev_home),
+                            "ai_node_bin": str(self.dev_node_bin),
+                        },
                         {
                             "id": "mac-mini",
                             "transport": "ssh",
                             "host": "mini-host",
                             "home": "/Users/mini",
                             "tmux": "/opt/homebrew/bin/tmux",
+                            "ai_node_bin": "/Users/mini/.npm-global/bin",
                         },
                     ],
                 }
@@ -79,7 +107,7 @@ class WorkerAdapterTest(unittest.TestCase):
             "#!/usr/bin/env python3\n"
             "import json, os, pathlib, sys\n"
             "with pathlib.Path(os.environ['FAKE_COMMAND_LOG']).open('a', encoding='utf-8') as handle:\n"
-            f"    handle.write(json.dumps({{'command': {name!r}, 'args': sys.argv[1:]}}) + '\\n')\n"
+            f"    handle.write(json.dumps({{'command': {name!r}, 'args': sys.argv[1:], 'ai_node_bin': os.environ.get('AI_NODE_BIN')}}) + '\\n')\n"
             f"{body}\n",
             encoding="utf-8",
         )
@@ -92,6 +120,7 @@ class WorkerAdapterTest(unittest.TestCase):
         self.assertIn("transport=ssh", valid.stdout)
         self.assertIn("host=mini-host", valid.stdout)
         self.assertIn("tmux=/opt/homebrew/bin/tmux", valid.stdout)
+        self.assertIn("ai_node_bin=/Users/mini/.npm-global/bin", valid.stdout)
 
         unknown = self.run_adapter("validate", "unknown-worker", check=False)
         self.assertNotEqual(0, unknown.returncode)
@@ -103,6 +132,16 @@ class WorkerAdapterTest(unittest.TestCase):
         incomplete = self.run_adapter("validate", "twin-dev", check=False)
         self.assertNotEqual(0, incomplete.returncode)
         self.assertIn("required worker ids", incomplete.stderr)
+
+    def test_config_requires_an_absolute_ai_node_bin_for_every_worker(self):
+        value = json.loads(self.config.read_text(encoding="utf-8"))
+        value["workers"][1].pop("ai_node_bin")
+        self.config.write_text(json.dumps(value), encoding="utf-8")
+
+        missing = self.run_adapter("validate", "twin-dev", check=False)
+
+        self.assertNotEqual(0, missing.returncode)
+        self.assertIn("invalid ai_node_bin for twin-dev", missing.stderr)
 
     def test_local_worker_executes_the_existing_job_runner(self):
         job = self.root / "queue" / "jobs" / "20260922020000-aaaaaa"
@@ -125,6 +164,7 @@ class WorkerAdapterTest(unittest.TestCase):
         event = self.events()[-1]
         self.assertEqual("job-runner", event["command"])
         self.assertEqual(str(job.resolve()), event["args"][0])
+        self.assertEqual(str(self.dev_node_bin), event["ai_node_bin"])
         self.assertEqual("twin-dev", (job / "execution_worker_id").read_text(encoding="utf-8").strip())
         self.assertEqual("local", (job / "worker_transport").read_text(encoding="utf-8").strip())
 
@@ -178,6 +218,9 @@ class WorkerAdapterTest(unittest.TestCase):
                 and "new-session" in args
                 for args in ssh_args
             )
+        )
+        self.assertTrue(
+            any("AI_NODE_BIN=/Users/mini/.npm-global/bin" in args for args in ssh_args)
         )
         self.assertTrue(any(f"twin-worker-{job_id}" in args for args in ssh_args))
         rsync_args = [event["args"] for event in self.events() if event["command"] == "rsync"]
@@ -252,8 +295,23 @@ class WorkerAdapterTest(unittest.TestCase):
                 and "test" in args
                 and "/opt/homebrew/bin/tmux" in args
                 and "/Users/mini/.lan-dev-machine/bin/twin-agent-job-runner" in args
+                and "/Users/mini/.npm-global/bin/codex" in args
+                and "/Users/mini/.npm-global/bin/claude" in args
+                and "/Users/mini/.opencode/bin/opencode" in args
                 for args in ssh_args
             )
+        )
+
+    def test_health_marks_local_worker_unavailable_when_an_ai_cli_is_missing(self):
+        (self.dev_node_bin / "claude").unlink()
+        self.install_command_logger("ssh")
+
+        result = self.run_adapter("health")
+
+        self.assertEqual(0, result.returncode)
+        self.assertIn(
+            "worker_id=twin-dev transport=local host=localhost state=unavailable",
+            result.stdout,
         )
 
 
