@@ -27,8 +27,9 @@ import {
   type TwinSessionSchedulerAttemptStore,
   type TwinSessionReleaseReceiptPayload,
 } from './twinSessionScheduler';
+import { TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY } from './twinSessionSchedulerConfig';
 
-export const TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY = 'HAPPIER_TWIN_SESSION_SCHEDULER_CONFIG_JSON';
+export { TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY } from './twinSessionSchedulerConfig';
 
 const WorkerConfigSchema = z.object({
   machineId: z.string().trim().min(1),

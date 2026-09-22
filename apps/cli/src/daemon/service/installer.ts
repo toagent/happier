@@ -16,6 +16,7 @@ import {
 import { assertDaemonServiceModeSupported } from './assertDaemonServiceModeSupported';
 import {
   discoverInstalledDaemonServiceEntries,
+  readInstalledDaemonServiceEnvValue,
   readInstalledDaemonServiceAutostartMode,
   type InstalledDaemonServiceEntry,
 } from './discoverInstalledDaemonServiceEntries';
@@ -30,6 +31,7 @@ import {
 } from '@happier-dev/cli-common/firstPartyRuntime';
 import { doesInstalledDaemonServiceDefinitionMatchExpected } from './doesInstalledDaemonServiceDefinitionMatchExpected';
 import { resolveHappierHomeDirComparableKey } from '@/daemon/ownership/happierHomeDirComparableKey';
+import { TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY } from '@/integrations/twin/twinSessionSchedulerConfig';
 
 type SupportedPlatform = 'darwin' | 'linux' | 'win32';
 
@@ -140,6 +142,7 @@ export async function previewDaemonServiceInstall(options: Readonly<{
   publicServerUrl?: string;
   nodePath?: string;
   entryPath?: string;
+  twinSessionSchedulerConfigJson?: string | null;
 }> = {}): Promise<DaemonServiceInstallPreview> {
   const platformInput = options.platform ?? process.platform;
   const platform = resolveSupportedPlatform(platformInput);
@@ -205,6 +208,25 @@ export async function previewDaemonServiceInstall(options: Readonly<{
   const installedAutostart = installedTargetService
     ? readInstalledDaemonServiceAutostartMode({ platform, path: installedTargetService.path })
     : null;
+  const hasProcessSchedulerConfig = Object.prototype.hasOwnProperty.call(
+    process.env,
+    TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY,
+  );
+  const explicitSchedulerConfig = options.twinSessionSchedulerConfigJson !== undefined
+    ? options.twinSessionSchedulerConfigJson
+    : hasProcessSchedulerConfig
+      ? process.env[TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY]
+      : undefined;
+  const installedSchedulerConfig = installedTargetService
+    ? readInstalledDaemonServiceEnvValue({
+        platform,
+        path: installedTargetService.path,
+        key: TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY,
+      })
+    : null;
+  const twinSessionSchedulerConfigJson = String(
+    explicitSchedulerConfig !== undefined ? explicitSchedulerConfig ?? '' : installedSchedulerConfig ?? '',
+  ).trim();
   const autostart: DaemonServiceAutostartMode = options.autostart ?? installedAutostart ?? 'at-login';
   const buildPlan = (planAutostart: DaemonServiceAutostartMode, autostartTriggerChangeOnly = false) => planDaemonServiceInstall({
     platform,
@@ -225,6 +247,7 @@ export async function previewDaemonServiceInstall(options: Readonly<{
     publicServerUrl,
     nodePath: runtimeTarget.nodePath,
     entryPath: runtimeTarget.entryPath,
+    twinSessionSchedulerConfigJson,
   });
   // "Otherwise unchanged" is proved, not assumed: render this same install with the mode the
   // service already declares and compare it against what is on disk. If they match, the mode is

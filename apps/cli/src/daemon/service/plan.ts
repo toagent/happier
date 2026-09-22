@@ -2,6 +2,7 @@ import { basename, join, win32 as win32Path } from 'node:path';
 
 import { getReleaseRingCatalogEntry, type PublicReleaseRingId } from '@happier-dev/release-runtime/releaseRings';
 import { isServerIdFilesystemSafe } from '@/server/serverId';
+import { TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY } from '@/integrations/twin/twinSessionSchedulerConfig';
 
 import { buildLaunchAgentPlistXml, buildLaunchdPath } from './darwin';
 import { buildServicePath, planServiceAction, renderSystemdServiceUnit, renderWindowsScheduledTaskWrapperPs1 } from '@happier-dev/cli-common/service';
@@ -280,6 +281,7 @@ export function planDaemonServiceInstall(params: Readonly<{
   publicServerUrl: string;
   nodePath: string;
   entryPath: string;
+  twinSessionSchedulerConfigJson?: string;
   uid?: number;
 }>): DaemonServiceInstallPlan {
   const instanceId = sanitizeServiceInstanceId(params.instanceId);
@@ -302,6 +304,7 @@ export function planDaemonServiceInstall(params: Readonly<{
   const unitLabel = resolveDaemonServiceSystemdUnitLabel(instanceId, channel, targetMode);
   const unitName = resolveDaemonServiceSystemdUnitName(instanceId, channel, targetMode);
   const programArgs = buildDaemonServiceProgramArgs({ nodePath: params.nodePath, entryPath: params.entryPath });
+  const twinSessionSchedulerConfigJson = String(params.twinSessionSchedulerConfigJson ?? '').trim();
   const baseEnv: Record<string, string> = {
     HAPPIER_HOME_DIR: params.happierHomeDir,
     HAPPIER_PUBLIC_RELEASE_CHANNEL: publicReleaseChannel,
@@ -318,6 +321,9 @@ export function planDaemonServiceInstall(params: Readonly<{
     HAPPIER_NO_BROWSER_OPEN: '1',
     HAPPIER_DAEMON_WAIT_FOR_AUTH: '1',
     HAPPIER_DAEMON_WAIT_FOR_AUTH_TIMEOUT_MS: '0',
+    ...(twinSessionSchedulerConfigJson
+      ? { [TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY]: twinSessionSchedulerConfigJson }
+      : {}),
   };
   const pinnedTargetEnv: Record<string, string> = targetMode === 'default-following'
     ? {}
