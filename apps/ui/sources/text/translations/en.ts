@@ -3031,6 +3031,13 @@ export const en = {
     },
 
     settingsSourceControl: {
+        codeServer: {
+            title: 'code-server review', footer: 'Only open directories on the selected machine within the allowed root.',
+            machine: 'Review machine', url: 'HTTPS address', root: 'Allowed root directory', unset: 'Not set',
+            remove: 'Remove configuration', open: 'Open in code-server', openFailed: 'Could not open code-server.',
+            invalidUrl: 'Enter an HTTPS address without credentials or query parameters.',
+            invalidRoot: 'Enter an absolute directory other than the filesystem root.',
+        },
         title: 'Files & Source Control',
         editor: 'Editor',
         editorFooter: 'Configure the file editor behavior.',

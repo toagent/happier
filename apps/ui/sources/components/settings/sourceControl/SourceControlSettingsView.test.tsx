@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_AGENT_ID } from '@/agents/catalog/catalog';
 import { renderSettingsView } from '@/dev/testkit/harness/settingsViewHarness';
+import { createMachineFixture } from '@/dev/testkit';
 import { installSettingsViewCommonModuleMocks } from '../settingsViewTestHelpers';
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -21,6 +22,7 @@ const {
     setScmCommitMessageGeneratorEnabled,
     setScmCommitMessageGeneratorBackendId,
     setScmCommitMessageGeneratorInstructions,
+    setCodeServerReviewTarget,
 } = vi.hoisted(() => ({
     setScmCommitStrategy: vi.fn(),
     setScmGitRepoPreferredBackend: vi.fn(),
@@ -34,6 +36,7 @@ const {
     setScmCommitMessageGeneratorEnabled: vi.fn(),
     setScmCommitMessageGeneratorBackendId: vi.fn(),
     setScmCommitMessageGeneratorInstructions: vi.fn(),
+    setCodeServerReviewTarget: vi.fn(),
 }));
 
 type FilesDiffPresentationStyleValue = 'split' | 'unified' | undefined;
@@ -47,6 +50,7 @@ installSettingsViewCommonModuleMocks({
             importOriginal,
             overrides: {
                 useSettingMutable: (name: string) => {
+                    if (name === 'codeServerReviewTargetV1') return [null, setCodeServerReviewTarget];
                     if (name === 'scmCommitStrategy') return ['atomic', setScmCommitStrategy];
                     if (name === 'scmGitRepoPreferredBackend') return ['git', setScmGitRepoPreferredBackend];
                     if (name === 'scmRemoteConfirmPolicy') return ['always', setScmRemoteConfirmPolicy];
@@ -61,6 +65,7 @@ installSettingsViewCommonModuleMocks({
                     if (name === 'scmCommitMessageGeneratorInstructions') return ['', setScmCommitMessageGeneratorInstructions];
                     return [null, vi.fn()];
                 },
+                useMachineListByServerId: () => ({ 'server-1': [createMachineFixture({ id: 'machine-1', metadata: { ...createMachineFixture().metadata!, host: 'control' } })] }),
             },
         });
     },
@@ -80,6 +85,10 @@ installSettingsViewCommonModuleMocks({
     },
 });
 
+vi.mock('@/hooks/server/useActiveServerSnapshot', () => ({
+    useActiveServerSnapshot: () => ({ serverId: 'server-1', serverUrl: 'https://server.example.test', generation: 1 }),
+}));
+
 vi.mock('@/components/ui/lists/ItemList', () => ({
     ItemList: ({ children }: any) => React.createElement('ItemList', null, children),
 }));
@@ -93,6 +102,17 @@ vi.mock('@/components/ui/lists/Item', () => ({
 }));
 
 describe('SourceControlSettingsView', () => {
+    it('binds the code-server review target to a machine on the active server', async () => {
+        setCodeServerReviewTarget.mockClear();
+        const { SourceControlSettingsView } = await import('./SourceControlSettingsView');
+        const screen = await renderSettingsView(React.createElement(SourceControlSettingsView));
+
+        screen.pressRowByTitle('control');
+        expect(setCodeServerReviewTarget).toHaveBeenCalledWith({
+            serverId: 'server-1', machineId: 'machine-1', baseUrl: '', rootPath: '',
+        });
+    });
+
     it('renders commit strategy options and updates setting when selected', async () => {
         filesDiffPresentationStyleValue = 'split';
         const { SourceControlSettingsView } = await import('./SourceControlSettingsView');

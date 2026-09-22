@@ -4,10 +4,10 @@
 
 `twin-agent/` 是统一调度器的 Git 源码事实源；`~/.lan-dev-machine/twin-agent/` 仅是本机 MCP 运行投影，不得在运行目录形成无法回收到 Git 的独立改动。
 
-- [Y700 Android 定制路线](plans/y700-private-android-customization.md)：完整需求、源码落点、实施阶段与验收；修订 2 已获批准并开始执行。
+- [Y700 Android 定制路线](plans/y700-private-android-customization.md)：完整需求、源码落点、实施阶段与验收；修订 3 已获批准并开始执行。
 - [上游升级约定](UPSTREAM.md)：定制边界、源码合并、组件兼容、数据升级与回退。
 
-当前正在执行 P0，私有 App 配置和国内镜像构建入口已建立；APK、双机公网交互与上游升级验收以实际构建和真机证据为准。
+私有 APK 与三机 CLI 已有测试部署；完整的三机交互会话、同源审查和上游升级验收仍以每批真机证据为准。App 的版本控制设置可配置 code-server 审查机器、HTTPS 地址和授权根目录，原生 diff 工具栏仅为同 server、同机器且位于该目录内的会话提供打开入口。远端执行结果尚未物化为本机 review workspace，不能将远端目录直接填入本机 code-server。
 
 ## 目录边界
 

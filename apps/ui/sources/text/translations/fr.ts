@@ -3030,6 +3030,13 @@ export const fr: TranslationStructure = {
     },
 
     settingsSourceControl: {
+        codeServer: {
+            title: 'Revue dans code-server', footer: 'Ouvre uniquement les dossiers autorisés sur la machine sélectionnée.',
+            machine: 'Machine de revue', url: 'Adresse HTTPS', root: 'Dossier racine autorisé', unset: 'Non défini',
+            remove: 'Supprimer la configuration', open: 'Ouvrir dans code-server', openFailed: "Impossible d'ouvrir code-server.",
+            invalidUrl: 'Saisissez une adresse HTTPS sans identifiants ni paramètres de requête.',
+            invalidRoot: 'Saisissez un chemin absolu autre que la racine du système.',
+        },
         title: 'Fichiers et gestion de version',
         editor: 'Éditeur',
         editorFooter: 'Configure le comportement de l’éditeur de fichiers.',

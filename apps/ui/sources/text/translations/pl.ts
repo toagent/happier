@@ -3296,6 +3296,13 @@ export const pl: TranslationStructure = {
   },
 
   settingsSourceControl: {
+    codeServer: {
+      title: 'Przegląd w code-server', footer: 'Otwieraj tylko katalogi wybranego komputera w dozwolonym katalogu głównym.',
+      machine: 'Komputer do przeglądu', url: 'Adres HTTPS', root: 'Dozwolony katalog główny', unset: 'Nie ustawiono',
+      remove: 'Usuń konfigurację', open: 'Otwórz w code-server', openFailed: 'Nie można otworzyć code-server.',
+      invalidUrl: 'Podaj adres HTTPS bez danych logowania i parametrów zapytania.',
+      invalidRoot: 'Podaj ścieżkę bezwzględną inną niż katalog główny systemu.',
+    },
     title: 'Pliki i kontrola źródeł',
     editor: 'Edytor',
     editorFooter: 'Skonfiguruj zachowanie edytora plików.',

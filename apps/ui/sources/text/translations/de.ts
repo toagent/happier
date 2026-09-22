@@ -3030,6 +3030,13 @@ export const de: TranslationStructure = {
     },
 
     settingsSourceControl: {
+        codeServer: {
+            title: 'Review in code-server', footer: 'Nur Verzeichnisse des gewählten Rechners innerhalb des erlaubten Stammverzeichnisses öffnen.',
+            machine: 'Review-Rechner', url: 'HTTPS-Adresse', root: 'Erlaubtes Stammverzeichnis', unset: 'Nicht festgelegt',
+            remove: 'Konfiguration entfernen', open: 'In code-server öffnen', openFailed: 'code-server konnte nicht geöffnet werden.',
+            invalidUrl: 'Eine HTTPS-Adresse ohne Zugangsdaten oder Abfrageparameter eingeben.',
+            invalidRoot: 'Einen absoluten Pfad außerhalb des Dateisystem-Stammverzeichnisses eingeben.',
+        },
         title: 'Dateien & Versionsverwaltung',
         editor: 'Editor',
         editorFooter: 'Das Verhalten des Datei-Editors einstellen.',

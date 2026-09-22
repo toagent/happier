@@ -3226,6 +3226,13 @@ export const ru: TranslationStructure = {
   },
 
   settingsSourceControl: {
+    codeServer: {
+      title: 'Просмотр в code-server', footer: 'Открываются только каталоги выбранного компьютера в разрешённом корне.',
+      machine: 'Компьютер для просмотра', url: 'Адрес HTTPS', root: 'Разрешённый корневой каталог', unset: 'Не задано',
+      remove: 'Удалить настройку', open: 'Открыть в code-server', openFailed: 'Не удалось открыть code-server.',
+      invalidUrl: 'Введите HTTPS-адрес без учётных данных и параметров запроса.',
+      invalidRoot: 'Введите абсолютный путь, отличный от корня файловой системы.',
+    },
   title: 'Файлы и контроль версий',
   editor: 'Редактор',
   editorFooter: 'Настройте поведение редактора файлов.',

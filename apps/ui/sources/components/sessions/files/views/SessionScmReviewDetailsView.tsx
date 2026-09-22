@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { View } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import { useUnistyles } from 'react-native-unistyles';
 import { ActivitySpinner } from '@/components/ui/feedback/ActivitySpinner';
 
@@ -38,6 +39,10 @@ import type { ScmFileStatus } from '@/scm/scmStatusFiles';
 import { ScmCommitSelectionToggleButton } from '@/components/sessions/sourceControl/commitSelection/ScmCommitSelectionToggleButton';
 import { buildCommitSelectionPathHints, isFileSelectedForCommit } from '@/scm/operations/commitSelectionHints';
 import { isDirectoryLikeScmFileStatus } from '@/scm/isDirectoryLikeScmFileStatus';
+import { FileBrowserToolbarIconButton } from '@/components/ui/filesystemBrowser/FileBrowserToolbar';
+import { Icon } from '@/components/ui/icons/Icon';
+import { buildCodeServerReviewUrl } from '@/utils/url/codeServerReviewUrl';
+import { Modal } from '@/modal';
 
 const REVIEW_SCROLL_TOP_PERSIST_DEBOUNCE_MS = 250;
 const REVIEW_SCROLL_TOP_PERSIST_EPSILON_PX = 1;
@@ -165,6 +170,7 @@ export const SessionScmReviewDetailsView = React.memo((props: SessionScmReviewDe
     React.useEffect(() => flushPendingScrollTop, [flushPendingScrollTop]);
     const project = useProjectForSession(props.sessionId);
     const sessionPath = useSessionWorkspacePath(props.sessionId);
+    const codeServerReviewTarget = useSetting('codeServerReviewTargetV1');
     const snapshot = useSessionProjectScmSnapshot(props.sessionId);
     useSessionRealtimeScmTranscriptConsumer(props.sessionId, snapshot);
     const lastGoodSnapshot = useLastNonNullValue(snapshot, { resetKey: props.sessionId });
@@ -186,6 +192,12 @@ export const SessionScmReviewDetailsView = React.memo((props: SessionScmReviewDe
     }, [scmCommitStrategySetting]);
     const scmWriteEnabled = useFeatureEnabled('scm.writeOperations');
     const reviewScope = useWorkspaceScopeForSession(props.sessionId);
+    const codeServerReviewUrl = React.useMemo(() => reviewScope && sessionPath
+        ? buildCodeServerReviewUrl({
+            target: codeServerReviewTarget,
+            session: { serverId: reviewScope.serverId, machineId: reviewScope.machineId, path: sessionPath },
+        })
+        : null, [codeServerReviewTarget, reviewScope, sessionPath]);
     const reviewCommentsEnabled = useFeatureEnabled('files.reviewComments') === true && Boolean(reviewScope);
     const reviewCommentDrafts = useWorkspaceReviewCommentsDrafts(reviewScope);
     const reviewDraftHandlers = useWorkspaceReviewCommentDraftHandlers(reviewScope);
@@ -370,6 +382,26 @@ export const SessionScmReviewDetailsView = React.memo((props: SessionScmReviewDe
         />
     ) : null, [changed.showTurnViewToggle, changed.showSessionViewToggle, changedFilesViewMode, theme]);
 
+    const codeServerAction = codeServerReviewUrl ? (
+        <FileBrowserToolbarIconButton
+            testID="scm-review-open-code-server"
+            accessibilityRole="button"
+            accessibilityLabel={t('settingsSourceControl.codeServer.open')}
+            onPress={async () => {
+                try {
+                    await WebBrowser.openBrowserAsync(codeServerReviewUrl);
+                } catch {
+                    Modal.alert(t('common.error'), t('settingsSourceControl.codeServer.openFailed'));
+                }
+            }}
+        >
+            <Icon name="code" size={16} color={theme.colors.text.secondary} />
+        </FileBrowserToolbarIconButton>
+    ) : null;
+    const reviewToolbarLeading = reviewViewMenu && codeServerAction
+        ? <>{reviewViewMenu}{codeServerAction}</>
+        : reviewViewMenu ?? codeServerAction;
+
     if (!effectiveSnapshot && !snapshotError) {
         return (
             <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 24 }}>
@@ -408,7 +440,7 @@ export const SessionScmReviewDetailsView = React.memo((props: SessionScmReviewDe
                 onGoToComposer={goToComposer}
             />
             <ChangedFilesReview
-                toolbarLeading={reviewViewMenu}
+                toolbarLeading={reviewToolbarLeading}
                 theme={theme}
                 sessionId={props.sessionId}
                 snapshot={effectiveSnapshot ?? null}

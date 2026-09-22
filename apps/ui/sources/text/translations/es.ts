@@ -3266,6 +3266,13 @@ export const es: TranslationStructure = {
   },
 
   settingsSourceControl: {
+    codeServer: {
+      title: 'Revisión en code-server', footer: 'Solo se abren directorios de la máquina seleccionada dentro de la raíz permitida.',
+      machine: 'Máquina de revisión', url: 'Dirección HTTPS', root: 'Directorio raíz permitido', unset: 'Sin configurar',
+      remove: 'Eliminar configuración', open: 'Abrir en code-server', openFailed: 'No se pudo abrir code-server.',
+      invalidUrl: 'Introduce una dirección HTTPS sin credenciales ni parámetros de consulta.',
+      invalidRoot: 'Introduce una ruta absoluta distinta de la raíz del sistema.',
+    },
     title: 'Archivos y control de código fuente',
     editor: 'Editor de archivos',
     editorFooter: 'Configura el comportamiento del editor de archivos.',

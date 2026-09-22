@@ -3107,6 +3107,13 @@ export const ca: TranslationStructure = {
     },
 
     settingsSourceControl: {
+        codeServer: {
+            title: 'Revisió a code-server', footer: 'Només obre directoris de la màquina seleccionada dins de l’arrel permesa.',
+            machine: 'Màquina de revisió', url: 'Adreça HTTPS', root: 'Directori arrel permès', unset: 'Sense configurar',
+            remove: 'Elimina la configuració', open: 'Obre a code-server', openFailed: 'No s’ha pogut obrir code-server.',
+            invalidUrl: 'Introdueix una adreça HTTPS sense credencials ni paràmetres de consulta.',
+            invalidRoot: 'Introdueix un camí absolut diferent de l’arrel del sistema.',
+        },
         title: 'Fitxers i control de versions',
         editor: 'Editor de fitxers',
         editorFooter: 'Configura el comportament de l’editor de fitxers.',

@@ -38,6 +38,17 @@ function buildOverrideCountSummaryProperties(value: unknown): Record<string, num
 }
 
 export const ACCOUNT_SCM_FILES_SETTING_DEFINITIONS = defineSettingDefinitions({
+    codeServerReviewTargetV1: {
+        schema: z.object({
+            serverId: z.string(),
+            machineId: z.string(),
+            baseUrl: z.string(),
+            rootPath: z.string(),
+        }).nullable(),
+        default: null,
+        description: 'Authenticated local machine and directory allowed for code-server review links',
+        storageScope: 'account',
+    },
     scmCommitStrategy: {
         schema: z.enum(SCM_COMMIT_STRATEGIES),
         default: 'atomic',

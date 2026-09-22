@@ -3181,6 +3181,12 @@ export const zhHans: TranslationStructure = {
   },
 
   settingsSourceControl: {
+    codeServer: {
+      title: 'code-server 审查', footer: '仅打开所选机器上授权根目录内的文件。',
+      machine: '审查机器', url: 'HTTPS 地址', root: '授权根目录', unset: '未设置',
+      remove: '移除配置', open: '在 code-server 中打开', openFailed: '无法打开 code-server。',
+      invalidUrl: '请输入不含凭据和查询参数的 HTTPS 地址。', invalidRoot: '请输入非文件系统根目录的绝对路径。',
+    },
   title: '文件与源代码管理',
   editor: '编辑器',
   editorFooter: '配置文件编辑器的行为。',

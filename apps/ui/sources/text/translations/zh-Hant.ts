@@ -2972,6 +2972,12 @@ const zhHantOverrides: DeepPartial<TranslationStructure> = {
     },
 
     settingsSourceControl: {
+        codeServer: {
+            title: 'code-server 審查', footer: '僅開啟所選機器上授權根目錄內的檔案。',
+            machine: '審查機器', url: 'HTTPS 位址', root: '授權根目錄', unset: '未設定',
+            remove: '移除設定', open: '在 code-server 中開啟', openFailed: '無法開啟 code-server。',
+            invalidUrl: '請輸入不含憑證和查詢參數的 HTTPS 位址。', invalidRoot: '請輸入非檔案系統根目錄的絕對路徑。',
+        },
         title: '檔案與原始碼控制',
         editor: '編輯器',
         editorFooter: '設定檔案編輯器的行為。',

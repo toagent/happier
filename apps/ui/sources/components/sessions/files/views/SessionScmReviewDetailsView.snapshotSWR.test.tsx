@@ -11,7 +11,9 @@ let mockSnapshot: any = null;
 let reviewCommentsFeatureEnabled = false;
 let scmWriteOperationsFeatureEnabled = false;
 let mockScmCommitStrategy: 'atomic' | 'git_staging' = 'atomic';
+let codeServerReviewTarget: { serverId: string; machineId: string; baseUrl: string; rootPath: string } | null = null;
 const changedFilesReviewSpy = vi.fn();
+const openBrowserAsyncSpy = vi.hoisted(() => vi.fn(async (_url: string) => {}));
 const invalidateFromAutoRefreshSpy = vi.hoisted(() => vi.fn());
 const invalidateFromAutoRefreshAndAwaitSpy = vi.hoisted(() => vi.fn());
 const invalidateFromMutationAndAwaitSpy = vi.hoisted(() => vi.fn());
@@ -49,7 +51,9 @@ installSessionFilesViewCommonModuleMocks({
             useProjectForSession: () => null,
             useProjectSessions: () => [],
             useWorkspaceReviewCommentsDrafts: () => [],
-            useSetting: (key: string) => key === 'scmCommitStrategy' ? mockScmCommitStrategy : 25,
+            useSetting: (key: string) => key === 'scmCommitStrategy'
+                ? mockScmCommitStrategy
+                : key === 'codeServerReviewTargetV1' ? codeServerReviewTarget : 25,
             upsertWorkspaceReviewCommentDraft: () => {},
             deleteWorkspaceReviewCommentDraft: () => {},
         }),
@@ -58,6 +62,8 @@ installSessionFilesViewCommonModuleMocks({
 vi.mock('@expo/vector-icons', () => ({
     Octicons: 'Octicons',
 }));
+
+vi.mock('expo-web-browser', () => ({ openBrowserAsync: openBrowserAsyncSpy }));
 
 vi.mock('@/components/ui/text/Text', () => ({
     Text: (props: any) => React.createElement('Text', props, props.children),
@@ -159,6 +165,8 @@ describe('SessionScmReviewDetailsView (snapshot SWR)', () => {
         reviewCommentsFeatureEnabled = false;
         scmWriteOperationsFeatureEnabled = false;
         mockScmCommitStrategy = 'atomic';
+        codeServerReviewTarget = null;
+        openBrowserAsyncSpy.mockClear();
         changedFilesReviewSpy.mockClear();
         mockPaneScope.openDetailsTab.mockClear();
         mockPaneScope.setDetailsTabState.mockClear();
@@ -223,6 +231,29 @@ describe('SessionScmReviewDetailsView (snapshot SWR)', () => {
         expect(invalidateFromAutoRefreshSpy).toHaveBeenCalledTimes(1);
         expect(invalidateFromAutoRefreshSpy).toHaveBeenCalledWith('s1');
         expect(invalidateFromUserSpy).not.toHaveBeenCalled();
+    });
+
+    it('opens the configured local review directory and hides the action for a different machine', async () => {
+        const { SessionScmReviewDetailsView } = await import('./SessionScmReviewDetailsView');
+        mockSnapshot = {
+            fetchedAt: 1,
+            repo: { isRepo: true, rootPath: '/tmp/repo', backendId: 'git', mode: '.git' },
+            entries: [],
+            totals: {},
+        };
+        codeServerReviewTarget = {
+            serverId: 'server-1', machineId: 'machine-1',
+            baseUrl: 'https://review.example.test/', rootPath: '/tmp',
+        };
+        const { tree } = await renderScreen(<SessionScmReviewDetailsView sessionId="s1" scopeId="session:s1" />);
+        const toolbar = changedFilesReviewSpy.mock.calls.at(-1)?.[0]?.toolbarLeading;
+        expect(toolbar?.props?.testID).toBe('scm-review-open-code-server');
+        await act(async () => { await toolbar.props.onPress(); });
+        expect(openBrowserAsyncSpy).toHaveBeenCalledWith('https://review.example.test/?folder=%2Ftmp%2Frepo');
+
+        codeServerReviewTarget = { ...codeServerReviewTarget, machineId: 'machine-2' };
+        await act(async () => { tree.update(<SessionScmReviewDetailsView sessionId="s1" scopeId="session:s1:updated" />); });
+        expect(changedFilesReviewSpy.mock.calls.at(-1)?.[0]?.toolbarLeading).toBeNull();
     });
 
     it('enables review comments for SCM review diffs when the session has a workspace scope', async () => {

@@ -3566,6 +3566,13 @@ localTailscale: {
   },
 
   settingsSourceControl: {
+    codeServer: {
+      title: 'code-server レビュー', footer: '選択したマシンの許可されたルート内のみ開きます。',
+      machine: 'レビューマシン', url: 'HTTPS アドレス', root: '許可するルート', unset: '未設定',
+      remove: '設定を削除', open: 'code-server で開く', openFailed: 'code-server を開けませんでした。',
+      invalidUrl: '認証情報やクエリを含まない HTTPS アドレスを入力してください。',
+      invalidRoot: 'ファイルシステムのルート以外の絶対パスを入力してください。',
+    },
   title: 'ファイルとソース管理',
   editor: 'エディタ',
   editorFooter: 'ファイルエディタの動作を設定します。',
