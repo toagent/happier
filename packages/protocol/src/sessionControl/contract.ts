@@ -35,6 +35,7 @@ import {
   createSessionWorkspaceLocationV1Schema,
   SESSION_WORKSPACE_LOCATION_METADATA_KEY,
 } from '../sessionMetadata/sessionWorkspaceLocationV1.js';
+import { ScheduledWorkspaceV1Schema } from '../spawnSession.js';
 
 const LEGACY_CONNECTED_SERVICE_QUOTA_REFS_METADATA_KEY = 'connectedServiceQuotaRefsV1' as const;
 export {
@@ -248,6 +249,7 @@ export function createSessionMetadataSchema(zod: typeof z) {
     .object({
       systemSessionV1: createSessionSystemSessionV1Schema(zod).optional(),
       [SESSION_WORKSPACE_LOCATION_METADATA_KEY]: createSessionWorkspaceLocationV1Schema(zod).optional(),
+      scheduledWorkspaceV1: ScheduledWorkspaceV1Schema.optional(),
       // Remote-dev does not yet have the registered session-state field catalog used by dev.
       // This metadata key is the compatible storage binding for runtime.usageLimitRecovery.
       [SESSION_USAGE_LIMIT_RECOVERY_METADATA_KEY]: SessionUsageLimitRecoveryV1Schema.optional(),

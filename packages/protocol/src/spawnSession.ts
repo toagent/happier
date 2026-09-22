@@ -27,6 +27,55 @@ export const SessionSchedulingTargetV1Schema = z.object({
 }).strict();
 export type SessionSchedulingTargetV1 = z.infer<typeof SessionSchedulingTargetV1Schema>;
 
+const TwinSessionSchedulingWorkerV1Schema = z.object({
+  workerId: z.string().trim().min(1),
+  machineId: z.string().trim().min(1),
+}).strict();
+
+/** Controller-advertised worker inventory consumed by cross-device session launchers. */
+export const TwinSessionSchedulingV1Schema = z.object({
+  v: z.literal(1),
+  defaultWorkerId: z.string().trim().min(1),
+  workers: z.array(TwinSessionSchedulingWorkerV1Schema).min(1),
+}).strict().superRefine((value, context) => {
+  const workerIds = new Set<string>();
+  for (const worker of value.workers) {
+    if (workerIds.has(worker.workerId)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate scheduling worker id: ${worker.workerId}`,
+        path: ['workers'],
+      });
+    }
+    workerIds.add(worker.workerId);
+  }
+  if (!workerIds.has(value.defaultWorkerId)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Default scheduling worker must exist in the worker inventory',
+      path: ['defaultWorkerId'],
+    });
+  }
+});
+export type TwinSessionSchedulingV1 = z.infer<typeof TwinSessionSchedulingV1Schema>;
+
+/** Execution result materialized onto the controller for App and code-server review. */
+export const ScheduledWorkspaceV1Schema = z.object({
+  v: z.literal(1),
+  workerId: z.string().trim().min(1),
+  executionMachineId: z.string().trim().min(1),
+  executionPath: z.string().trim().min(1),
+  reviewMachineId: z.string().trim().min(1),
+  reviewPath: z.string().trim().min(1),
+  sourcePath: z.string().trim().min(1),
+  sourceHead: z.string().trim().min(1),
+  sourceSnapshot: z.string().trim().min(1),
+  baselineCommit: z.string().trim().min(1),
+  patchDigest: z.string().trim().min(1),
+  reviewState: z.enum(['ready', 'stale']),
+}).strict();
+export type ScheduledWorkspaceV1 = z.infer<typeof ScheduledWorkspaceV1Schema>;
+
 /** Daemon-to-daemon lease custody attached only after the controller accepts a scheduled spawn. */
 export const SessionSchedulingLeaseV1Schema = z.object({
   v: z.literal(1),

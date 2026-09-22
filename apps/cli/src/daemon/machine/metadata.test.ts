@@ -31,4 +31,27 @@ describe('initialMachineMetadata', () => {
 
     expect(refreshMachineMetadataForCurrentDaemon(current, current.host)).toBe(current);
   });
+
+  it('publishes and removes the configured twin-session controller capability', () => {
+    const capability = {
+      v: 1 as const,
+      defaultWorkerId: 'twin-control',
+      workers: [
+        { workerId: 'twin-control', machineId: 'machine-control' },
+        { workerId: 'twin-dev', machineId: 'machine-dev' },
+      ],
+    };
+    const published = refreshMachineMetadataForCurrentDaemon(
+      initialMachineMetadata,
+      initialMachineMetadata.host,
+      capability,
+    );
+
+    expect(published.twinSessionSchedulingV1).toEqual(capability);
+    expect(refreshMachineMetadataForCurrentDaemon(
+      published,
+      published.host,
+      null,
+    )).not.toHaveProperty('twinSessionSchedulingV1');
+  });
 });

@@ -27,8 +27,10 @@ SSH_BIN="${HAPPIER_CLI_SSH_BIN:-ssh}"
 SCP_BIN="${HAPPIER_CLI_SCP_BIN:-scp}"
 LOCAL_DEPLOY_ROOT="${HAPPIER_CLI_LOCAL_DEPLOY_ROOT:-$HOME/.happier/wetamp-cli}"
 CONTROLLER_HOME="${HAPPIER_CLI_CONTROLLER_HOME:-$HOME/.happier/stacks/main/cli}"
-SCHEDULER_EXECUTABLE="${HAPPIER_CLI_SCHEDULER_EXECUTABLE:-$HOME/.lan-dev-machine/bin/twin-agent-remote}"
+SCHEDULER_EXECUTABLE="${HAPPIER_CLI_SCHEDULER_EXECUTABLE:-$HOME/.lan-dev-machine/bin/twin-agent-queue-client}"
 SCHEDULER_POLL_INTERVAL_MS="${HAPPIER_CLI_SCHEDULER_POLL_INTERVAL_MS:-1000}"
+SCHEDULER_REVIEW_ROOT="${HAPPIER_CLI_SCHEDULER_REVIEW_ROOT:-$HOME/.happier/review-workspaces}"
+SCHEDULER_LOCAL_WORKSPACE_ROOT="${HAPPIER_CLI_SCHEDULER_LOCAL_WORKSPACE_ROOT:-$HOME/.happier/twin-workspaces}"
 DEPLOY_TIMESTAMP="${HAPPIER_CLI_DEPLOY_TIMESTAMP:-$(date -u +%Y%m%dT%H%M%SZ)}"
 SCHEDULER_ENV_KEY="HAPPIER_TWIN_SESSION_SCHEDULER_CONFIG_JSON"
 MINI_RELAY_TUNNEL_PORT="${HAPPIER_CLI_MINI_RELAY_TUNNEL_PORT:-3005}"
@@ -56,6 +58,8 @@ validate_sources() {
   [[ -f "$CLI_DIR/scripts/syncPackageDist.mjs" ]] || fail "CLI prepack owner is missing"
   [[ -x "$SCHEDULER_EXECUTABLE" ]] || fail "scheduler executable is unavailable: $SCHEDULER_EXECUTABLE"
   [[ "$SCHEDULER_POLL_INTERVAL_MS" =~ ^[1-9][0-9]*$ ]] || fail "scheduler poll interval must be a positive integer"
+  [[ "$SCHEDULER_REVIEW_ROOT" == /* ]] || fail "scheduler review root must be absolute"
+  [[ "$SCHEDULER_LOCAL_WORKSPACE_ROOT" == /* ]] || fail "scheduler local workspace root must be absolute"
   [[ "$MINI_RELAY_TUNNEL_PORT" =~ ^[1-9][0-9]{0,4}$ && "$MINI_RELAY_TUNNEL_PORT" -le 65535 ]] || \
     fail "Mac mini relay tunnel port must be between 1 and 65535"
   [[ "$MINI_HOST" =~ ^[A-Za-z0-9._-]+$ ]] || fail "Mac mini SSH host contains unsupported characters"
@@ -95,6 +99,7 @@ print_basis() {
   printf 'behind=%s\n' "$behind"
   printf 'ahead=%s\n' "$ahead"
   printf 'controller_home=%s\n' "$CONTROLLER_HOME"
+  printf 'scheduler_review_root=%s\n' "$SCHEDULER_REVIEW_ROOT"
   printf 'queue_host=%s\n' "$QUEUE_HOST"
   printf 'mini_host=%s\n' "$MINI_HOST"
   printf 'mini_relay_tunnel_port=%s\n' "$MINI_RELAY_TUNNEL_PORT"
@@ -295,6 +300,13 @@ resolve_remote_node() {
   printf '%s\n' "$node_path"
 }
 
+read_remote_home() {
+  local host="$1" remote_home
+  remote_home=$("$SSH_BIN" -o BatchMode=yes -o ConnectTimeout=10 "$host" 'cd "$HOME" && pwd -P')
+  [[ "$remote_home" == /* ]] || fail "remote home is unavailable on $host"
+  printf '%s\n' "$remote_home"
+}
+
 parse_identity() {
   node -e '
     let input = "";
@@ -326,19 +338,46 @@ read_remote_identity() {
 
 build_scheduler_config() {
   node -e '
-    const [executable, pollInterval, controller, developer, mini] = process.argv.slice(1);
+    const [
+      executable,
+      pollInterval,
+      reviewRoot,
+      controller,
+      controllerWorkspaceRoot,
+      developer,
+      queueHost,
+      developerWorkspaceRoot,
+      developerDiffExecutable,
+      mini,
+      miniHost,
+      miniWorkspaceRoot,
+      miniDiffExecutable,
+    ] = process.argv.slice(1);
     process.stdout.write(JSON.stringify({
       v: 1,
       executable,
       pollIntervalMs: Number(pollInterval),
+      reviewRoot,
+      defaultWorkerId: "twin-control",
       workers: {
-        "twin-control": { machineId: controller },
-        "twin-dev": { machineId: developer },
-        "mac-mini": { machineId: mini },
+        "twin-control": {
+          machineId: controller,
+          workspace: { kind: "local", root: controllerWorkspaceRoot },
+        },
+        "twin-dev": {
+          machineId: developer,
+          workspace: { kind: "ssh", host: queueHost, root: developerWorkspaceRoot, diffExecutable: developerDiffExecutable },
+        },
+        "mac-mini": {
+          machineId: mini,
+          workspace: { kind: "ssh", host: miniHost, root: miniWorkspaceRoot, diffExecutable: miniDiffExecutable },
+        },
       },
     }));
-  ' "$SCHEDULER_EXECUTABLE" "$SCHEDULER_POLL_INTERVAL_MS" \
-    "$controller_machine_id" "$developer_machine_id" "$mini_machine_id"
+  ' "$SCHEDULER_EXECUTABLE" "$SCHEDULER_POLL_INTERVAL_MS" "$SCHEDULER_REVIEW_ROOT" \
+    "$controller_machine_id" "$SCHEDULER_LOCAL_WORKSPACE_ROOT" \
+    "$developer_machine_id" "$QUEUE_HOST" "$developer_workspace_root" "$developer_diff_executable" \
+    "$mini_machine_id" "$MINI_HOST" "$mini_workspace_root" "$mini_diff_executable"
 }
 
 backup_local_service() {
@@ -487,6 +526,13 @@ IFS=$'\t' read -r mini_machine_id mini_account_id <<<"$mini_identity"
 [[ "$controller_machine_id" != "$developer_machine_id" \
   && "$controller_machine_id" != "$mini_machine_id" \
   && "$developer_machine_id" != "$mini_machine_id" ]] || fail "machine ids must be distinct"
+
+developer_home=$(read_remote_home "$QUEUE_HOST")
+mini_home=$(read_remote_home "$MINI_HOST")
+developer_workspace_root="$developer_home/.happier/twin-workspaces"
+developer_diff_executable="$developer_home/.lan-dev-machine/bin/twin-agent-workspace-diff"
+mini_workspace_root="$mini_home/.happier/twin-workspaces"
+mini_diff_executable="$mini_home/.lan-dev-machine/bin/twin-agent-workspace-diff"
 
 scheduler_config=$(build_scheduler_config)
 install_worker_service "$QUEUE_HOST" "$developer_node" "$developer_payload"

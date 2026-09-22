@@ -51,4 +51,27 @@ describe('MachineMetadataSchema', () => {
 
         expect(parsed.daemonSessionGoalControlsSupported).toBe(true);
     });
+
+    it('preserves the daemon twin-session worker inventory when advertised', () => {
+        const parsed = MachineMetadataSchema.parse({
+            host: 'host',
+            platform: 'darwin',
+            happyCliVersion: '0.2.13',
+            happyHomeDir: '/tmp/happier',
+            homeDir: '/tmp',
+            twinSessionSchedulingV1: {
+                v: 1,
+                defaultWorkerId: 'twin-control',
+                workers: [
+                    { workerId: 'twin-control', machineId: 'machine-control' },
+                    { workerId: 'twin-dev', machineId: 'machine-dev' },
+                ],
+            },
+        });
+
+        expect(parsed.twinSessionSchedulingV1?.workers.map((worker) => worker.workerId)).toEqual([
+            'twin-control',
+            'twin-dev',
+        ]);
+    });
 });

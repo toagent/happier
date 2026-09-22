@@ -34,7 +34,7 @@ import { getMachineCapabilitiesSnapshot } from '@/hooks/server/useMachineCapabil
 import type { PermissionMode, ModelMode } from '@/sync/domains/permissions/permissionTypes';
 import { SPAWN_SESSION_ERROR_CODES, type ActionOperationSnapshotV1, type BackendTargetRefV1, type WindowsRemoteSessionLaunchMode } from '@happier-dev/protocol';
 import type { AcpConfigOptionOverridesV1 } from '@happier-dev/protocol';
-import type { SessionSpawnSourceContextV1 } from '@happier-dev/protocol';
+import type { SessionSchedulingTargetV1, SessionSpawnSourceContextV1 } from '@happier-dev/protocol';
 import { parsePermissionIntentAlias } from '@happier-dev/agents';
 import type { CodexBackendMode } from '@happier-dev/agents';
 import { nowServerMs } from '@/sync/runtime/time';
@@ -168,6 +168,7 @@ function buildNewSessionLaunchScopeKey(params: Readonly<{
     selectedPath: string;
     useProfiles: boolean;
     selectedProfileId: string | null;
+    schedulingWorkerId: string | null;
 }>): string {
     return [
         `machine:${normalizeLaunchScopePart(params.machineId)}`,
@@ -175,6 +176,7 @@ function buildNewSessionLaunchScopeKey(params: Readonly<{
         `path:${normalizeLaunchScopePart(params.selectedPath)}`,
         `profiles:${params.useProfiles ? 'on' : 'off'}`,
         `profile:${normalizeLaunchScopePart(params.selectedProfileId)}`,
+        `worker:${normalizeLaunchScopePart(params.schedulingWorkerId)}`,
     ].join('|');
 }
 
@@ -225,6 +227,7 @@ export function useCreateNewSession(params: Readonly<{
     selectedPath: string;
     getRequestedPath?: () => string;
     selectedMachine: any;
+    schedulingTarget?: SessionSchedulingTargetV1 | null;
 
     setIsCreating: (v: boolean) => void;
     setIsResumeSupportChecking: (v: boolean) => void;
@@ -402,6 +405,7 @@ export function useCreateNewSession(params: Readonly<{
                 selectedPath: trimmedEffectiveSelectedPath,
                 useProfiles: current.useProfiles,
                 selectedProfileId: current.useProfiles ? current.selectedProfileId : null,
+                schedulingWorkerId: current.schedulingTarget?.workerId ?? null,
             });
             const resolveCurrentLaunchScopeKey = (): string => {
                 const latest = latestParamsRef.current;
@@ -431,6 +435,7 @@ export function useCreateNewSession(params: Readonly<{
                     selectedPath: latestEffectiveSelectedPath,
                     useProfiles: latest.useProfiles,
                     selectedProfileId: latest.useProfiles ? latest.selectedProfileId : null,
+                    schedulingWorkerId: latest.schedulingTarget?.workerId ?? null,
                 });
             };
             const isLaunchScopeStillActive = (): boolean => resolveCurrentLaunchScopeKey() === launchScopeKey;
@@ -671,6 +676,7 @@ export function useCreateNewSession(params: Readonly<{
                 const template = buildAutomationTemplateFromSessionAuthoringDraft({
                     ...authoringDraft,
                     ...spawnSessionExtras,
+                    ...(current.schedulingTarget ? { schedulingTarget: current.schedulingTarget } : {}),
                     windowsTerminalWindowName: windowsTerminalWindowName || null,
                 });
                 validateAutomationTemplateTarget({
@@ -896,6 +902,7 @@ export function useCreateNewSession(params: Readonly<{
                         sourceContext: current.sourceContext ?? null,
                     }),
                     ...spawnSessionExtras,
+                    ...(current.schedulingTarget ? { schedulingTarget: current.schedulingTarget } : {}),
                     spawnNonce: launchAttempt.spawnNonce,
                     userAttemptId: launchAttempt.attemptId,
                     firstTurnLocalId: launchAttempt.firstTurnLocalId,

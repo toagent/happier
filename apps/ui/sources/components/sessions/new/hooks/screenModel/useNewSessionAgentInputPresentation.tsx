@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { View } from 'react-native';
 
-import type { ActionId, BackendTargetRefV1, WindowsRemoteSessionLaunchMode } from '@happier-dev/protocol';
+import type { ActionId, BackendTargetRefV1, TwinSessionSchedulingV1, WindowsRemoteSessionLaunchMode } from '@happier-dev/protocol';
 import type { Router } from 'expo-router';
 
 import type { AutomationSettingsValue } from '@/components/automations/editor/AutomationSettingsForm';
@@ -117,6 +117,9 @@ export function useNewSessionAgentInputPresentation(params: Readonly<{
     effectiveWindowsRemoteSessionLaunchMode: WindowsRemoteSessionLaunchMode | null;
     windowsTerminalAvailable: boolean;
     setWindowsRemoteSessionLaunchModeOverride: (mode: WindowsRemoteSessionLaunchMode | null) => void;
+    schedulingWorkers?: TwinSessionSchedulingV1['workers'] | null;
+    selectedSchedulingWorkerId?: string | null;
+    onSchedulingWorkerChange?: (workerId: string) => void;
 }>): Readonly<{
     connectionStatus: Readonly<{
         text: string;
@@ -254,6 +257,9 @@ export function useNewSessionAgentInputPresentation(params: Readonly<{
         windowsRemoteSessionLaunchMode: params.effectiveWindowsRemoteSessionLaunchMode,
         windowsTerminalAvailable: params.windowsTerminalAvailable,
         onWindowsRemoteSessionLaunchModeChange: params.setWindowsRemoteSessionLaunchModeOverride,
+        schedulingWorkers: params.schedulingWorkers ?? undefined,
+        selectedSchedulingWorkerId: params.selectedSchedulingWorkerId,
+        onSchedulingWorkerChange: params.onSchedulingWorkerChange,
         onActionShortcutPress: handleActionShortcutPress,
     });
     const combinedExtraActionChips = React.useMemo(

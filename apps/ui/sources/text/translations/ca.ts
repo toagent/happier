@@ -4495,6 +4495,7 @@ deps: {
         aiBackendNotCompatibleWithSelectedProfile: 'No és compatible amb el perfil seleccionat.',
         aiBackendCliNotDetectedOnMachine: ({ cli }: { cli: string }) => `No s’ha detectat el CLI de ${cli} en aquesta màquina.`,
         selectMachineTitle: 'Selecciona màquina',
+        executionNode: "Node d'execució",
         selectMachineDescription: 'Tria on s’executa aquesta sessió.',
         selectPathTitle: 'Selecciona camí',
         selectWorkingDirectoryTitle: 'Selecciona el directori de treball',

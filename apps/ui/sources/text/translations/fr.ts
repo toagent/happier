@@ -4434,6 +4434,7 @@ export const fr: TranslationStructure = {
         aiBackendNotCompatibleWithSelectedProfile: 'Incompatible avec le profil sélectionné.',
         aiBackendCliNotDetectedOnMachine: ({ cli }: { cli: string }) => `${cli} CLI non détecté sur cette machine.`,
         selectMachineTitle: 'Choisir une machine',
+        executionNode: 'Nœud d’exécution',
         selectMachineDescription: 'Choisis où cette session s’exécute.',
         selectPathTitle: 'Choisir un chemin',
         selectWorkingDirectoryTitle: 'Choisir le répertoire de travail',

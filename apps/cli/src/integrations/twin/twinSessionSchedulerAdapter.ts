@@ -9,6 +9,7 @@ import {
   sealAccountScopedBlobCiphertext,
   SPAWN_SESSION_ERROR_CODES,
   type AccountScopedCryptoMaterial,
+  type TwinSessionSchedulingV1,
   type SpawnSessionErrorCode,
   type SpawnSessionNonceResolution,
 } from '@happier-dev/protocol';
@@ -28,11 +29,33 @@ import {
   type TwinSessionReleaseReceiptPayload,
 } from './twinSessionScheduler';
 import { TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY } from './twinSessionSchedulerConfig';
+import {
+  createTwinSessionWorkspaceMaterializer,
+  type TwinSessionWorkspaceMetadataUpdate,
+} from './twinSessionWorkspaceMaterializer';
 
 export { TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY } from './twinSessionSchedulerConfig';
 
+const AbsolutePathSchema = z.string().trim().min(1).refine(isAbsolute, {
+  message: 'Twin session scheduler paths must be absolute',
+});
+
+const WorkspaceTransportConfigSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('local'),
+    root: AbsolutePathSchema,
+  }).strict(),
+  z.object({
+    kind: z.literal('ssh'),
+    host: z.string().trim().min(1),
+    root: AbsolutePathSchema,
+    diffExecutable: AbsolutePathSchema,
+  }).strict(),
+]);
+
 const WorkerConfigSchema = z.object({
   machineId: z.string().trim().min(1),
+  workspace: WorkspaceTransportConfigSchema,
 }).strict();
 
 const TwinSessionSchedulerConfigSchema = z.object({
@@ -41,15 +64,42 @@ const TwinSessionSchedulerConfigSchema = z.object({
     message: 'Twin session scheduler requires an absolute executable path',
   }),
   pollIntervalMs: z.number().int().positive(),
+  reviewRoot: AbsolutePathSchema,
+  defaultWorkerId: z.string().trim().min(1).optional(),
   workers: z.record(z.string(), WorkerConfigSchema).refine((workers) => {
     const entries = Object.entries(workers);
     return entries.length > 0 && entries.every(([workerId]) => workerId.length > 0 && workerId.trim() === workerId);
   }, {
     message: 'Twin session scheduler requires nonblank worker ids',
   }),
-}).strict();
+}).strict().superRefine((config, context) => {
+  if (config.defaultWorkerId && !(config.defaultWorkerId in config.workers)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Default scheduling worker must exist in the worker map',
+      path: ['defaultWorkerId'],
+    });
+  }
+}).transform((config) => ({
+  ...config,
+  defaultWorkerId: config.defaultWorkerId
+    ?? (config.workers['twin-control'] ? 'twin-control' : Object.keys(config.workers)[0]!),
+}));
 
 export type TwinSessionSchedulerConfig = z.infer<typeof TwinSessionSchedulerConfigSchema>;
+
+export function buildTwinSessionSchedulingCapability(
+  config: TwinSessionSchedulerConfig,
+): TwinSessionSchedulingV1 {
+  return {
+    v: 1,
+    defaultWorkerId: config.defaultWorkerId,
+    workers: Object.entries(config.workers).map(([workerId, worker]) => ({
+      workerId,
+      machineId: worker.machineId,
+    })),
+  };
+}
 
 export function resolveTwinSessionSchedulerConfig(
   env: NodeJS.ProcessEnv = process.env,
@@ -172,6 +222,23 @@ const AttemptSchema = z.object({
   ownerToken: z.string().min(1),
   phase: z.enum(['created', 'queued', 'dispatching', 'running', 'failed', 'released']),
   options: z.object({ directory: z.string() }).passthrough(),
+  dispatchOptions: z.object({ directory: z.string() }).passthrough().optional(),
+  workspace: z.object({
+    v: z.literal(1),
+    state: z.enum(['prepared', 'finalized']),
+    sourceDirectory: z.string().min(1),
+    sourceRootDirectory: z.string().min(1),
+    sourceRelativeDirectory: z.string(),
+    reviewDirectory: z.string().min(1),
+    reviewRootDirectory: z.string().min(1),
+    targetDirectory: z.string().min(1),
+    targetRootDirectory: z.string().min(1),
+    sourceHead: z.string().min(1),
+    sourceSnapshot: z.string().min(1),
+    baselineCommit: z.string().min(1),
+    patchDigest: z.string().min(1).optional(),
+    reviewState: z.enum(['ready', 'stale']).optional(),
+  }).strict().optional(),
   result: SpawnResultSchema.optional(),
   terminalSessionId: z.string().min(1).optional(),
   runnerAcceptanceRequired: z.boolean().optional(),
@@ -315,6 +382,7 @@ export function createTwinSessionSchedulerAdapter(params: Readonly<{
   controllerMachineId: string;
   runCommand?: SchedulerCommandRunner;
   callMachineRpcFn?: typeof callMachineRpc;
+  updateSessionMetadata?: (input: TwinSessionWorkspaceMetadataUpdate) => Promise<void>;
   logWarning: (message: string, error: unknown) => void;
 }>): TwinSessionSchedulerAdapter {
   const leaseClient = createTwinSessionLeaseClient({
@@ -326,6 +394,13 @@ export function createTwinSessionSchedulerAdapter(params: Readonly<{
     encryptionMaterial: params.encryptionMaterial,
   });
   const callRpc = params.callMachineRpcFn ?? callMachineRpc;
+  const workspaceMaterializer = createTwinSessionWorkspaceMaterializer({
+    reviewRoot: params.config.reviewRoot,
+    controllerMachineId: params.controllerMachineId,
+    workers: params.config.workers,
+    credentials: params.credentials,
+    ...(params.updateSessionMetadata ? { updateSessionMetadata: params.updateSessionMetadata } : {}),
+  });
   const scheduler = createTwinSessionScheduler({
     controllerMachineId: params.controllerMachineId,
     store,
@@ -334,6 +409,8 @@ export function createTwinSessionSchedulerAdapter(params: Readonly<{
     readLease: async (input) => await leaseClient.read(input),
     releaseLease: async (input) => await leaseClient.release(input),
     forgetLease: async (input) => await leaseClient.forget(input),
+    prepareWorkspace: workspaceMaterializer.prepare,
+    finalizeWorkspace: workspaceMaterializer.finalize,
     spawnTarget: async (input) => parseSpawnResult(await callRpc({
       credentials: params.credentials,
       machineId: input.machineId,

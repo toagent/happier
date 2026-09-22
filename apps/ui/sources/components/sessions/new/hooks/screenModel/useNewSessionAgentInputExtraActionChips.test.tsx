@@ -32,6 +32,49 @@ vi.mock('@/components/sessions/agentInput/sessionActions/buildNewSessionActionSh
 }));
 
 describe('useNewSessionAgentInputExtraActionChips', () => {
+    it('shows the independently selected execution worker', async () => {
+        const { useNewSessionAgentInputExtraActionChips } = await import('./useNewSessionAgentInputExtraActionChips');
+        const onSchedulingWorkerChange = vi.fn();
+        let chips: ReadonlyArray<AgentInputExtraActionChip> = [];
+
+        function Probe() {
+            chips = useNewSessionAgentInputExtraActionChips({
+                agentId: 'codex',
+                agentOptionState: null,
+                setAgentOptionState: vi.fn(),
+                showAutomationActionChips: false,
+                automationDraft: { enabled: false, name: '', description: '', scheduleKind: 'interval', everyMinutes: 60, cronExpr: '0 * * * *', timezone: null },
+                automationLabel: 'Automate',
+                onAutomationChange: vi.fn(),
+                showServerPickerChip: false,
+                targetServerId: null,
+                targetServerName: 'Server A',
+                directSessionsFeatureEnabled: false,
+                supportsDirectTranscriptStorage: false,
+                transcriptStorage: 'persisted',
+                onTranscriptStorageChange: vi.fn(),
+                selectedMachineIsWindows: false,
+                windowsRemoteSessionLaunchMode: null,
+                windowsTerminalAvailable: false,
+                onWindowsRemoteSessionLaunchModeChange: vi.fn(),
+                schedulingWorkers: [
+                    { workerId: 'twin-control', machineId: 'machine-control' },
+                    { workerId: 'twin-dev', machineId: 'machine-dev' },
+                ],
+                selectedSchedulingWorkerId: 'twin-dev',
+                onSchedulingWorkerChange,
+                onActionShortcutPress: vi.fn(),
+            } as any);
+            return null;
+        }
+
+        await renderScreen(<Probe />);
+
+        const workerChip = chips.find((chip) => chip.key === 'new-session-scheduling-worker');
+        expect(workerChip?.collapsedOptionsPopover?.selectedOptionId).toBe('twin-dev');
+        expect(workerChip?.collapsedOptionsPopover?.presentation).toBe('list');
+    });
+
     it('creates the automation chip as a shared content popover instead of a collapsed toggle action', async () => {
         const { useNewSessionAgentInputExtraActionChips } = await import('./useNewSessionAgentInputExtraActionChips');
 

@@ -1,6 +1,8 @@
-import { mkdtemp, readFile, stat } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -12,11 +14,19 @@ import {
   createTwinSessionAttemptStore,
   createTwinSessionLeaseClient,
   createTwinSessionSchedulerAdapter,
+  buildTwinSessionSchedulingCapability,
   resolveTwinSessionSchedulerConfig,
 } from './twinSessionSchedulerAdapter';
 import type { TwinSessionSchedulerAttempt } from './twinSessionScheduler';
+import type { TwinSessionWorkspaceMetadataUpdate } from './twinSessionWorkspaceMaterializer';
 
 const temporaryDirectories: string[] = [];
+const execFileAsync = promisify(execFile);
+
+async function runGit(cwd: string, args: readonly string[]): Promise<string> {
+  const result = await execFileAsync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
+  return result.stdout.trim();
+}
 
 afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map(async (directory) => {
@@ -57,27 +67,94 @@ describe('twin session scheduler adapter', () => {
       }),
     })).toThrow(/absolute executable/i);
 
-    expect(resolveTwinSessionSchedulerConfig({
+    const resolved = resolveTwinSessionSchedulerConfig({
       HAPPIER_TWIN_SESSION_SCHEDULER_CONFIG_JSON: JSON.stringify({
         v: 1,
         executable: '/opt/wetamp/bin/twin-agent-remote',
         pollIntervalMs: 750,
+        reviewRoot: '/tmp/happier-reviews',
         workers: {
-          local: { machineId: 'machine-local' },
-          'twin-dev': { machineId: 'machine-dev' },
-          mini: { machineId: 'machine-mini' },
+          local: {
+            machineId: 'machine-local',
+            workspace: { kind: 'local', root: '/tmp/happier-local-workspaces' },
+          },
+          'twin-dev': {
+            machineId: 'machine-dev',
+            workspace: {
+              kind: 'ssh',
+              host: 'twin-dev',
+              root: '/Users/dev/.happier/workspaces',
+              diffExecutable: '/Users/dev/.lan-dev-machine/bin/twin-agent-workspace-diff',
+            },
+          },
+          mini: {
+            machineId: 'machine-mini',
+            workspace: {
+              kind: 'ssh',
+              host: 'twin-mini',
+              root: '/Users/mini/.happier/workspaces',
+              diffExecutable: '/Users/mini/.lan-dev-machine/bin/twin-agent-workspace-diff',
+            },
+          },
         },
       }),
-    })).toEqual({
+    });
+    expect(resolved).toEqual({
       v: 1,
       executable: '/opt/wetamp/bin/twin-agent-remote',
       pollIntervalMs: 750,
+      reviewRoot: '/tmp/happier-reviews',
+      defaultWorkerId: 'local',
       workers: {
-        local: { machineId: 'machine-local' },
-        'twin-dev': { machineId: 'machine-dev' },
-        mini: { machineId: 'machine-mini' },
+        local: {
+          machineId: 'machine-local',
+          workspace: { kind: 'local', root: '/tmp/happier-local-workspaces' },
+        },
+        'twin-dev': {
+          machineId: 'machine-dev',
+          workspace: {
+            kind: 'ssh',
+            host: 'twin-dev',
+            root: '/Users/dev/.happier/workspaces',
+            diffExecutable: '/Users/dev/.lan-dev-machine/bin/twin-agent-workspace-diff',
+          },
+        },
+        mini: {
+          machineId: 'machine-mini',
+          workspace: {
+            kind: 'ssh',
+            host: 'twin-mini',
+            root: '/Users/mini/.happier/workspaces',
+            diffExecutable: '/Users/mini/.lan-dev-machine/bin/twin-agent-workspace-diff',
+          },
+        },
       },
     });
+    expect(buildTwinSessionSchedulingCapability(resolved!)).toEqual({
+      v: 1,
+      defaultWorkerId: 'local',
+      workers: [
+        { workerId: 'local', machineId: 'machine-local' },
+        { workerId: 'twin-dev', machineId: 'machine-dev' },
+        { workerId: 'mini', machineId: 'machine-mini' },
+      ],
+    });
+
+    expect(() => resolveTwinSessionSchedulerConfig({
+      HAPPIER_TWIN_SESSION_SCHEDULER_CONFIG_JSON: JSON.stringify({
+        v: 1,
+        executable: '/opt/wetamp/bin/twin-agent-remote',
+        pollIntervalMs: 750,
+        reviewRoot: '/tmp/happier-reviews',
+        defaultWorkerId: 'missing',
+        workers: {
+          local: {
+            machineId: 'machine-local',
+            workspace: { kind: 'local', root: '/tmp/happier-local-workspaces' },
+          },
+        },
+      }),
+    })).toThrow(/default scheduling worker/i);
   });
 
   it('invokes lease commands without a shell and parses queue state', async () => {
@@ -150,8 +227,17 @@ describe('twin session scheduler adapter', () => {
   it('resolves a target spawn through the dedicated non-recursive target RPC', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'happier-twin-adapter-'));
     temporaryDirectories.push(directory);
+    const sourceRoot = join(directory, 'source');
+    await mkdir(sourceRoot, { recursive: true });
+    await runGit(sourceRoot, ['init', '--initial-branch=main']);
+    await runGit(sourceRoot, ['config', 'user.name', 'Test User']);
+    await runGit(sourceRoot, ['config', 'user.email', 'test@example.com']);
+    await writeFile(join(sourceRoot, 'tracked.txt'), 'base\n', 'utf8');
+    await runGit(sourceRoot, ['add', '--all']);
+    await runGit(sourceRoot, ['commit', '-m', 'base']);
     const methods: string[] = [];
     const rpcRequests: unknown[] = [];
+    const updateSessionMetadata = vi.fn(async (_input: TwinSessionWorkspaceMetadataUpdate) => {});
     const callMachineRpcFn: typeof callMachineRpc = async (input) => {
       methods.push(input.method);
       rpcRequests.push(input.request);
@@ -180,7 +266,14 @@ describe('twin session scheduler adapter', () => {
         v: 1,
         executable: '/opt/wetamp/bin/twin-agent-remote',
         pollIntervalMs: 1_000,
-        workers: { 'twin-dev': { machineId: 'machine-dev' } },
+        reviewRoot: join(directory, 'reviews'),
+        defaultWorkerId: 'twin-dev',
+        workers: {
+          'twin-dev': {
+            machineId: 'machine-dev',
+            workspace: { kind: 'local', root: join(directory, 'targets') },
+          },
+        },
       },
       attemptDirectory: directory,
       encryptionMaterial: credentials.encryption,
@@ -192,10 +285,11 @@ describe('twin session scheduler adapter', () => {
           : `state=${args[0] === 'lease-release' ? 'released' : 'acquired'}\n`,
       }),
       callMachineRpcFn,
+      updateSessionMetadata,
       logWarning: () => {},
     });
 
-    await expect(adapter.spawn(attempt().options)).resolves.toMatchObject({
+    await expect(adapter.spawn({ ...attempt().options, directory: sourceRoot })).resolves.toMatchObject({
       type: 'success',
       sessionIdStatus: 'pending',
     });
@@ -209,6 +303,9 @@ describe('twin session scheduler adapter', () => {
       'daemon.scheduledSession.resolveTarget.v1',
     ]);
     expect(rpcRequests[0]).toMatchObject({
+      options: {
+        directory: expect.stringContaining(`${join(directory, 'targets')}/session-`),
+      },
       lease: {
         v: 1,
         attemptLookupId: 'spawn-1',
@@ -216,6 +313,8 @@ describe('twin session scheduler adapter', () => {
         controllerMachineId: 'machine-controller',
       },
     });
+    const targetDirectory = (rpcRequests[0] as { options: { directory: string } }).options.directory;
+    await writeFile(join(targetDirectory, 'tracked.txt'), 'agent change\n', 'utf8');
 
     const released = await adapter.observeRemoteSessionExit({
       attemptLookupId: 'spawn-1',
@@ -223,6 +322,19 @@ describe('twin session scheduler adapter', () => {
       sessionId: 'session-target',
     });
     expect(released).toMatchObject({ status: 'released', receipt: expect.any(String) });
+    expect(updateSessionMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session-target',
+      machineId: 'machine-controller',
+      path: expect.stringContaining(`${join(directory, 'reviews')}/session-`),
+      scheduledWorkspace: expect.objectContaining({
+        workerId: 'twin-dev',
+        executionMachineId: 'machine-dev',
+        reviewMachineId: 'machine-controller',
+        reviewState: 'ready',
+      }),
+    }));
+    const reviewDirectory = (updateSessionMetadata.mock.calls[0]?.[0] as { path: string }).path;
+    await expect(readFile(join(reviewDirectory, 'tracked.txt'), 'utf8')).resolves.toBe('agent change\n');
     await expect(adapter.observeRemoteSessionExit({
       attemptLookupId: 'spawn-1',
       leaseId: (rpcRequests[0] as any).lease.leaseId,

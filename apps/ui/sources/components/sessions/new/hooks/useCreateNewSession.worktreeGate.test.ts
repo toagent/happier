@@ -415,6 +415,7 @@ describe('useCreateNewSession (worktree gating)', () => {
             selectedMachineId: 'machine-1',
             selectedPath: '/repo',
             selectedMachine: { id: 'machine-1', metadata: {} },
+            schedulingTarget: { v: 1 as const, workerId: 'twin-dev' },
             setIsCreating: vi.fn(),
             setIsResumeSupportChecking: vi.fn(),
             settings: {
@@ -461,6 +462,7 @@ describe('useCreateNewSession (worktree gating)', () => {
         expect(machineSpawnNewSessionMock).toHaveBeenCalledWith(expect.objectContaining({
             directory: '/repo',
             machineId: 'machine-1',
+            schedulingTarget: { v: 1, workerId: 'twin-dev' },
         }));
     });
 

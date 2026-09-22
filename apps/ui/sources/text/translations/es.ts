@@ -4782,6 +4782,7 @@ export const es: TranslationStructure = {
     aiBackendCliNotDetectedOnMachine: ({ cli }: { cli: string }) =>
       `No se detectó el CLI de ${cli} en esta máquina.`,
     selectMachineTitle: "Seleccionar máquina",
+    executionNode: "Nodo de ejecución",
     selectMachineDescription: "Elige dónde se ejecuta esta sesión.",
     selectPathTitle: "Seleccionar ruta",
     selectWorkingDirectoryTitle: "Seleccionar directorio de trabajo",

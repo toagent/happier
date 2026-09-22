@@ -5,6 +5,7 @@ import { promisify } from 'util';
 import { configuration } from '@/configuration';
 import { projectPath } from '@/projectPath';
 import type { MachineMetadata } from '@/api/types';
+import type { TwinSessionSchedulingV1 } from '@happier-dev/protocol';
 import packageJson from '../../../package.json';
 
 const execFileAsync = promisify(execFile);
@@ -35,9 +36,11 @@ export async function getPreferredHostName(): Promise<string> {
 export function refreshMachineMetadataForCurrentDaemon(
   current: Partial<MachineMetadata>,
   host: string,
+  twinSessionSchedulingV1: TwinSessionSchedulingV1 | null = null,
 ): MachineMetadata {
+  const { twinSessionSchedulingV1: _previousTwinSessionSchedulingV1, ...preserved } = current;
   const next: MachineMetadata = {
-    ...current,
+    ...preserved,
     host,
     platform: os.platform(),
     happyCliVersion: packageJson.version,
@@ -46,6 +49,7 @@ export function refreshMachineMetadataForCurrentDaemon(
     happyLibDir: projectPath(),
     daemonTerminalSessionAttachSupported: true,
     daemonSessionGoalControlsSupported: true,
+    ...(twinSessionSchedulingV1 ? { twinSessionSchedulingV1 } : {}),
   };
   if (
     current.host === next.host
@@ -56,6 +60,7 @@ export function refreshMachineMetadataForCurrentDaemon(
     && current.happyLibDir === next.happyLibDir
     && current.daemonTerminalSessionAttachSupported === next.daemonTerminalSessionAttachSupported
     && current.daemonSessionGoalControlsSupported === next.daemonSessionGoalControlsSupported
+    && JSON.stringify(current.twinSessionSchedulingV1) === JSON.stringify(next.twinSessionSchedulingV1)
   ) {
     return current as MachineMetadata;
   }

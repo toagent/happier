@@ -21,6 +21,8 @@ import {
     type SessionRuntimeIssueV1,
     type SessionTurnsProjectionV1,
     WindowsRemoteSessionLaunchModeSchema,
+    TwinSessionSchedulingV1Schema,
+    ScheduledWorkspaceV1Schema,
     type ScmDefaultBranchPushPolicy,
     type ScmHostingProvider,
     type ScmPullRequestSummary,
@@ -43,6 +45,7 @@ const MetadataObjectSchema = z.object({
         updatedAt: z.number()
     }).optional(),
     machineId: z.string().optional(),
+    scheduledWorkspaceV1: ScheduledWorkspaceV1Schema.optional(),
     sessionWorkspaceLocationV1: createSessionWorkspaceLocationV1Schema(z).optional(),
     handoffV1: z.object({
         v: z.literal(1),
@@ -595,6 +598,7 @@ export const MachineMetadataSchema = z.object({
     windowsRemoteSessionConsole: z.enum(['hidden', 'visible']).optional(),
     daemonTerminalSessionAttachSupported: z.boolean().optional(),
     daemonSessionGoalControlsSupported: z.boolean().optional(),
+    twinSessionSchedulingV1: TwinSessionSchedulingV1Schema.optional(),
     // Daemon status fields
     daemonLastKnownStatus: z.enum(['running', 'shutting-down']).optional(),
     daemonLastKnownPid: z.number().optional(),

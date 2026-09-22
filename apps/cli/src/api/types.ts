@@ -32,6 +32,7 @@ import {
   MachineInstallationPublicKeySchema,
   MachineInstallationProofV1Schema,
   MachineReplacementReasonSchema,
+  TwinSessionSchedulingV1Schema,
 } from '@happier-dev/protocol'
 import { SESSION_PERMISSION_MODES, createSessionPermissionModeSchema } from '@happier-dev/protocol'
 import { SessionStoredMessageContentSchema, type SessionStoredMessageContent } from '@happier-dev/protocol'
@@ -333,6 +334,7 @@ export const MachineMetadataSchema = z.object({
   happyLibDir: z.string(),
   daemonTerminalSessionAttachSupported: z.boolean().optional(),
   daemonSessionGoalControlsSupported: z.boolean().optional(),
+  twinSessionSchedulingV1: TwinSessionSchedulingV1Schema.optional(),
 })
 
 export type MachineMetadata = z.infer<typeof MachineMetadataSchema>

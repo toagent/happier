@@ -4443,6 +4443,7 @@ export const en = {
         aiBackendNotCompatibleWithSelectedProfile: 'Not compatible with the selected profile.',
         aiBackendCliNotDetectedOnMachine: ({ cli }: { cli: string }) => `${cli} CLI not detected on this machine.`,
         selectMachineTitle: 'Select Machine',
+        executionNode: 'Execution node',
         selectMachineDescription: 'Choose where this session runs.',
         selectPathTitle: 'Select Path',
         selectWorkingDirectoryTitle: 'Select Working Directory',

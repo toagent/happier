@@ -8,6 +8,7 @@ import {
   deriveTwinSessionLeaseId,
   type TwinSessionSchedulerAttempt,
   type TwinSessionSchedulerAttemptStore,
+  type TwinSessionWorkspaceMaterialization,
 } from './twinSessionScheduler';
 
 class MemoryAttemptStore implements TwinSessionSchedulerAttemptStore {
@@ -62,6 +63,11 @@ function createHarness(params: Readonly<{
   store?: MemoryAttemptStore;
   leaseState?: 'queued' | 'acquired';
   spawnTarget?: (options: SpawnSessionOptions) => Promise<SpawnSessionResult>;
+  prepareWorkspace?: (attempt: TwinSessionSchedulerAttempt) => Promise<Readonly<{
+    options: SpawnSessionOptions;
+    workspace: TwinSessionWorkspaceMaterialization;
+  }>>;
+  finalizeWorkspace?: (attempt: TwinSessionSchedulerAttempt, sessionId: string) => Promise<TwinSessionWorkspaceMaterialization>;
 }> = {}) {
   const store = params.store ?? new MemoryAttemptStore();
   const acquireLease = vi.fn(async () => ({ state: params.leaseState ?? 'acquired' as const }));
@@ -73,6 +79,30 @@ function createHarness(params: Readonly<{
     sessionId: 'session-1',
   })));
   const resolveTargetSpawn = vi.fn(async (): Promise<SpawnSessionNonceResolution> => ({ status: 'pending' }));
+  const prepareWorkspace = vi.fn(params.prepareWorkspace ?? (async (attempt: TwinSessionSchedulerAttempt) => ({
+    options: {
+      ...attempt.options,
+      directory: `/target/${attempt.spawnNonce}`,
+    },
+    workspace: {
+      v: 1 as const,
+      state: 'prepared' as const,
+      sourceDirectory: attempt.options.directory,
+      sourceRootDirectory: attempt.options.directory,
+      sourceRelativeDirectory: '.',
+      reviewDirectory: `/review/${attempt.spawnNonce}`,
+      reviewRootDirectory: `/review/${attempt.spawnNonce}`,
+      targetDirectory: `/target/${attempt.spawnNonce}`,
+      targetRootDirectory: `/target/${attempt.spawnNonce}`,
+      sourceHead: 'source-head',
+      sourceSnapshot: 'source-snapshot',
+      baselineCommit: 'baseline-commit',
+    },
+  })));
+  const finalizeWorkspace = vi.fn(params.finalizeWorkspace ?? (async (attempt: TwinSessionSchedulerAttempt) => ({
+    ...attempt.workspace!,
+    state: 'finalized' as const,
+  })));
 
   return {
     store,
@@ -82,6 +112,8 @@ function createHarness(params: Readonly<{
     spawnTarget,
     resolveTargetSpawn,
     forgetLease,
+    prepareWorkspace,
+    finalizeWorkspace,
     scheduler: createTwinSessionScheduler({
       controllerMachineId: 'controller-machine',
       store,
@@ -92,6 +124,8 @@ function createHarness(params: Readonly<{
       readLease,
       releaseLease,
       forgetLease,
+      prepareWorkspace: async ({ attempt }) => await prepareWorkspace(attempt),
+      finalizeWorkspace: async ({ attempt, sessionId }) => await finalizeWorkspace(attempt, sessionId),
       spawnTarget: async ({ options }) => await spawnTarget(options),
       resolveTargetSpawn,
       createOwnerToken: () => 'owner-token',
@@ -107,6 +141,29 @@ function createHarness(params: Readonly<{
 }
 
 describe('twin session scheduler', () => {
+  it('prepares one isolated workspace before spawning and reuses it for the same attempt', async () => {
+    const harness = createHarness();
+
+    await harness.scheduler.spawn(scheduledOptions());
+    await harness.scheduler.spawn(scheduledOptions());
+
+    expect(harness.prepareWorkspace).toHaveBeenCalledTimes(1);
+    expect(harness.spawnTarget).toHaveBeenCalledWith(expect.objectContaining({
+      directory: '/target/spawn-1',
+    }));
+    expect(harness.prepareWorkspace.mock.invocationCallOrder[0]).toBeLessThan(
+      harness.spawnTarget.mock.invocationCallOrder[0]!,
+    );
+    expect(harness.store.attempts.get('spawn-1')).toMatchObject({
+      workspace: {
+        state: 'prepared',
+        reviewDirectory: '/review/spawn-1',
+        targetDirectory: '/target/spawn-1',
+      },
+      dispatchOptions: { directory: '/target/spawn-1' },
+    });
+  });
+
   it('creates one durable lease and one target runner for repeated use of the same spawn nonce', async () => {
     const harness = createHarness();
 
@@ -248,6 +305,48 @@ describe('twin session scheduler', () => {
     await second.scheduler.spawn(scheduledOptions({ spawnNonce: 'spawn-2' }));
     await second.scheduler.observeSessionExit({ sessionId: 'session-1', unexpected: false });
     expect(second.releaseLease).toHaveBeenCalledTimes(1);
+  });
+
+  it('finalizes the review workspace before releasing the lease', async () => {
+    const harness = createHarness();
+    await harness.scheduler.spawn(scheduledOptions());
+
+    await harness.scheduler.observeSessionExit({ sessionId: 'session-1', unexpected: false });
+
+    expect(harness.finalizeWorkspace).toHaveBeenCalledTimes(1);
+    expect(harness.finalizeWorkspace.mock.invocationCallOrder[0]).toBeLessThan(
+      harness.releaseLease.mock.invocationCallOrder[0]!,
+    );
+    expect(harness.store.attempts.get('spawn-1')).toMatchObject({
+      phase: 'released',
+      workspace: { state: 'finalized' },
+    });
+  });
+
+  it('retains lease custody when review workspace finalization fails and retries it', async () => {
+    const harness = createHarness();
+    harness.finalizeWorkspace.mockRejectedValueOnce(new Error('review patch failed'));
+    await harness.scheduler.spawn(scheduledOptions());
+
+    await expect(harness.scheduler.observeRemoteSessionExit({
+      attemptLookupId: 'spawn-1',
+      leaseId: deriveTwinSessionLeaseId('spawn-1', 'twin-dev'),
+      sessionId: 'session-1',
+    })).rejects.toThrow('review patch failed');
+    expect(harness.releaseLease).not.toHaveBeenCalled();
+    expect(harness.store.attempts.get('spawn-1')).toMatchObject({
+      phase: 'running',
+      terminalSessionId: 'session-1',
+      workspace: { state: 'prepared' },
+    });
+
+    await expect(harness.scheduler.observeRemoteSessionExit({
+      attemptLookupId: 'spawn-1',
+      leaseId: deriveTwinSessionLeaseId('spawn-1', 'twin-dev'),
+      sessionId: 'session-1',
+    })).resolves.toMatchObject({ status: 'released' });
+    expect(harness.finalizeWorkspace).toHaveBeenCalledTimes(2);
+    expect(harness.releaseLease).toHaveBeenCalledTimes(1);
   });
 
   it('persists an early target exit and releases after the target session identity settles', async () => {

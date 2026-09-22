@@ -43,6 +43,8 @@ SERVER_FILES=(
   README.md
 )
 WORKER_SOURCES=(
+  twin-agent-queue-client
+  twin-agent-workspace-diff
   twin-agent-remote
   twin-agent-job-runner
   twin-agent-worker.py
@@ -51,6 +53,8 @@ WORKER_SOURCES=(
   twin-agent-stats
 )
 WORKER_TARGETS=(
+  twin-agent-queue-client
+  twin-agent-workspace-diff
   twin-agent-remote
   twin-agent-job-runner
   twin-agent-worker
@@ -73,6 +77,7 @@ validate_sources() {
 
   node --check "$SOURCE_DIR/server.mjs" >/dev/null
   bash -n "$SOURCE_DIR/twin-agent-remote"
+  bash -n "$SOURCE_DIR/twin-agent-workspace-diff"
   bash -n "$SOURCE_DIR/twin-agent-job-runner"
   python3 - "$SOURCE_DIR/twin-agent-worker.py" <<'PY'
 import ast
@@ -206,6 +211,8 @@ bin="$HOME/.lan-dev-machine/bin"
 backup="$HOME/.lan-dev-machine/backups/twin-agent/$timestamp"
 config="$HOME/.config/twin-agent/workers.json"
 files=(
+  twin-agent-queue-client
+  twin-agent-workspace-diff
   twin-agent-remote
   twin-agent-job-runner
   twin-agent-worker
@@ -245,7 +252,7 @@ set -euo pipefail
 source_commit="$1"
 install_config="$2"
 [[ "$(cat "$HOME/.lan-dev-machine/twin-agent-source-commit")" == "$source_commit" ]]
-for file in twin-agent-remote twin-agent-job-runner twin-agent-worker twin-agent-runner twin-agent-output twin-agent-stats; do
+for file in twin-agent-queue-client twin-agent-workspace-diff twin-agent-remote twin-agent-job-runner twin-agent-worker twin-agent-runner twin-agent-output twin-agent-stats; do
   [[ -x "$HOME/.lan-dev-machine/bin/$file" ]]
 done
 if [[ "$install_config" == "1" ]]; then

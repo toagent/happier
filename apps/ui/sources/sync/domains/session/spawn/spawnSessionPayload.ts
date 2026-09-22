@@ -14,6 +14,7 @@ import type {
     SessionMcpSelectionV1,
     SessionSpawnSourceContextV1,
     PendingFirstInputV1,
+    SessionSchedulingTargetV1,
     WindowsRemoteSessionLaunchMode,
 } from '@happier-dev/protocol';
 
@@ -50,6 +51,7 @@ export interface SpawnSessionOptions {
     attachmentMessageLocalId?: string;
     /** One-shot first turn transferred to a compatible daemon as part of fresh-session custody. */
     pendingFirstInput?: PendingFirstInputV1;
+    schedulingTarget?: SessionSchedulingTargetV1;
     permissionMode?: PermissionMode;
     permissionModeUpdatedAt?: number;
     agentModeId?: string;
@@ -117,6 +119,7 @@ export type SpawnHappySessionRpcParams = CodexBackendTransportFields & {
     resume?: string
     spawnNonce?: string
     pendingFirstInput?: PendingFirstInputV1
+    schedulingTarget?: SessionSchedulingTargetV1
     agentRuntimeDescriptorV1?: AgentRuntimeDescriptorV1
     permissionMode?: PermissionMode
     permissionModeUpdatedAt?: number
@@ -243,6 +246,7 @@ export function buildSpawnHappySessionRpcParams(options: SpawnSessionOptions): S
         resume,
         spawnNonce,
         pendingFirstInput,
+        schedulingTarget,
         permissionMode,
         permissionModeUpdatedAt,
         agentModeId,
@@ -286,6 +290,7 @@ export function buildSpawnHappySessionRpcParams(options: SpawnSessionOptions): S
             ? { spawnNonce }
             : {}),
         ...(pendingFirstInput ? { pendingFirstInput } : {}),
+        ...(schedulingTarget ? { schedulingTarget } : {}),
         permissionMode,
         permissionModeUpdatedAt,
         ...(readNonBlankSessionControlIdentifier(agentModeId)

@@ -162,6 +162,7 @@ vi.mock('@/components/sessions/files/content/ChangedFilesReview', () => ({
 
 describe('SessionScmReviewDetailsView (snapshot SWR)', () => {
     beforeEach(() => {
+        (mockSession as any).metadata = { path: '/tmp/repo', host: '', machineId: 'machine-1' };
         reviewCommentsFeatureEnabled = false;
         scmWriteOperationsFeatureEnabled = false;
         mockScmCommitStrategy = 'atomic';
@@ -254,6 +255,45 @@ describe('SessionScmReviewDetailsView (snapshot SWR)', () => {
         codeServerReviewTarget = { ...codeServerReviewTarget, machineId: 'machine-2' };
         await act(async () => { tree.update(<SessionScmReviewDetailsView sessionId="s1" scopeId="session:s1:updated" />); });
         expect(changedFilesReviewSpy.mock.calls.at(-1)?.[0]?.toolbarLeading).toBeNull();
+    });
+
+    it('shows the execution and local review workspace identity with stale state', async () => {
+        (mockSession as any).metadata = {
+            path: '/tmp/review/job-1',
+            host: 'control',
+            machineId: 'machine-control',
+            scheduledWorkspaceV1: {
+                v: 1,
+                workerId: 'twin-dev',
+                executionMachineId: 'machine-dev',
+                executionPath: '/worker/job-1',
+                reviewMachineId: 'machine-control',
+                reviewPath: '/tmp/review/job-1',
+                sourcePath: '/source/repo',
+                sourceHead: 'abc123',
+                sourceSnapshot: 'tree123',
+                baselineCommit: 'def456',
+                patchDigest: 'sha256:123',
+                reviewState: 'stale',
+            },
+        };
+        mockSnapshot = {
+            fetchedAt: 1,
+            repo: { isRepo: true, rootPath: '/tmp/review/job-1', backendId: 'git', mode: '.git' },
+            entries: [],
+            totals: {},
+        };
+
+        const { SessionScmReviewDetailsView } = await import('./SessionScmReviewDetailsView');
+        const { tree } = await renderScreen(<SessionScmReviewDetailsView sessionId="s1" scopeId="session:s1" />);
+        const summary = tree.root.findByProps({ testID: 'scheduled-workspace-summary' });
+        const text = summary.findAllByType('Text' as any).map((node) => node.props.children).flat().join(' ');
+
+        expect(text).toContain('twin-dev');
+        expect(text).toContain('machine-dev');
+        expect(text).toContain('machine-control');
+        expect(text).toContain('/tmp/review/job-1');
+        expect(text).toContain('stale');
     });
 
     it('enables review comments for SCM review diffs when the session has a workspace scope', async () => {

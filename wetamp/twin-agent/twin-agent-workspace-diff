@@ -1,0 +1,55 @@
+#!/bin/bash
+set -euo pipefail
+
+usage() {
+  echo "Usage: $0 prepare <workspace>|diff <workspace> <baseline-commit>" >&2
+  exit 2
+}
+
+fail() {
+  echo "$*" >&2
+  exit 1
+}
+
+canonical_path() {
+  python3 - "$1" <<'PY'
+import os
+import sys
+
+print(os.path.realpath(os.path.abspath(sys.argv[1])))
+PY
+}
+
+[[ $# -ge 2 ]] || usage
+action="$1"
+target=$(canonical_path "$2")
+workspace_root=$(canonical_path "${TWIN_AGENT_WORKSPACE_ROOT:-$HOME/.happier/twin-workspaces}")
+
+case "$target" in
+  "$workspace_root"/*) ;;
+  *) fail "workspace is outside configured workspace root" ;;
+esac
+
+case "$action" in
+  prepare)
+    [[ $# -eq 2 ]] || usage
+    umask 077
+    mkdir -p "$workspace_root"
+    rm -rf -- "$target"
+    mkdir -p "$target"
+    ;;
+  diff)
+    [[ $# -eq 3 ]] || usage
+    baseline_commit="$3"
+    [[ "$baseline_commit" =~ ^[a-f0-9]{40,64}$ ]] || fail "invalid baseline commit"
+    [[ -d "$target/.git" ]] || fail "workspace is not a Git repository"
+    git -C "$target" cat-file -e "${baseline_commit}^{commit}" 2>/dev/null || fail "baseline commit is unavailable"
+    index_directory=$(mktemp -d "${TMPDIR:-/tmp}/twin-agent-workspace-index.XXXXXX")
+    trap 'rm -rf "$index_directory"' EXIT
+    index_file="$index_directory/index"
+    GIT_INDEX_FILE="$index_file" git -C "$target" read-tree "$baseline_commit"
+    GIT_INDEX_FILE="$index_file" git -C "$target" add --force --all -- .
+    GIT_INDEX_FILE="$index_file" git -C "$target" diff --binary --cached "$baseline_commit" --
+    ;;
+  *) usage ;;
+esac

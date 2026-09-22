@@ -44,6 +44,7 @@ import { authAndSetupMachineIfNeeded } from '@/ui/auth';
 import { configuration, reloadConfiguration } from '@/configuration';
 import { startCaffeinate, stopCaffeinate } from '@/integrations/caffeinate';
 import {
+  buildTwinSessionSchedulingCapability,
   createTwinSessionSchedulerAdapter,
   resolveTwinSessionSchedulerConfig,
 } from '@/integrations/twin/twinSessionSchedulerAdapter';
@@ -1768,8 +1769,16 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
         },
       });
     };
+    const twinSessionSchedulerConfig = resolveTwinSessionSchedulerConfig(process.env);
+    const twinSessionSchedulingCapability = twinSessionSchedulerConfig
+      ? buildTwinSessionSchedulingCapability(twinSessionSchedulerConfig)
+      : null;
     const preferredHost = await getPreferredHostName();
-    const metadataForRegistration: MachineMetadata = { ...initialMachineMetadata, host: preferredHost };
+    const metadataForRegistration = refreshMachineMetadataForCurrentDaemon(
+      initialMachineMetadata,
+      preferredHost,
+      twinSessionSchedulingCapability,
+    );
     let preflightMachineRegistration: Awaited<ReturnType<typeof ensureMachineRegistered>> | null = null;
 
     const runningDaemonVersionMatches = await isDaemonRunningCurrentlyInstalledHappyVersion({
@@ -1829,7 +1838,6 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
         const pidToTrackedSession = new Map<number, TrackedSession>();
         const spawnResourceCleanupByPid = new Map<number, () => void>();
         const sessionAttachCleanupByPid = new Map<number, () => Promise<void>>();
-      const twinSessionSchedulerConfig = resolveTwinSessionSchedulerConfig(process.env);
       const twinSessionReleaseOutboxConfig = resolveTwinSessionReleaseOutboxConfig(process.env)
         ?? (twinSessionSchedulerConfig
           ? { v: 1 as const, pollIntervalMs: twinSessionSchedulerConfig.pollIntervalMs }
@@ -8714,7 +8722,11 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
                   // Keep machine metadata fresh without clobbering user-provided fields (e.g. displayName) that may exist.
                   await connectedApiMachine.updateMachineMetadata((metadata) => {
                     const base = (metadata ?? machine.metadata ?? {}) as Partial<MachineMetadata>;
-                    return refreshMachineMetadataForCurrentDaemon(base, preferredHost);
+                    return refreshMachineMetadataForCurrentDaemon(
+                      base,
+                      preferredHost,
+                      twinSessionSchedulingCapability,
+                    );
                   }).catch((error) => {
                     didRefreshMachineMetadata = false;
                     logger.warn('[DAEMON RUN] Failed to refresh machine metadata on reconnect', error);

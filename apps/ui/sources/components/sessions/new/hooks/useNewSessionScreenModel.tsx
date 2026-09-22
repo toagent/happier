@@ -83,6 +83,7 @@ import {
     buildBackendTargetKey,
     type AcpConfigOptionOverridesV1,
     type BackendTargetRefV1,
+    type SessionSchedulingTargetV1,
     type WindowsRemoteSessionLaunchMode,
 } from '@happier-dev/protocol';
 import { useNewSessionMcpSelection } from '@/components/sessions/new/hooks/useNewSessionMcpSelection';
@@ -740,6 +741,28 @@ export function useNewSessionScreenModel(params?: Readonly<{ draftId?: string }>
         return machines.find(m => m.id === selectedMachineId) ?? null;
     }, [selectedMachineId, machines]);
     const selectedMachineHomeDir = selectedMachine?.metadata?.homeDir ?? null;
+    const schedulingCapability = selectedMachine?.metadata?.twinSessionSchedulingV1 ?? null;
+    const [schedulingSelection, setSchedulingSelection] = React.useState<Readonly<{
+        machineId: string;
+        workerId: string;
+    }> | null>(null);
+    const selectedSchedulingWorkerId = React.useMemo(() => {
+        if (!selectedMachineId || !schedulingCapability) return null;
+        if (
+            schedulingSelection?.machineId === selectedMachineId
+            && schedulingCapability.workers.some((worker) => worker.workerId === schedulingSelection.workerId)
+        ) {
+            return schedulingSelection.workerId;
+        }
+        return schedulingCapability.defaultWorkerId;
+    }, [schedulingCapability, schedulingSelection, selectedMachineId]);
+    const setSelectedSchedulingWorkerId = React.useCallback((workerId: string) => {
+        if (!selectedMachineId || !schedulingCapability || !schedulingCapability.workers.some((worker) => worker.workerId === workerId)) return;
+        setSchedulingSelection({ machineId: selectedMachineId, workerId });
+    }, [schedulingCapability, selectedMachineId]);
+    const schedulingTarget = React.useMemo<SessionSchedulingTargetV1 | null>(() => (
+        selectedSchedulingWorkerId ? { v: 1, workerId: selectedSchedulingWorkerId } : null
+    ), [selectedSchedulingWorkerId]);
     // Routed through the registry like every other composer host: the eligible-kind
     // subset is the only thing that decides which triggers resolve here (INV-1),
     // and a hand-rolled `startsWith('/')` would be a second decision-maker.
@@ -1751,9 +1774,10 @@ export function useNewSessionScreenModel(params?: Readonly<{ draftId?: string }>
             draft: launchIntentWithoutText,
             machineId: selectedMachineId,
             targetServerId: targetServerId ?? null,
+            schedulingWorkerId: selectedSchedulingWorkerId,
             sourceContext: sourceContextState.sourceContext,
         });
-    }, [currentAuthoringDraft, selectedMachineId, sourceContextState.sourceContext, targetServerId]);
+    }, [currentAuthoringDraft, selectedMachineId, selectedSchedulingWorkerId, sourceContextState.sourceContext, targetServerId]);
     const previousLaunchIntentSignatureRef = React.useRef(launchIntentSignature);
     React.useEffect(() => {
         if (previousLaunchIntentSignatureRef.current === launchIntentSignature) return;
@@ -1785,6 +1809,7 @@ export function useNewSessionScreenModel(params?: Readonly<{ draftId?: string }>
         selectedPath,
         getRequestedPath,
         selectedMachine,
+        schedulingTarget,
         setIsCreating,
         setIsResumeSupportChecking,
         checkoutCreationDraft,
@@ -1836,6 +1861,9 @@ export function useNewSessionScreenModel(params?: Readonly<{ draftId?: string }>
         theme,
         selectedMachine,
         selectedMachineSpawnReadiness,
+        schedulingWorkers: schedulingCapability?.workers ?? null,
+        selectedSchedulingWorkerId,
+        onSchedulingWorkerChange: setSelectedSchedulingWorkerId,
         automationFeatureEnabled,
         automationDraft,
         effectiveAutomationDraft,

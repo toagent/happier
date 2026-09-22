@@ -4,7 +4,9 @@ import {
   SPAWN_SESSION_ERROR_CODES,
   SPAWN_SESSION_ERROR_DETAIL_KINDS,
   PendingFirstInputV1Schema,
+  ScheduledWorkspaceV1Schema,
   SpawnSessionExecutionAuthorizationSchema,
+  TwinSessionSchedulingV1Schema,
   isConnectedServiceUxDiagnosticSpawnErrorDetail,
   isConnectedServiceResumeUnreachableSpawnErrorDetail,
   isSpawnSessionErrorDetail,
@@ -12,6 +14,60 @@ import {
   type SpawnSessionErrorDetail,
   type SpawnSessionResult,
 } from './spawnSession.js';
+
+describe('twin-session scheduling contracts', () => {
+  it('publishes one default worker from a unique worker inventory', () => {
+    const capability = TwinSessionSchedulingV1Schema.parse({
+      v: 1,
+      defaultWorkerId: 'twin-control',
+      workers: [
+        { workerId: 'twin-control', machineId: 'machine-control' },
+        { workerId: 'twin-dev', machineId: 'machine-dev' },
+      ],
+    });
+
+    expect(capability.defaultWorkerId).toBe('twin-control');
+    expect(TwinSessionSchedulingV1Schema.safeParse({
+      ...capability,
+      workers: [...capability.workers, capability.workers[0]],
+    }).success).toBe(false);
+    expect(TwinSessionSchedulingV1Schema.safeParse({
+      ...capability,
+      defaultWorkerId: 'mac-mini',
+    }).success).toBe(false);
+  });
+
+  it('validates the execution-to-review workspace projection', () => {
+    expect(ScheduledWorkspaceV1Schema.parse({
+      v: 1,
+      workerId: 'twin-dev',
+      executionMachineId: 'machine-dev',
+      executionPath: '/worker/job-1',
+      reviewMachineId: 'machine-control',
+      reviewPath: '/review/job-1',
+      sourcePath: '/source/repo',
+      sourceHead: 'abc123',
+      sourceSnapshot: 'tree123',
+      baselineCommit: 'def456',
+      patchDigest: 'sha256:123',
+      reviewState: 'ready',
+    }).reviewState).toBe('ready');
+    expect(ScheduledWorkspaceV1Schema.safeParse({
+      v: 1,
+      workerId: 'twin-dev',
+      executionMachineId: 'machine-dev',
+      executionPath: '',
+      reviewMachineId: 'machine-control',
+      reviewPath: '/review/job-1',
+      sourcePath: '/source/repo',
+      sourceHead: 'abc123',
+      sourceSnapshot: 'tree123',
+      baselineCommit: 'def456',
+      patchDigest: 'sha256:123',
+      reviewState: 'ready',
+    }).success).toBe(false);
+  });
+});
 
 describe('spawn-session pending first input', () => {
   it('preserves prompt bytes, opaque identity, and optional message metadata', () => {

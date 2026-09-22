@@ -4631,6 +4631,7 @@ export const zhHans: TranslationStructure = {
     aiBackendCliNotDetectedOnMachine: ({ cli }: { cli: string }) =>
       `此设备未检测到 ${cli} CLI。`,
     selectMachineTitle: "选择设备",
+    executionNode: "执行节点",
     selectMachineDescription: "选择此会话运行的位置。",
     selectPathTitle: "选择路径",
     selectWorkingDirectoryTitle: "选择工作目录",

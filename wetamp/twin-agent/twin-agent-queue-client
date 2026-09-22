@@ -1,0 +1,13 @@
+#!/bin/bash
+set -euo pipefail
+
+SSH_BIN="${TWIN_AGENT_QUEUE_CLIENT_SSH_BIN:-ssh}"
+QUEUE_HOST="${TWIN_AGENT_QUEUE_HOST:-twin-dev}"
+
+[[ "$QUEUE_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || {
+  echo "invalid twin-agent queue host" >&2
+  exit 2
+}
+
+exec "$SSH_BIN" -o BatchMode=yes -o ConnectTimeout=10 "$QUEUE_HOST" \
+  '~/.lan-dev-machine/bin/twin-agent-remote' "$@"

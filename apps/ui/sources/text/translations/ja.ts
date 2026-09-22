@@ -5059,6 +5059,7 @@ localTailscale: {
     aiBackendCliNotDetectedOnMachine: ({ cli }: { cli: string }) =>
       `このマシンで${cli} CLIが検出されませんでした。`,
     selectMachineTitle: "マシンを選択",
+    executionNode: "実行ノード",
     selectMachineDescription: "このセッションを実行する場所を選択します。",
     selectPathTitle: "パスを選択",
     selectWorkingDirectoryTitle: "作業ディレクトリを選択",

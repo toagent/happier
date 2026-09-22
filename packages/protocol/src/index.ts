@@ -1339,8 +1339,10 @@ export {
 
 export {
   PendingFirstInputV1Schema,
+  ScheduledWorkspaceV1Schema,
   SessionSchedulingLeaseV1Schema,
   SessionSchedulingTargetV1Schema,
+  TwinSessionSchedulingV1Schema,
   SPAWN_SESSION_ERROR_CODES,
   SPAWN_SESSION_ERROR_DETAIL_KINDS,
   SpawnSessionExecutionAuthorizationSchema,
@@ -1350,8 +1352,10 @@ export {
   normalizeSpawnSessionErrorDetail,
   type ConnectedServiceResumeUnreachableContinuityCode,
   type PendingFirstInputV1,
+  type ScheduledWorkspaceV1,
   type SessionSchedulingLeaseV1,
   type SessionSchedulingTargetV1,
+  type TwinSessionSchedulingV1,
   type ConnectedServiceResumeUnreachableSpawnErrorDetail,
   type ConnectedServiceUxDiagnosticSpawnErrorDetail,
   type SpawnSessionErrorCode,

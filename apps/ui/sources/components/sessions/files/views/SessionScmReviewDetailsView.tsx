@@ -11,7 +11,7 @@ import { useReviewComposerHandoff } from '@/components/sessions/reviews/comments
 import { ChangedFilesReview } from '@/components/sessions/files/content/ChangedFilesReview';
 import { ChangedFilesViewModeMenu } from '@/components/sessions/files/ChangedFilesViewModeMenu';
 import { useChangedFilesData } from '@/hooks/session/files/useChangedFilesData';
-import { useProjectForSession, useProjectSessions, useSessionMessages, useSessionProjectScmCommitSelectionPatches, useSessionProjectScmCommitSelectionPaths, useSessionProjectScmOperationLog, useSessionProjectScmSnapshot, useSessionProjectScmSnapshotError, useSessionProjectScmTouchedPaths, useSessionRealtimeScmTranscriptConsumer, useSessionWorkspacePath, useSetting, useWorkspaceReviewCommentsDrafts } from '@/sync/domains/state/storage';
+import { useProjectForSession, useProjectSessions, useSession, useSessionMessages, useSessionProjectScmCommitSelectionPatches, useSessionProjectScmCommitSelectionPaths, useSessionProjectScmOperationLog, useSessionProjectScmSnapshot, useSessionProjectScmSnapshotError, useSessionProjectScmTouchedPaths, useSessionRealtimeScmTranscriptConsumer, useSessionWorkspacePath, useSetting, useWorkspaceReviewCommentsDrafts } from '@/sync/domains/state/storage';
 import { scmStatusSync } from '@/scm/scmStatusSync';
 import { useFeatureEnabled } from '@/hooks/server/useFeatureEnabled';
 import { ScmChangeDiscardButton } from '@/components/sessions/sourceControl/changes/ScmChangeDiscardButton';
@@ -97,6 +97,8 @@ export type SessionScmReviewDetailsViewProps = Readonly<{
 
 export const SessionScmReviewDetailsView = React.memo((props: SessionScmReviewDetailsViewProps) => {
     const { theme } = useUnistyles();
+    const session = useSession(props.sessionId);
+    const scheduledWorkspace = session?.metadata?.scheduledWorkspaceV1 ?? null;
     const pane = useAppPaneScope(props.scopeId);
     const openDetailsTab = pane.openDetailsTab;
     const goToComposer = useReviewComposerHandoff(props.scopeId);
@@ -434,6 +436,19 @@ export const SessionScmReviewDetailsView = React.memo((props: SessionScmReviewDe
 
     return (
         <View style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+            {scheduledWorkspace ? (
+                <View
+                    testID="scheduled-workspace-summary"
+                    style={{ paddingHorizontal: 12, paddingVertical: 8, gap: 2 }}
+                >
+                    <Text numberOfLines={1} style={{ fontSize: 12, color: theme.colors.text.primary }}>
+                        {`${scheduledWorkspace.workerId} · ${scheduledWorkspace.executionMachineId}`}
+                    </Text>
+                    <Text numberOfLines={2} selectable style={{ fontSize: 11, color: theme.colors.text.secondary }}>
+                        {`${scheduledWorkspace.reviewState} · ${scheduledWorkspace.reviewMachineId} · ${scheduledWorkspace.reviewPath}`}
+                    </Text>
+                </View>
+            ) : null}
             <ReviewDraftSummary
                 enabled={reviewCommentsEnabled}
                 drafts={reviewCommentDrafts}

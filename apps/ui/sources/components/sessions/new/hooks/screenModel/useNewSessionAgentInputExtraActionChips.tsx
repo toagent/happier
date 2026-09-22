@@ -15,6 +15,8 @@ import { buildNewSessionActionShortcutChips } from '@/components/sessions/agentI
 import { NewSessionServerSelectionContent } from '@/components/sessions/new/components/NewSessionServerSelectionContent';
 import { storage } from '@/sync/domains/state/storage';
 import type { NewSessionTranscriptStorage } from '@/components/sessions/new/modules/newSessionTranscriptStorage';
+import type { TwinSessionSchedulingV1 } from '@happier-dev/protocol';
+import { createSchedulingWorkerActionChip } from '@/components/sessions/agentInput/definitions/createSchedulingWorkerActionChip';
 
 export function useNewSessionAgentInputExtraActionChips(params: Readonly<{
     agentId: AgentId;
@@ -38,6 +40,9 @@ export function useNewSessionAgentInputExtraActionChips(params: Readonly<{
     windowsRemoteSessionLaunchMode: WindowsRemoteSessionLaunchMode | null;
     windowsTerminalAvailable: boolean;
     onWindowsRemoteSessionLaunchModeChange: (next: WindowsRemoteSessionLaunchMode) => void;
+    schedulingWorkers?: TwinSessionSchedulingV1['workers'];
+    selectedSchedulingWorkerId?: string | null;
+    onSchedulingWorkerChange?: (workerId: string) => void;
     onActionShortcutPress: (actionId: ActionId) => void;
     /**
      * The removable "continue from this Session" chip, when this authoring
@@ -113,6 +118,18 @@ export function useNewSessionAgentInputExtraActionChips(params: Readonly<{
         if (params.mcpChip) {
             chips.push(params.mcpChip);
         }
+        if (
+            params.schedulingWorkers
+            && params.schedulingWorkers.length > 0
+            && params.selectedSchedulingWorkerId
+            && params.onSchedulingWorkerChange
+        ) {
+            chips.push(createSchedulingWorkerActionChip({
+                workers: params.schedulingWorkers,
+                selectedWorkerId: params.selectedSchedulingWorkerId,
+                onWorkerChange: params.onSchedulingWorkerChange,
+            }));
+        }
         if (storageActionChip) {
             chips.push(storageActionChip);
         }
@@ -137,6 +154,9 @@ export function useNewSessionAgentInputExtraActionChips(params: Readonly<{
         params.connectedServicesAuthChip,
         params.mcpChip,
         params.onActionShortcutPress,
+        params.onSchedulingWorkerChange,
+        params.schedulingWorkers,
+        params.selectedSchedulingWorkerId,
         params.selectedMachineIsWindows,
         params.setAgentOptionState,
         params.showAutomationActionChips,

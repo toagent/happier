@@ -4734,6 +4734,7 @@ export const ru: TranslationStructure = {
     aiBackendCliNotDetectedOnMachine: ({ cli }: { cli: string }) =>
       `${cli} CLI не обнаружен на этой машине.`,
     selectMachineTitle: "Выбрать машину",
+    executionNode: "Узел выполнения",
     selectMachineDescription: "Выберите, где будет выполняться эта сессия.",
     selectPathTitle: "Выбрать путь",
     selectWorkingDirectoryTitle: "Выбрать рабочую директорию",

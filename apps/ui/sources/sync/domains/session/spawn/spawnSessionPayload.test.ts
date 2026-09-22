@@ -7,6 +7,17 @@ import {
 } from './spawnSessionPayload';
 
 describe('buildSpawnHappySessionRpcParams', () => {
+    it('forwards the selected scheduling worker to the controller daemon', () => {
+        expect(buildSpawnHappySessionRpcParams({
+            machineId: 'machine-control',
+            directory: '/tmp/workspace',
+            backendTarget: { kind: 'builtInAgent', agentId: 'codex' },
+            schedulingTarget: { v: 1, workerId: 'twin-dev' },
+        } as any)).toEqual(expect.objectContaining({
+            schedulingTarget: { v: 1, workerId: 'twin-dev' },
+        }));
+    });
+
     it('preserves exact nonblank opaque model identifiers', () => {
         expect(buildSpawnHappySessionRpcParams({
             machineId: 'machine-1',

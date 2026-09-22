@@ -17,6 +17,23 @@ export type TwinSessionLeaseState = Readonly<{
   queuePosition?: number;
 }>;
 
+export type TwinSessionWorkspaceMaterialization = Readonly<{
+  v: 1;
+  state: 'prepared' | 'finalized';
+  sourceDirectory: string;
+  sourceRootDirectory: string;
+  sourceRelativeDirectory: string;
+  reviewDirectory: string;
+  reviewRootDirectory: string;
+  targetDirectory: string;
+  targetRootDirectory: string;
+  sourceHead: string;
+  sourceSnapshot: string;
+  baselineCommit: string;
+  patchDigest?: string;
+  reviewState?: 'ready' | 'stale';
+}>;
+
 export type TwinSessionSchedulerAttempt = Readonly<{
   v: 1;
   spawnNonce: string;
@@ -27,6 +44,8 @@ export type TwinSessionSchedulerAttempt = Readonly<{
   ownerToken: string;
   phase: 'created' | 'queued' | 'dispatching' | 'running' | 'failed' | 'released';
   options: SpawnSessionOptions;
+  dispatchOptions?: SpawnSessionOptions;
+  workspace?: TwinSessionWorkspaceMaterialization;
   result?: SpawnSessionResult;
   terminalSessionId?: string;
   runnerAcceptanceRequired?: boolean;
@@ -65,6 +84,16 @@ type TwinSessionSchedulerDeps = Readonly<{
   readLease: (input: Readonly<{ leaseId: string; ownerToken: string }>) => Promise<TwinSessionLeaseState>;
   releaseLease: (input: Readonly<{ leaseId: string; ownerToken: string }>) => Promise<TwinSessionLeaseState>;
   forgetLease: (input: Readonly<{ leaseId: string; ownerToken: string }>) => Promise<void>;
+  prepareWorkspace: (input: Readonly<{
+    attempt: TwinSessionSchedulerAttempt;
+  }>) => Promise<Readonly<{
+    options: SpawnSessionOptions;
+    workspace: TwinSessionWorkspaceMaterialization;
+  }>>;
+  finalizeWorkspace: (input: Readonly<{
+    attempt: TwinSessionSchedulerAttempt;
+    sessionId: string;
+  }>) => Promise<TwinSessionWorkspaceMaterialization>;
   spawnTarget: (input: Readonly<{
     machineId: string;
     options: SpawnSessionOptions;
@@ -145,6 +174,31 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
     }))) ?? { ...attempt, phase: 'released' as const };
   };
 
+  const finalizeWorkspace = async (
+    attempt: TwinSessionSchedulerAttempt,
+    sessionId: string,
+  ): Promise<TwinSessionSchedulerAttempt> => {
+    if (attempt.workspace?.state === 'finalized') return attempt;
+    if (!attempt.workspace) {
+      throw new Error('Scheduled session workspace was not prepared');
+    }
+    const finalized = await deps.finalizeWorkspace({ attempt, sessionId });
+    if (finalized.state !== 'finalized') {
+      throw new Error('Scheduled session workspace finalization did not complete');
+    }
+    return (await deps.store.update(attempt.spawnNonce, (current) => ({
+      ...current,
+      workspace: current.workspace?.state === 'finalized' ? current.workspace : finalized,
+    }))) ?? { ...attempt, workspace: finalized };
+  };
+
+  const finalizeAndRelease = async (
+    attempt: TwinSessionSchedulerAttempt,
+    sessionId: string,
+  ): Promise<TwinSessionSchedulerAttempt> => await release(
+    await finalizeWorkspace(attempt, sessionId),
+  );
+
   const releaseIfTerminal = async (
     attempt: TwinSessionSchedulerAttempt,
   ): Promise<TwinSessionSchedulerAttempt> => {
@@ -153,7 +207,44 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
     if (!terminalSessionId || resolution.status !== 'success' || resolution.sessionId !== terminalSessionId) {
       return attempt;
     }
-    return await release(attempt);
+    return await finalizeAndRelease(attempt, terminalSessionId);
+  };
+
+  const prepareWorkspace = async (
+    attempt: TwinSessionSchedulerAttempt,
+  ): Promise<TwinSessionSchedulerAttempt> => {
+    if (attempt.workspace) return attempt;
+    try {
+      const prepared = await deps.prepareWorkspace({ attempt });
+      if (prepared.workspace.state !== 'prepared') {
+        throw new Error('Scheduled session workspace preparation did not complete');
+      }
+      return (await deps.store.update(attempt.spawnNonce, (current) => {
+        if (current.workspace) return current;
+        return {
+          ...current,
+          dispatchOptions: prepared.options,
+          workspace: prepared.workspace,
+        };
+      })) ?? {
+        ...attempt,
+        dispatchOptions: prepared.options,
+        workspace: prepared.workspace,
+      };
+    } catch {
+      const failed = (await deps.store.update(attempt.spawnNonce, (current) => ({
+        ...current,
+        phase: current.phase === 'released' ? current.phase : 'failed' as const,
+        result: current.phase === 'released'
+          ? current.result
+          : {
+              type: 'error' as const,
+              errorCode: SPAWN_SESSION_ERROR_CODES.SPAWN_FAILED,
+              errorMessage: 'Failed to prepare the scheduled session workspace',
+            },
+      }))) ?? attempt;
+      return await release(failed);
+    }
   };
 
   const settleTargetResolution = async (
@@ -232,10 +323,13 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
       if (resolution.status !== 'not_found') return attempt;
     }
 
+    attempt = await prepareWorkspace(attempt);
+    if (attempt.phase === 'failed' || attempt.phase === 'released') return attempt;
+
     try {
       const result = await deps.spawnTarget({
         machineId: attempt.machineId,
-        options: attempt.options,
+        options: attempt.dispatchOptions ?? attempt.options,
         lease: {
           v: 1,
           attemptLookupId: attempt.spawnNonce,
@@ -284,7 +378,7 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
       if (resolutionFromResult(attempt.result).status !== 'success') continue;
       const result = resolutionFromResult(attempt.result);
       if (result.status !== 'success' || result.sessionId !== sessionId) continue;
-      await release(attempt);
+      await finalizeAndRelease(attempt, sessionId);
     }
   };
 
@@ -422,7 +516,7 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
           ...current,
           terminalSessionId: sessionId,
         }))) ?? attempt;
-        await release(withTerminalIdentity);
+        await finalizeAndRelease(withTerminalIdentity, sessionId);
         return { status: 'released', receipt };
       }
       if (attempt.phase !== 'dispatching') return { status: 'mismatch' };

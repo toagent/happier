@@ -55,6 +55,7 @@ printf '%s\\n' "$*" >> "$FAKE_SSH_LOG"
       ...process.env,
       PATH: `${fakeBin}:${process.env.PATH}`,
       FAKE_SSH_LOG: sshLog,
+      HAPPIER_CLI_SCHEDULER_EXECUTABLE: path.join(root, 'wetamp', 'twin-agent', 'twin-agent-queue-client'),
       ...overrides,
     },
   };
@@ -117,6 +118,15 @@ test('deployment uses one immutable payload, official service lifecycle, and con
   assert.match(script, /run_worker_service_command restart --takeover --json/);
   assert.match(script, /scheduler_config=""/);
   assert.match(script, /twin-agent-remote queue/);
+  assert.match(script, /twin-agent-queue-client/);
+  assert.match(script, /twin-agent-workspace-diff/);
+  assert.match(script, /read_remote_home "\$QUEUE_HOST"/);
+  assert.match(script, /read_remote_home "\$MINI_HOST"/);
+  assert.match(script, /reviewRoot/);
+  assert.match(script, /workspace: \{ kind: "local", root: controllerWorkspaceRoot \}/);
+  assert.match(script, /workspace: \{ kind: "ssh", host: queueHost, root: developerWorkspaceRoot, diffExecutable: developerDiffExecutable \}/);
+  assert.match(script, /workspace: \{ kind: "ssh", host: miniHost, root: miniWorkspaceRoot, diffExecutable: miniDiffExecutable \}/);
+  assert.doesNotMatch(script, /SCHEDULER_EXECUTABLE[^\n]+twin-agent-remote/);
   assert.match(script, /read_local_identity\) \|\| fail/);
   assert.match(script, /read_remote_identity "\$MINI_HOST" "\$mini_node" "\$mini_payload"\) \|\| fail/);
   assert.doesNotMatch(script, /(?:cp|scp|tar).*\.(?:happier|happier-dev)\/(?:auth|credentials|settings)/);
