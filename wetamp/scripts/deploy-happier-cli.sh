@@ -31,6 +31,9 @@ SCHEDULER_EXECUTABLE="${HAPPIER_CLI_SCHEDULER_EXECUTABLE:-$HOME/.lan-dev-machine
 SCHEDULER_POLL_INTERVAL_MS="${HAPPIER_CLI_SCHEDULER_POLL_INTERVAL_MS:-1000}"
 DEPLOY_TIMESTAMP="${HAPPIER_CLI_DEPLOY_TIMESTAMP:-$(date -u +%Y%m%dT%H%M%SZ)}"
 SCHEDULER_ENV_KEY="HAPPIER_TWIN_SESSION_SCHEDULER_CONFIG_JSON"
+MINI_RELAY_TUNNEL_PORT="${HAPPIER_CLI_MINI_RELAY_TUNNEL_PORT:-3005}"
+MINI_RELAY_TUNNEL_LABEL="io.toagent.happier.mac-mini-relay-tunnel"
+MINI_RELAY_TUNNEL_PLIST="$HOME/Library/LaunchAgents/$MINI_RELAY_TUNNEL_LABEL.plist"
 export HAPPIER_HOME_DIR="$CONTROLLER_HOME"
 export HAPPIER_DAEMON_SERVICE_HAPPIER_HOME_DIR="$CONTROLLER_HOME"
 
@@ -53,6 +56,13 @@ validate_sources() {
   [[ -f "$CLI_DIR/scripts/syncPackageDist.mjs" ]] || fail "CLI prepack owner is missing"
   [[ -x "$SCHEDULER_EXECUTABLE" ]] || fail "scheduler executable is unavailable: $SCHEDULER_EXECUTABLE"
   [[ "$SCHEDULER_POLL_INTERVAL_MS" =~ ^[1-9][0-9]*$ ]] || fail "scheduler poll interval must be a positive integer"
+  [[ "$MINI_RELAY_TUNNEL_PORT" =~ ^[1-9][0-9]{0,4}$ && "$MINI_RELAY_TUNNEL_PORT" -le 65535 ]] || \
+    fail "Mac mini relay tunnel port must be between 1 and 65535"
+  [[ "$MINI_HOST" =~ ^[A-Za-z0-9._-]+$ ]] || fail "Mac mini SSH host contains unsupported characters"
+  command -v "$SSH_BIN" >/dev/null || fail "SSH client is unavailable: $SSH_BIN"
+  [[ -x /bin/launchctl ]] || fail "launchctl is unavailable"
+  [[ -x /usr/bin/plutil ]] || fail "plutil is unavailable"
+  [[ -x /usr/bin/curl ]] || fail "curl is unavailable"
   bash -n "$SCRIPT_DIR/deploy-happier-cli.sh"
 }
 
@@ -87,6 +97,7 @@ print_basis() {
   printf 'controller_home=%s\n' "$CONTROLLER_HOME"
   printf 'queue_host=%s\n' "$QUEUE_HOST"
   printf 'mini_host=%s\n' "$MINI_HOST"
+  printf 'mini_relay_tunnel_port=%s\n' "$MINI_RELAY_TUNNEL_PORT"
 }
 
 require_idle_queue() {
@@ -147,6 +158,101 @@ install_payload_local() {
   [[ "$(<"$stage/.source-commit")" == "$source_commit" ]] || fail "local staged payload commit marker mismatch"
   mv "$stage" "$target"
   local_payload="$target"
+}
+
+xml_escape() {
+  local value="$1"
+  value=${value//&/&amp;}
+  value=${value//</&lt;}
+  value=${value//>/&gt;}
+  printf '%s' "$value"
+}
+
+render_mini_relay_tunnel_plist() {
+  local ssh_program reverse_forward log_dir
+  ssh_program=$(command -v "$SSH_BIN")
+  [[ "$ssh_program" == /* ]] || fail "SSH client path is not absolute: $ssh_program"
+  reverse_forward="127.0.0.1:$MINI_RELAY_TUNNEL_PORT:127.0.0.1:$MINI_RELAY_TUNNEL_PORT"
+  log_dir="$HOME/.happier/logs"
+  cat <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>$MINI_RELAY_TUNNEL_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$(xml_escape "$ssh_program")</string>
+    <string>-o</string>
+    <string>BatchMode=yes</string>
+    <string>-o</string>
+    <string>ControlMaster=no</string>
+    <string>-o</string>
+    <string>ControlPath=none</string>
+    <string>-o</string>
+    <string>ExitOnForwardFailure=yes</string>
+    <string>-o</string>
+    <string>ServerAliveInterval=15</string>
+    <string>-o</string>
+    <string>ServerAliveCountMax=3</string>
+    <string>-N</string>
+    <string>-T</string>
+    <string>-R</string>
+    <string>$reverse_forward</string>
+    <string>$MINI_HOST</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>$(xml_escape "$log_dir/mac-mini-relay-tunnel.out.log")</string>
+  <key>StandardErrorPath</key>
+  <string>$(xml_escape "$log_dir/mac-mini-relay-tunnel.err.log")</string>
+</dict>
+</plist>
+PLIST
+}
+
+install_mini_relay_tunnel() {
+  local domain plist_dir stage backup
+  domain="gui/$(id -u)"
+  plist_dir=$(dirname "$MINI_RELAY_TUNNEL_PLIST")
+  backup="$LOCAL_DEPLOY_ROOT/backups/$DEPLOY_TIMESTAMP/$MINI_RELAY_TUNNEL_LABEL.plist"
+  install -d -m 0700 "$plist_dir" "$HOME/.happier/logs" "$LOCAL_DEPLOY_ROOT/backups/$DEPLOY_TIMESTAMP"
+  if [[ -f "$MINI_RELAY_TUNNEL_PLIST" ]]; then
+    cp -p "$MINI_RELAY_TUNNEL_PLIST" "$backup"
+  fi
+  stage=$(mktemp "$plist_dir/.mac-mini-relay-tunnel.XXXXXX")
+  render_mini_relay_tunnel_plist > "$stage"
+  /usr/bin/plutil -lint "$stage" >/dev/null
+  /bin/launchctl bootout "$domain/$MINI_RELAY_TUNNEL_LABEL" >/dev/null 2>&1 || true
+  install -m 0600 "$stage" "$MINI_RELAY_TUNNEL_PLIST"
+  rm -f "$stage"
+  /bin/launchctl bootstrap "$domain" "$MINI_RELAY_TUNNEL_PLIST"
+  /bin/launchctl enable "$domain/$MINI_RELAY_TUNNEL_LABEL"
+  /bin/launchctl kickstart -k "$domain/$MINI_RELAY_TUNNEL_LABEL"
+}
+
+verify_mini_relay_tunnel() {
+  local domain attempt health_url
+  domain="gui/$(id -u)"
+  health_url="http://127.0.0.1:$MINI_RELAY_TUNNEL_PORT/health"
+  /usr/bin/curl -fsS --max-time 5 "$health_url" >/dev/null || fail "local Happier relay is unavailable"
+  for attempt in {1..20}; do
+    if /bin/launchctl print "$domain/$MINI_RELAY_TUNNEL_LABEL" >/dev/null 2>&1 \
+      && "$SSH_BIN" -o BatchMode=yes -o ConnectTimeout=10 "$MINI_HOST" \
+        curl -fsS --max-time 5 "$health_url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  fail "Mac mini relay tunnel did not become healthy"
 }
 
 install_payload_remote() {
@@ -360,6 +466,8 @@ developer_payload=$(install_payload_remote "$QUEUE_HOST")
 mini_payload=$(install_payload_remote "$MINI_HOST")
 developer_node=$(resolve_remote_node "$QUEUE_HOST")
 mini_node=$(resolve_remote_node "$MINI_HOST")
+install_mini_relay_tunnel
+verify_mini_relay_tunnel
 
 controller_identity=$(read_local_identity) || fail "controller identity is unavailable from the deployed payload"
 developer_identity=$(read_remote_identity "$QUEUE_HOST" "$developer_node" "$developer_payload") || fail "$QUEUE_HOST identity is unavailable from the deployed payload"
@@ -381,6 +489,7 @@ install_controller_service
 verify_remote_runtime "$QUEUE_HOST" "$developer_node" "$developer_payload" "$developer_machine_id" "$developer_account_id"
 verify_remote_runtime "$MINI_HOST" "$mini_node" "$mini_payload" "$mini_machine_id" "$mini_account_id"
 verify_local_runtime
+verify_mini_relay_tunnel
 
 load_git_basis
 [[ "$source_commit" == "$initial_source_commit" ]] || fail "HEAD changed during deployment"

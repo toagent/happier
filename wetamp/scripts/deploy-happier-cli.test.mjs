@@ -118,3 +118,18 @@ test('deployment uses one immutable payload, official service lifecycle, and con
   assert.match(script, /read_remote_identity "\$MINI_HOST" "\$mini_node" "\$mini_payload"\) \|\| fail/);
   assert.doesNotMatch(script, /(?:cp|scp|tar).*\.(?:happier|happier-dev)\/(?:auth|credentials|settings)/);
 });
+
+test('deployment owns the Mac mini relay tunnel as a restartable local launch agent', () => {
+  const script = readFileSync(deployScript, 'utf8');
+
+  assert.match(script, /install_mini_relay_tunnel/);
+  assert.match(script, /io\.toagent\.happier\.mac-mini-relay-tunnel/);
+  assert.match(script, /ExitOnForwardFailure=yes/);
+  assert.match(script, /ServerAliveInterval=15/);
+  assert.match(script, /ServerAliveCountMax=3/);
+  assert.match(script, /127\.0\.0\.1:\$MINI_RELAY_TUNNEL_PORT:127\.0\.0\.1:\$MINI_RELAY_TUNNEL_PORT/);
+  assert.match(script, /launchctl bootstrap/);
+  assert.match(script, /launchctl kickstart -k/);
+  assert.match(script, /verify_mini_relay_tunnel/);
+  assert.match(script, /curl -fsS --max-time/);
+});
