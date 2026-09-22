@@ -8,10 +8,10 @@
  * `current` slot.
  *
  * State machine rules — see plan §1572–§1693:
- *   - Sync rule (no transition active): keep `displayedChildren` synchronized with the
- *     latest `children` so the next transition's outgoing snapshot is fresh. The
+ *   - Sync rule (no transition active): keep `displayedChildrenRef` synchronized with
+ *     the latest `children` so the next transition's outgoing snapshot is fresh. The
  *     rendered `current` slot uses `children` directly while not transitioning so
- *     same-key dynamic updates appear immediately.
+ *     same-key dynamic updates appear immediately without scheduling a state update.
  *   - Transition trigger: on `contentKey` mismatch, route through `useLayoutEffect` to
  *     set up the spring before the next paint. Replace direction OR reduced motion
  *     committed synchronously without a spring.
@@ -51,7 +51,7 @@ export function SlideTransitionSwitch(props: SlideTransitionSwitchProps): React.
     const resolvedBlur = props.blur ?? false;
     const spring = resolveSlideTransitionSpring(resolvedPreset, { reducedMotion: effectiveReducedMotion });
 
-    const [displayedChildren, setDisplayedChildren] = React.useState<React.ReactNode>(props.children);
+    const displayedChildrenRef = React.useRef<React.ReactNode>(props.children);
     const [displayedKey, setDisplayedKey] = React.useState<string | number>(props.contentKey);
     const [activeDirection, setActiveDirection] = React.useState<SlideTransitionDirection>(props.direction);
     const progress = useSharedValue(0);
@@ -76,7 +76,7 @@ export function SlideTransitionSwitch(props: SlideTransitionSwitchProps): React.
 
     const commitDisplayed = React.useCallback(
         (nextChildren: React.ReactNode, nextKey: string | number) => {
-            setDisplayedChildren(() => nextChildren);
+            displayedChildrenRef.current = nextChildren;
             setDisplayedKey(nextKey);
             inFlightTargetRef.current = null;
         },
@@ -94,14 +94,15 @@ export function SlideTransitionSwitch(props: SlideTransitionSwitchProps): React.
         commitDisplayed(target.children, target.key);
     }, [commitDisplayed]);
 
-    // SYNC RULE: while not transitioning, keep `displayedChildren` ready for the
-    // NEXT transition's outgoing snapshot. The render path uses plain `children`
-    // for the current slot when not transitioning, so same-key dynamic updates
-    // appear without a frame lag.
-    React.useEffect(() => {
+    // SYNC RULE: while not transitioning, keep the NEXT transition's outgoing
+    // snapshot current without scheduling another React commit. The previous
+    // state-based synchronization fed same-key native content updates back into
+    // React and could hit the maximum nested-update depth under a rapidly
+    // refreshing SelectionList.
+    React.useLayoutEffect(() => {
         if (isTransitioning) return;
         if (inFlightTargetRef.current !== null) return;
-        setDisplayedChildren(() => props.children);
+        displayedChildrenRef.current = props.children;
     }, [props.children, isTransitioning]);
 
     // NO-FLASH INVARIANT: after the spring callback commits the new
@@ -184,7 +185,7 @@ export function SlideTransitionSwitch(props: SlideTransitionSwitchProps): React.
     ]);
 
     const containerStyle: StyleProp<ViewStyle> | undefined = props.style;
-    const currentSlot = isTransitioning ? displayedChildren : props.children;
+    const currentSlot = isTransitioning ? displayedChildrenRef.current : props.children;
     const incomingSlotForward = isTransitioning && activeDirection === 'forward' ? props.children : undefined;
     const incomingSlotBackward = isTransitioning && activeDirection === 'backward' ? props.children : undefined;
 

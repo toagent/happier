@@ -73,6 +73,54 @@ describe('SlideTransitionSwitch (discrete adapter)', () => {
         expect(screen.findByTestId('step-a')).not.toBeNull();
     });
 
+    it('updates same-key content without scheduling a nested state commit', async () => {
+        springControls.fireCallbackImmediately = false;
+        const { SlideTransitionSwitch } = await import('./SlideTransitionSwitch');
+        const phases: Array<Parameters<React.ProfilerOnRenderCallback>[1]> = [];
+        const onRender: React.ProfilerOnRenderCallback = (_id, phase) => {
+            phases.push(phase);
+        };
+        const renderSwitch = (label: string) => (
+            <React.Profiler id="slide-switch" onRender={onRender}>
+                <SlideTransitionSwitch contentKey="a" direction="forward" testID="switch">
+                    <Text testID={`step-${label}`}>{label}</Text>
+                </SlideTransitionSwitch>
+            </React.Profiler>
+        );
+        const screen = await renderScreen(renderSwitch('v1'));
+        phases.length = 0;
+
+        await screen.update(renderSwitch('v2'));
+
+        expect(screen.findByTestId('step-v2')).not.toBeNull();
+        expect(phases).toEqual(['update']);
+    });
+
+    it('uses the latest committed same-key content as the next outgoing snapshot', async () => {
+        springControls.fireCallbackImmediately = false;
+        const { SlideTransitionSwitch } = await import('./SlideTransitionSwitch');
+        const screen = await renderScreen(
+            <SlideTransitionSwitch contentKey="a" direction="forward" testID="switch">
+                <Text testID="step-a-v1">A v1</Text>
+            </SlideTransitionSwitch>,
+        );
+
+        await screen.update(
+            <SlideTransitionSwitch contentKey="a" direction="forward" testID="switch">
+                <Text testID="step-a-v2">A v2</Text>
+            </SlideTransitionSwitch>,
+        );
+        await screen.update(
+            <SlideTransitionSwitch contentKey="b" direction="forward" testID="switch">
+                <Text testID="step-b">B</Text>
+            </SlideTransitionSwitch>,
+        );
+
+        expect(screen.findByTestId('step-a-v1')).toBeNull();
+        expect(screen.findByTestId('step-a-v2')).not.toBeNull();
+        expect(screen.findByTestId('step-b')).not.toBeNull();
+    });
+
     it('keeps outgoing children mounted while a forward transition is in flight', async () => {
         springControls.fireCallbackImmediately = false;
         const { SlideTransitionSwitch } = await import('./SlideTransitionSwitch');

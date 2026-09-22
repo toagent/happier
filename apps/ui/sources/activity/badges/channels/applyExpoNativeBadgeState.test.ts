@@ -70,4 +70,15 @@ describe('applyExpoNativeBadgeState', () => {
 
         expect(result).toBe(false);
     });
+
+    it('stops retrying for the process after the native platform explicitly refuses badges', async () => {
+        setBadgeCountAsync.mockResolvedValueOnce(false);
+        const { applyExpoNativeBadgeState } = await import('./applyExpoNativeBadgeState');
+
+        await expect(applyExpoNativeBadgeState({ count: 1, showNonNumericDot: false })).resolves.toBe(false);
+        await expect(applyExpoNativeBadgeState({ count: 2, showNonNumericDot: false })).resolves.toBe(false);
+
+        expect(setBadgeCountAsync).toHaveBeenCalledTimes(1);
+        expect(setBadgeCountAsync).toHaveBeenCalledWith(1);
+    });
 });
