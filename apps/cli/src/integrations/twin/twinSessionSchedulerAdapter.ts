@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, readFile, readdir, unlink } from 'node:fs/promises';
+import { chmod, mkdir, readFile, readdir } from 'node:fs/promises';
 import { createHash, randomBytes as nodeRandomBytes, randomUUID } from 'node:crypto';
 import { isAbsolute, join } from 'node:path';
 
@@ -175,6 +175,7 @@ const AttemptSchema = z.object({
   terminalSessionId: z.string().min(1).optional(),
   runnerAcceptanceRequired: z.boolean().optional(),
   runnerAcceptanceRecorded: z.boolean().optional(),
+  leaseForgotten: z.boolean().optional(),
 }).strict();
 
 const ReleaseReceiptPayloadSchema = z.object({
@@ -276,11 +277,6 @@ export function createTwinSessionAttemptStore(params: Readonly<{
       return next;
     }),
     save: async (attempt) => await withMutationLock(async () => await writeAttempt(attempt)),
-    delete: async (spawnNonce) => await withMutationLock(async () => {
-      await unlink(attemptPath(params.directory, spawnNonce)).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== 'ENOENT') throw error;
-      });
-    }),
   };
 }
 

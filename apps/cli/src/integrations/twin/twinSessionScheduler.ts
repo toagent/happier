@@ -31,6 +31,7 @@ export type TwinSessionSchedulerAttempt = Readonly<{
   terminalSessionId?: string;
   runnerAcceptanceRequired?: boolean;
   runnerAcceptanceRecorded?: boolean;
+  leaseForgotten?: boolean;
 }>;
 
 export type TwinSessionSchedulerAttemptStore = Readonly<{
@@ -42,7 +43,6 @@ export type TwinSessionSchedulerAttemptStore = Readonly<{
     transition: (current: TwinSessionSchedulerAttempt) => TwinSessionSchedulerAttempt,
   ) => Promise<TwinSessionSchedulerAttempt | null>;
   save: (attempt: TwinSessionSchedulerAttempt) => Promise<void>;
-  delete: (spawnNonce: string) => Promise<void>;
 }>;
 
 export type TwinSessionReleaseReceiptPayload = Readonly<{
@@ -397,11 +397,15 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
           return { status: 'mismatch' };
         }
         if (acknowledgedAttempt.phase !== 'released') return { status: 'pending', receipt };
+        if (acknowledgedAttempt.leaseForgotten) return { status: 'acknowledged' };
         await deps.forgetLease({
           leaseId: acknowledgedAttempt.leaseId,
           ownerToken: acknowledgedAttempt.ownerToken,
         });
-        await deps.store.delete(attemptLookupId);
+        await deps.store.update(attemptLookupId, (current) => ({
+          ...current,
+          leaseForgotten: true,
+        }));
         return { status: 'acknowledged' };
       }
 

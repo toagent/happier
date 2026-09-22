@@ -132,8 +132,8 @@ describe('twin session scheduler adapter', () => {
     await expect(store.load('spawn-1')).resolves.toEqual(created);
     await expect(store.listRecoverable()).resolves.toEqual([created]);
 
-    await store.save(attempt({ phase: 'released' }));
-    await expect(store.load('spawn-1')).resolves.toMatchObject({ phase: 'released' });
+    await store.save(attempt({ phase: 'released', leaseForgotten: true }));
+    await expect(store.load('spawn-1')).resolves.toMatchObject({ phase: 'released', leaseForgotten: true });
     await expect(store.listRecoverable()).resolves.toEqual([]);
 
     const files = await import('node:fs/promises').then(({ readdir }) => readdir(directory));
@@ -229,6 +229,6 @@ describe('twin session scheduler adapter', () => {
       sessionId: 'session-target',
       receipt: (released as any).receipt,
     })).resolves.toEqual({ status: 'acknowledged' });
-    await expect(adapter.resolve('spawn-1')).resolves.toEqual({ status: 'not_found' });
+    await expect(adapter.resolve('spawn-1')).resolves.toEqual({ status: 'success', sessionId: 'session-target' });
   });
 });

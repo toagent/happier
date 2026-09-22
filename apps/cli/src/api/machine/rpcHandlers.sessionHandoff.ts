@@ -1510,69 +1510,69 @@ export function registerMachineSessionHandoffRpcHandlers(params: Readonly<{
     }
   };
 
-		  const waitForPersistedSourceExport = async (
-		    handoffId: string,
-		    predicate: (record: NonNullable<Awaited<ReturnType<typeof sourceExportStore.load>>>) => boolean,
-		    transferTimeoutMsOverride?: number,
-		  ): Promise<Awaited<ReturnType<typeof sourceExportStore.load>> | null> => {
-	    const resolveTerminalAbortReason = (message?: string): string => {
-	      const trimmed = typeof message === 'string' ? message.trim() : '';
-	      const ineligibleMatch = /^Session is not eligible for handoff: ([a-z0-9_]+)$/u.exec(trimmed);
-	      if (ineligibleMatch) {
-	        return `handoff_ineligible:${ineligibleMatch[1]}`;
-	      }
-	      return 'handoff_source_export_failed';
-	    };
+  const waitForPersistedSourceExport = async (
+    handoffId: string,
+    predicate: (record: NonNullable<Awaited<ReturnType<typeof sourceExportStore.load>>>) => boolean,
+    transferTimeoutMsOverride?: number,
+  ): Promise<Awaited<ReturnType<typeof sourceExportStore.load>> | null> => {
+    const resolveTerminalAbortReason = (message?: string): string => {
+      const trimmed = typeof message === 'string' ? message.trim() : '';
+      const ineligibleMatch = /^Session is not eligible for handoff: ([a-z0-9_]+)$/u.exec(trimmed);
+      if (ineligibleMatch) {
+        return `handoff_ineligible:${ineligibleMatch[1]}`;
+      }
+      return 'handoff_source_export_failed';
+    };
 
-	      // Waiting for a source-export record is not the same as "session TTL", but it *must* be long
-	      // enough to cover deferred export on large repos.
-	      //
-	      // Important: server-routed transfers have a per-transfer timeout for the open/ack/chunk
-	      // handshake. This wait budget must be derived from that timeout, not from unrelated
-	      // app↔daemon file-transfer TTLs, or deferred exports can abort with `transfer_not_found`
-	      // while still pending.
-		      const baseTransferTimeoutMs =
-		        typeof transferTimeoutMsOverride === 'number' && Number.isFinite(transferTimeoutMsOverride) && transferTimeoutMsOverride > 0
-		          ? transferTimeoutMsOverride
-		          : resolveServerRoutedTransferTimeoutMs();
-		      // Keep the wait budget within the transfer-level timeout so requesters still receive a
-		      // response (chunk or abort) before their own inactivity timer fires.
-		      const timeoutMs = Math.max(1, Math.floor(baseTransferTimeoutMs) - 100);
-		      const deadlineAtMs = Date.now() + timeoutMs;
-			    let delayMs = 25;
-	    while (Date.now() < deadlineAtMs) {
-	      const record = await sourceExportStore.load(handoffId);
-	      if (record && predicate(record)) {
-	        return record;
-	      }
+    // Waiting for a source-export record is not the same as "session TTL", but it *must* be long
+    // enough to cover deferred export on large repos.
+    //
+    // Important: server-routed transfers have a per-transfer timeout for the open/ack/chunk
+    // handshake. This wait budget must be derived from that timeout, not from unrelated
+    // app↔daemon file-transfer TTLs, or deferred exports can abort with `transfer_not_found`
+    // while still pending.
+    const baseTransferTimeoutMs =
+      typeof transferTimeoutMsOverride === 'number' && Number.isFinite(transferTimeoutMsOverride) && transferTimeoutMsOverride > 0
+        ? transferTimeoutMsOverride
+        : resolveServerRoutedTransferTimeoutMs();
+    // Keep the wait budget within the transfer-level timeout so requesters still receive a
+    // response (chunk or abort) before their own inactivity timer fires.
+    const timeoutMs = Math.max(1, Math.floor(baseTransferTimeoutMs) - 100);
+    const deadlineAtMs = Date.now() + timeoutMs;
+    let delayMs = 25;
+    while (Date.now() < deadlineAtMs) {
+      const record = await sourceExportStore.load(handoffId);
+      if (record && predicate(record)) {
+        return record;
+      }
 
-	      const prepareJob = await prepareJobStore.findByHandoffId(handoffId).catch(() => null);
-	      if (prepareJob && isTerminalHandoffStatus(prepareJob.status)) {
-	        throw new ServerRoutedAbortTransferError(resolveTerminalAbortReason(prepareJob.lastErrorMessage));
-	      }
-		      await new Promise<void>((resolve) => {
-		        setTimeout(resolve, delayMs);
-		      });
-		      delayMs = Math.min(2_000, Math.floor(delayMs * 1.5));
-		    }
-		    return null;
-		  };
+      const prepareJob = await prepareJobStore.findByHandoffId(handoffId).catch(() => null);
+      if (prepareJob && isTerminalHandoffStatus(prepareJob.status)) {
+        throw new ServerRoutedAbortTransferError(resolveTerminalAbortReason(prepareJob.lastErrorMessage));
+      }
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, delayMs);
+      });
+      delayMs = Math.min(2_000, Math.floor(delayMs * 1.5));
+    }
+    return null;
+  };
 
-      const resolveServerRoutedTransferTimeoutMsOverrideFromOpenPayload = (openPayload: unknown): number | undefined => {
-        if (!openPayload || typeof openPayload !== 'object' || Array.isArray(openPayload)) {
-          return undefined;
-        }
-        const raw = (openPayload as Record<string, unknown>).timeoutMs;
-        if (typeof raw !== 'number' || !Number.isFinite(raw)) {
-          return undefined;
-        }
-        const floored = Math.floor(raw);
-        if (floored <= 0) {
-          return undefined;
-        }
-        // Mirror the server-routed transport hard max to avoid hostile open payloads pinning the responder for too long.
-        return Math.min(floored, 30 * 60_000);
-      };
+  const resolveServerRoutedTransferTimeoutMsOverrideFromOpenPayload = (openPayload: unknown): number | undefined => {
+    if (!openPayload || typeof openPayload !== 'object' || Array.isArray(openPayload)) {
+      return undefined;
+    }
+    const raw = (openPayload as Record<string, unknown>).timeoutMs;
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+      return undefined;
+    }
+    const floored = Math.floor(raw);
+    if (floored <= 0) {
+      return undefined;
+    }
+    // Mirror the server-routed transport hard max to avoid hostile open payloads pinning the responder for too long.
+    return Math.min(floored, 30 * 60_000);
+  };
 
   const disposeEphemeralServerRoutedPayloadSourcesForHandoff = async (handoffId: string): Promise<void> => {
     for (const [transferId, payloadSource] of [...ephemeralServerRoutedPayloadSources.entries()]) {

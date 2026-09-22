@@ -46,9 +46,6 @@ class MemoryAttemptStore implements TwinSessionSchedulerAttemptStore {
     this.attempts.set(attempt.spawnNonce, structuredClone(attempt));
   }
 
-  async delete(spawnNonce: string): Promise<void> {
-    this.attempts.delete(spawnNonce);
-  }
 }
 
 function scheduledOptions(overrides: Partial<SpawnSessionOptions> = {}): SpawnSessionOptions {
@@ -316,7 +313,7 @@ describe('twin session scheduler', () => {
     });
   });
 
-  it('deletes released custody only after the target durably acknowledges an authenticated receipt', async () => {
+  it('forgets released custody but retains the spawn result after an authenticated target acknowledgement', async () => {
     const harness = createHarness();
     await harness.scheduler.spawn(scheduledOptions());
 
@@ -336,7 +333,18 @@ describe('twin session scheduler', () => {
 
     expect(harness.releaseLease).toHaveBeenCalledTimes(1);
     expect(harness.forgetLease).toHaveBeenCalledTimes(1);
-    expect(harness.store.attempts.has('spawn-1')).toBe(false);
+    expect(harness.store.attempts.get('spawn-1')).toMatchObject({
+      phase: 'released',
+      terminalSessionId: 'session-1',
+      leaseForgotten: true,
+    });
+
+    await expect(harness.scheduler.spawn(scheduledOptions())).resolves.toMatchObject({
+      type: 'success',
+      sessionId: 'session-1',
+    });
+    expect(harness.acquireLease).toHaveBeenCalledTimes(1);
+    expect(harness.spawnTarget).toHaveBeenCalledTimes(1);
 
     await expect(harness.scheduler.observeRemoteSessionExit({
       ...notification,
@@ -375,7 +383,11 @@ describe('twin session scheduler', () => {
       ...notification,
       receipt: (recorded as any).receipt,
     } as any)).resolves.toEqual({ status: 'acknowledged' });
-    expect(harness.store.attempts.has('spawn-1')).toBe(false);
+    expect(harness.store.attempts.get('spawn-1')).toMatchObject({
+      phase: 'released',
+      terminalSessionId: 'session-late',
+      leaseForgotten: true,
+    });
   });
 
   it('rejects a forged or cross-session release receipt without deleting custody', async () => {
