@@ -120,9 +120,9 @@ try {
     { workerId: "twin-control", agent: "codex", marker: "FIFO_FOURTH_OK" },
   ];
 
-  const delegated = await Promise.all(
-    specs.map(async (spec) => {
-      const output = await call("delegate_agent", {
+  const delegated = [];
+  for (const spec of specs) {
+    const output = await call("delegate_agent", {
         prompt: `Use Bash to run sleep 20 once. After it exits, do not call more tools and reply exactly ${spec.marker}. Do not modify files.`,
         collaboration_id: collaborationId,
         caller: "codex",
@@ -141,20 +141,23 @@ try {
         workspace_mode: "remote_workspace",
         cwd: `twin-agent-live-${spec.workerId}-${spec.agent}`,
         wait_seconds: 0,
-      });
-      const jobId = value(output, "job_id");
-      assert.ok(jobId, `delegate_agent(${spec.workerId}/${spec.agent}) returned no job_id`);
-      assert.equal(value(output, "worker_id"), spec.workerId, output);
-      const item = { ...spec, jobId, initial_state: value(output, "state") };
-      jobs.push(item);
-      return item;
-    }),
-  );
+    });
+    const jobId = value(output, "job_id");
+    assert.ok(jobId, `delegate_agent(${spec.workerId}/${spec.agent}) returned no job_id`);
+    assert.equal(value(output, "worker_id"), spec.workerId, output);
+    const item = { ...spec, jobId, initial_state: value(output, "state") };
+    jobs.push(item);
+    delegated.push(item);
+  }
 
   const queueProof = await call("queue_status", {});
   assert.equal(value(queueProof, "running"), "3", queueProof);
   assert.equal(value(queueProof, "queued"), "1", queueProof);
   assert.equal(value(queueProof, "max_concurrent"), "3", queueProof);
+  assert.deepEqual(
+    delegated.slice(0, 3).map((item) => item.initial_state),
+    ["running", "running", "running"],
+  );
   assert.equal(delegated[3].initial_state, "queued", JSON.stringify(delegated[3]));
 
   const results = await Promise.all(delegated.map(collectAndEvaluate));
