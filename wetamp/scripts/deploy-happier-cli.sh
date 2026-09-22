@@ -106,16 +106,29 @@ build_payload() {
   )
 
   [[ -f "$CLI_DIR/package-dist/index.mjs" ]] || fail "CLI prepack did not produce package-dist/index.mjs"
-  [[ -d "$CLI_DIR/node_modules/@happier-dev/protocol" ]] || fail "CLI runtime dependency bundle is incomplete"
+  [[ -d "$CLI_DIR/node_modules/@happier-dev/protocol" ]] || fail "CLI workspace bundle is incomplete"
 
   bundle_root=$(mktemp -d "${TMPDIR:-/tmp}/happier-cli-deploy.XXXXXX")
   payload_root="$bundle_root/payload"
   bundle_archive="$bundle_root/happier-cli-$source_commit.tar.gz"
   install -d -m 0700 "$payload_root"
   cp -R "$CLI_DIR/package-dist" "$payload_root/package-dist"
-  cp -R "$CLI_DIR/node_modules" "$payload_root/node_modules"
+  node -e '
+    const { pathToFileURL } = require("node:url");
+    import(pathToFileURL(process.argv[1]).href).then(({ vendorBundledPackageRuntimeDependencies }) => {
+      vendorBundledPackageRuntimeDependencies({
+        srcPackageJsonPath: process.argv[2],
+        destPackageDir: process.argv[3],
+      });
+    }).catch((error) => { console.error(error); process.exitCode = 1; });
+  ' "$REPO_ROOT/packages/cli-common/dist/workspaces/index.js" "$CLI_DIR/package.json" "$payload_root"
+  cp -R "$CLI_DIR/node_modules/@happier-dev" "$payload_root/node_modules/@happier-dev"
+  cp -R "$CLI_DIR/scripts" "$payload_root/scripts"
+  cp -R "$CLI_DIR/bin" "$payload_root/bin"
+  cp -R "$CLI_DIR/tools" "$payload_root/tools"
   cp "$CLI_DIR/package.json" "$payload_root/package.json"
   printf '%s\n' "$source_commit" > "$payload_root/.source-commit"
+  node "$payload_root/package-dist/index.mjs" daemon status --json >/dev/null
   tar -czf "$bundle_archive" -C "$payload_root" .
 }
 
@@ -301,8 +314,6 @@ verify_local_runtime() {
 verify_remote_runtime() {
   local host="$1" node_path="$2" payload="$3" expected_machine_id="$4" expected_account_id="$5"
   local status pid command
-  "$SSH_BIN" -o BatchMode=yes -o ConnectTimeout=10 "$host" \
-    test "$(printf '%q' "$source_commit")" = "$(printf '%q' "$source_commit")" >/dev/null
   status=$("$SSH_BIN" -o BatchMode=yes -o ConnectTimeout=10 "$host" \
     "$node_path" "$payload/package-dist/index.mjs" daemon status --json)
   pid=$(verify_status "$expected_machine_id" "$expected_account_id" <<<"$status")
@@ -350,9 +361,12 @@ mini_payload=$(install_payload_remote "$MINI_HOST")
 developer_node=$(resolve_remote_node "$QUEUE_HOST")
 mini_node=$(resolve_remote_node "$MINI_HOST")
 
-IFS=$'\t' read -r controller_machine_id controller_account_id <<<"$(read_local_identity)"
-IFS=$'\t' read -r developer_machine_id developer_account_id <<<"$(read_remote_identity "$QUEUE_HOST" "$developer_node" "$developer_payload")"
-IFS=$'\t' read -r mini_machine_id mini_account_id <<<"$(read_remote_identity "$MINI_HOST" "$mini_node" "$mini_payload")"
+controller_identity=$(read_local_identity) || fail "controller identity is unavailable from the deployed payload"
+developer_identity=$(read_remote_identity "$QUEUE_HOST" "$developer_node" "$developer_payload") || fail "$QUEUE_HOST identity is unavailable from the deployed payload"
+mini_identity=$(read_remote_identity "$MINI_HOST" "$mini_node" "$mini_payload") || fail "$MINI_HOST identity is unavailable from the deployed payload"
+IFS=$'\t' read -r controller_machine_id controller_account_id <<<"$controller_identity"
+IFS=$'\t' read -r developer_machine_id developer_account_id <<<"$developer_identity"
+IFS=$'\t' read -r mini_machine_id mini_account_id <<<"$mini_identity"
 [[ "$controller_account_id" == "$developer_account_id" && "$controller_account_id" == "$mini_account_id" ]] || \
   fail "all three machines must be paired to the same Happier account"
 [[ "$controller_machine_id" != "$developer_machine_id" \

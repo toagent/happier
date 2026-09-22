@@ -101,6 +101,9 @@ test('deployment uses one immutable payload, official service lifecycle, and con
   const script = readFileSync(deployScript, 'utf8');
 
   assert.match(script, /yarn workspace @happier-dev\/cli prepack/);
+  assert.match(script, /vendorBundledPackageRuntimeDependencies/);
+  assert.match(script, /\$CLI_DIR\/node_modules\/@happier-dev/);
+  assert.doesNotMatch(script, /cp -R "\$CLI_DIR\/node_modules"/);
   assert.match(script, /\.source-commit/);
   assert.match(script, /versions="\$LOCAL_DEPLOY_ROOT\/versions"/);
   assert.match(script, /export HAPPIER_HOME_DIR="\$CONTROLLER_HOME"/);
@@ -111,5 +114,7 @@ test('deployment uses one immutable payload, official service lifecycle, and con
   assert.match(script, /install_worker_service/);
   assert.match(script, /scheduler_config=""/);
   assert.match(script, /twin-agent-remote queue/);
+  assert.match(script, /read_local_identity\) \|\| fail/);
+  assert.match(script, /read_remote_identity "\$MINI_HOST" "\$mini_node" "\$mini_payload"\) \|\| fail/);
   assert.doesNotMatch(script, /(?:cp|scp|tar).*\.(?:happier|happier-dev)\/(?:auth|credentials|settings)/);
 });
