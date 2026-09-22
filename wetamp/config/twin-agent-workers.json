@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "workers": [
+    {
+      "id": "twin-control",
+      "transport": "ssh",
+      "host": "twin-control",
+      "home": "/Users/yong"
+    },
+    {
+      "id": "twin-dev",
+      "transport": "local",
+      "home": "/Users/yong"
+    },
+    {
+      "id": "mac-mini",
+      "transport": "ssh",
+      "host": "twin-mini",
+      "home": "/Users/bubei"
+    }
+  ]
+}

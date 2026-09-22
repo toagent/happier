@@ -1,7 +1,17 @@
 # twin-agent
 
-本机 Codex、Claude Code、OpenCode 共用的 stdio MCP server。它通过 `ssh twin-dev`
-把任务交给孪生 Mac 上的 Codex、Claude 或 OpenCode。
+本机 Codex、Claude Code、OpenCode 共用的 stdio MCP server。它把任务提交到
+`twin-dev` 上唯一的 FIFO/ticket owner，再由 worker adapter 在 `twin-control`、
+`twin-dev` 或 `mac-mini` 上运行 Codex、Claude 或 OpenCode。
+
+`delegate_agent.worker_id` 可选值为 `twin-control`、`twin-dev`、`mac-mini`，旧调用缺省为
+`twin-dev`。worker 只决定拿到共享槽位后在哪里执行，不拥有自己的队列；三台机器合计最多
+运行 `TWIN_AGENT_MAX_CONCURRENT` 个任务，默认 3。未知 worker 在入队前拒绝。
+
+queue owner 使用 `TWIN_AGENT_WORKERS_FILE` 指定 worker 配置；仓库内生产拓扑模板为
+`../config/twin-agent-workers.json`。`twin-dev` 是 local transport，另外两台机器走 SSH
+transport。SSH worker 在 `$HOME/.twin-agent-worker/jobs/<job_id>` 运行隔离副本，完成或取消后
+把结果、日志和 binary-safe patch 单向回收到 queue owner；不会直接写本机主 checkout。
 
 `delegate_agent` 支持两种工作区模式：
 
@@ -28,8 +38,9 @@
 - 完整 job 目录仍保留 7 天；终态任务的结构化指标会追加到
   `~/.twin-agent/history/jobs.jsonl`，用于长期成功率和耗时趋势，不保留项目源码或完整 prompt。
 - `fetch_job_patch` 下载完整 patch，`apply_job_patch` 默认只做应用前校验。
-- 三个本机客户端共享远端 FIFO 队列，默认最多同时运行 3 个 AI 任务。
+- 三个本机客户端和三个执行 worker 共享一个 FIFO 队列，默认合计最多同时运行 3 个 AI 任务。
 - 超出并发上限的任务自动等待，运行槽位释放后按创建顺序启动。
+- worker 不可达或取消未确认时 fail closed，不会把仍可能运行的任务标成已取消。
 - 排队任务共用一个 `twin-scheduler`，不再为每个任务创建每秒轮询的独立 watcher。
 - `local_snapshot` 在生成 `changes.patch` 后立即压缩掉可重建源码副本，只保留结果、日志、指标和 patch。
 - 本机源码根目录使用 `TWIN_AGENT_ALLOWED_ROOTS` 显式白名单，多个绝对路径按
@@ -40,6 +51,29 @@
   使用 `pwd -P` 再次校验软链接没有逃逸根目录。
 - 隔离快照只传输本机 Git 认可的 tracked files 与非忽略 untracked files；被
   `.gitignore` 排除的 `.env`、运行数据、模型和构建产物不会因目录扫描被上传。
+
+## 部署
+
+运行态只能从本仓库当前提交部署，不能在 `~/.lan-dev-machine/` 内直接维护另一份实现。先做
+只读检查，再部署：
+
+```bash
+wetamp/scripts/deploy-twin-agent.sh --check
+wetamp/scripts/deploy-twin-agent.sh --deploy
+```
+
+脚本会先 `fetch` 当前分支的 upstream，并拒绝以下状态：部署相关源码尚未提交、本机分支落后
+upstream、`twin-dev` 或 `twin-mini` 不可达，以及共享 FIFO 仍有运行中或排队任务。部署会更新：
+
+- 本机 MCP 投影 `~/.lan-dev-machine/twin-agent/`；
+- 本机 `twin-control` worker runtime；
+- `twin-dev` 的 queue owner、local worker runtime 和 `~/.config/twin-agent/workers.json`；
+- `mac-mini` worker runtime。
+
+被替换文件按 UTC 时间戳备份到各节点
+`~/.lan-dev-machine/backups/twin-agent/<timestamp>/`。本机 MCP 投影的 `.source-commit` 和远端
+`~/.lan-dev-machine/twin-agent-source-commit` 记录同一个 Git commit；部署后 worker health 中任一
+节点不可达都会使脚本失败，不能把部分部署报告为成功。
 
 ## 协同效率统计
 

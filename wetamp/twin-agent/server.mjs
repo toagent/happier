@@ -52,6 +52,7 @@ const COLLABORATION_REPORT =
   "/Users/yong/.lan-dev-machine/twin-agent/collaboration-report.py";
 
 const callerSchema = z.enum(["codex", "claude", "opencode"]);
+const workerIdSchema = z.enum(["twin-control", "twin-dev", "mac-mini"]);
 const collaborationIdSchema = z
   .string()
   .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/)
@@ -365,7 +366,7 @@ server.registerTool(
   "delegate_agent",
   {
     description:
-      "把任务异步委派给局域网孪生 Mac 上的 Codex、Claude 或 OpenCode。支持本机源码隔离快照和开发机 _mcp_workspace 持久工作区；远端目录不存在时自动创建。返回 job_id 后用 job_status 和 job_result 回收结果。",
+      "把任务异步委派给统一 FIFO 管理的 twin-control、twin-dev 或 mac-mini worker。支持本机源码隔离快照和 worker 持久工作区；返回 job_id 后用 job_status 和 job_result 回收结果。",
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
@@ -409,6 +410,9 @@ server.registerTool(
         .describe(
           "local_snapshot 时为本机 Git 目录；remote_workspace 时为开发机工作区名或任意同名路径，目录不存在会自动创建",
         ),
+      worker_id: workerIdSchema
+        .default("twin-dev")
+        .describe("执行 worker；三台机器共享 queue owner 的同一个 FIFO 和总计 3 个运行槽位"),
       wait_seconds: z.number().int().min(0).max(120).default(0),
     },
   },
@@ -429,6 +433,7 @@ server.registerTool(
     mode,
     workspace_mode,
     cwd,
+    worker_id,
     wait_seconds,
   }) => {
     let id = null;
@@ -464,6 +469,7 @@ server.registerTool(
         max_attempts: policy.maxAttempts,
         primary_timeout_seconds: policy.primaryTimeoutSeconds,
         mode,
+        worker_id,
         control_host: hostname(),
       });
       const workspaceMode = resolveWorkspaceMode(workspace_mode, cwd);
@@ -537,12 +543,13 @@ server.registerTool(
       }
 
       const taskHeader = [
-        "你是本机 AI 委派到孪生开发机的子 Agent。",
+        "你是本机 AI 通过统一调度队列委派到三机 worker 的子 Agent。",
         `任务模式: ${mode}`,
         `工作区模式: ${workspaceMode}`,
+        `执行 worker: ${worker_id}`,
         workspaceMode === "local_snapshot"
           ? "只处理当前隔离快照内的项目。"
-          : `只处理开发机持久工作目录 ${remoteWorkspace}，不得读取其他项目目录。`,
+          : `只处理目标 worker 的持久工作目录请求 ${helperCwd}，不得读取其他项目目录。`,
         "禁止读取 iCloud、_private、钥匙串、浏览器资料或其他个人目录。",
         mode === "read_only"
           ? "只读分析：禁止修改文件。给出结论、证据和建议验证命令。"
@@ -575,14 +582,18 @@ server.registerTool(
         max_attempts: policy.maxAttempts,
         primary_timeout_seconds: policy.primaryTimeoutSeconds,
         mode,
+        worker_id,
         workspace_mode: workspaceMode,
         local_root: root,
         local_head: localHead,
         local_cwd: requestedCwd,
+        remote_workspace_relative: workspaceMode === "remote_workspace" ? helperCwd : null,
         remote_cwd:
           workspaceMode === "local_snapshot"
             ? path.posix.join(remoteWorkspace, helperCwd)
-            : remoteWorkspace,
+            : worker_id === "twin-dev"
+              ? remoteWorkspace
+              : null,
         created_at: createdAt,
       });
       await shell(
@@ -598,6 +609,7 @@ server.registerTool(
         mode,
         workspaceMode,
         helperCwd,
+        worker_id,
       );
       const status = wait_seconds > 0 ? await waitForJob(id, wait_seconds) : started.stdout.trim();
       recordLocalEvent({
@@ -618,18 +630,19 @@ server.registerTool(
         max_attempts: policy.maxAttempts,
         primary_timeout_seconds: policy.primaryTimeoutSeconds,
         mode,
+        worker_id,
         workspace_mode: workspaceMode,
         control_host: hostname(),
       });
       const workspaceSummary =
         workspaceMode === "local_snapshot"
-          ? `local_root=${root}\n隔离副本=${remoteWorkspace}`
-          : `remote_workspace=${remoteWorkspace}\n本机源码未上传；目录不存在时由开发机自动创建`;
+          ? `local_root=${root}\nqueue_snapshot=${remoteWorkspace}\n实际 execution_cwd 由 job_status 回报`
+          : `remote_workspace_request=${helperCwd}\n本机源码未上传；实际 execution_cwd 由 job_status 回报`;
       if (status.includes("newly_collected=1")) {
         recordCollection(JSON.parse(metadata), status);
       }
       return text(
-        `${status}\ncollaboration_id=${collaboration_id}\ncaller=${caller}\ntask_title=${task_title}\nlocal_work=${local_work}\nrequested_agent=${policy.requestedAgent}\nselected_agent=${policy.selectedAgent}\ntask_type=${policy.taskType}\ncomplexity=${policy.complexity}\nmodel=${policy.selectedModel}\ntimeout_seconds=${policy.timeoutSeconds}\nidle_timeout_seconds=${policy.idleTimeoutSeconds}\nfallback_agent=${policy.fallbackAgent}\nmax_attempts=${policy.maxAttempts}\nprimary_timeout_seconds=${policy.primaryTimeoutSeconds}\nworkspace_mode=${workspaceMode}\n${workspaceSummary}\n任务未完成时调用 wait_job，已结束时调用 job_result；也可用 collect_ready_results 批量回收。`,
+        `${status}\ncollaboration_id=${collaboration_id}\ncaller=${caller}\ntask_title=${task_title}\nlocal_work=${local_work}\nrequested_agent=${policy.requestedAgent}\nselected_agent=${policy.selectedAgent}\nworker_id=${worker_id}\ntask_type=${policy.taskType}\ncomplexity=${policy.complexity}\nmodel=${policy.selectedModel}\ntimeout_seconds=${policy.timeoutSeconds}\nidle_timeout_seconds=${policy.idleTimeoutSeconds}\nfallback_agent=${policy.fallbackAgent}\nmax_attempts=${policy.maxAttempts}\nprimary_timeout_seconds=${policy.primaryTimeoutSeconds}\nworkspace_mode=${workspaceMode}\n${workspaceSummary}\n任务未完成时调用 wait_job，已结束时调用 job_result；也可用 collect_ready_results 批量回收。`,
       );
     } catch (error) {
       try {

@@ -7,6 +7,7 @@ STATS_BIN="${TWIN_AGENT_STATS_BIN:-$BIN/twin-agent-stats}"
 RUNNER_BIN="${TWIN_AGENT_RUNNER_BIN:-$BIN/twin-agent-runner}"
 OUTPUT_BIN="${TWIN_AGENT_OUTPUT_BIN:-$BIN/twin-agent-output}"
 JOB_RUNNER_BIN="${TWIN_AGENT_JOB_RUNNER_BIN:-$BIN/twin-agent-job-runner}"
+WORKER_ADAPTER_BIN="${TWIN_AGENT_WORKER_ADAPTER_BIN:-$BIN/twin-agent-worker}"
 REMOTE_WORKSPACE_ROOT="${TWIN_AGENT_REMOTE_WORKSPACE_ROOT:-$HOME/work/_mcp_workspace}"
 MAX_CONCURRENT="${TWIN_AGENT_MAX_CONCURRENT:-3}"
 LOCK_DIR="$BASE/run/scheduler.lock"
@@ -182,7 +183,7 @@ state_of() {
 }
 
 dispatch_job() {
-  local id="$1" job state active oldest agent mode workspace_mode run_cwd work launched=0
+  local id="$1" job state active oldest agent mode workspace_mode run_cwd work worker_id launched=0
   job=$(job_dir "$id")
   [[ -d "$job" ]] || { echo "job not found" >&2; exit 1; }
   acquire_scheduler_lock
@@ -205,9 +206,10 @@ dispatch_job() {
     workspace_mode=$(cat "$job/workspace_mode" 2>/dev/null || echo local_snapshot)
     run_cwd=$(cat "$job/run_cwd")
     work=$(cat "$job/work")
+    worker_id=$(cat "$job/worker_id" 2>/dev/null || echo twin-dev)
     rm -f "$job/queued_at"
     date -u +%FT%TZ > "$job/dispatched_at"
-    if tmux new-session -d -s "twin-$id" "$JOB_RUNNER_BIN" "$job" "$agent" "$mode" "$workspace_mode" "$run_cwd" "$work"; then
+    if tmux new-session -d -s "twin-$id" "$WORKER_ADAPTER_BIN" launch "$job" "$worker_id" "$agent" "$mode" "$workspace_mode" "$run_cwd" "$work"; then
       launched=1
     else
       rm -f "$job/dispatched_at"
@@ -253,19 +255,22 @@ start_scheduler() {
 }
 
 start_job() {
-  local id="$1" agent="$2" mode="$3" workspace_mode requested_cwd
+  local id="$1" agent="$2" mode="$3" workspace_mode requested_cwd worker_id
   local job work run_cwd root_real safe_workspace_pattern model timeout_seconds task_type complexity requested_agent
   local snapshot_tree baseline_commit
   local idle_timeout_seconds fallback_agent max_attempts primary_timeout_seconds
+  local worker_description worker_transport
   job=$(job_dir "$id")
   start_cleanup
 
   if [[ $# -eq 4 ]]; then
     workspace_mode="local_snapshot"
     requested_cwd="$4"
+    worker_id="twin-dev"
   else
     workspace_mode="$4"
     requested_cwd="$5"
+    worker_id="${6:-twin-dev}"
   fi
 
   [[ -f "$job/prompt.txt" ]] || { echo "prompt missing" >&2; exit 1; }
@@ -275,6 +280,10 @@ start_job() {
   [[ -x "$RUNNER_BIN" ]] || { echo "runner helper missing: $RUNNER_BIN" >&2; exit 1; }
   [[ -x "$OUTPUT_BIN" ]] || { echo "output helper missing: $OUTPUT_BIN" >&2; exit 1; }
   [[ -x "$JOB_RUNNER_BIN" ]] || { echo "job runner missing: $JOB_RUNNER_BIN" >&2; exit 1; }
+  [[ -x "$WORKER_ADAPTER_BIN" ]] || { echo "worker adapter missing: $WORKER_ADAPTER_BIN" >&2; exit 1; }
+  worker_description=$("$WORKER_ADAPTER_BIN" validate "$worker_id")
+  worker_transport=$(printf '%s\n' "$worker_description" | awk -F= '$1 == "transport" {print $2; exit}')
+  case "$worker_transport" in local|ssh) ;; *) echo "worker adapter returned invalid transport" >&2; exit 1 ;; esac
 
   requested_agent=$(metadata_value "$job/metadata.json" requested_agent "$agent")
   model=$(metadata_value "$job/metadata.json" model auto)
@@ -343,20 +352,25 @@ start_job() {
       echo "invalid remote workspace: $requested_cwd" >&2
       exit 2
     }
-    mkdir -p "$REMOTE_WORKSPACE_ROOT"
-    root_real=$(cd "$REMOTE_WORKSPACE_ROOT" && pwd -P)
-    mkdir -p "$REMOTE_WORKSPACE_ROOT/$requested_cwd"
-    run_cwd=$(cd "$REMOTE_WORKSPACE_ROOT/$requested_cwd" && pwd -P)
-    case "$run_cwd/" in
-      "$root_real/"*) ;;
-      *) echo "remote workspace escaped root: $run_cwd" >&2; exit 2 ;;
-    esac
-    work="$run_cwd"
-    if git -C "$work" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-      git -C "$work" status --short > "$job/pre-git-status.txt"
-      git -C "$work" rev-parse HEAD > "$job/baseline_commit" 2>/dev/null || true
+    if [[ "$worker_transport" == "local" ]]; then
+      mkdir -p "$REMOTE_WORKSPACE_ROOT"
+      root_real=$(cd "$REMOTE_WORKSPACE_ROOT" && pwd -P)
+      mkdir -p "$REMOTE_WORKSPACE_ROOT/$requested_cwd"
+      run_cwd=$(cd "$REMOTE_WORKSPACE_ROOT/$requested_cwd" && pwd -P)
+      case "$run_cwd/" in
+        "$root_real/"*) ;;
+        *) echo "remote workspace escaped root: $run_cwd" >&2; exit 2 ;;
+      esac
+      work="$run_cwd"
+      if git -C "$work" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        git -C "$work" status --short > "$job/pre-git-status.txt"
+        git -C "$work" rev-parse HEAD > "$job/baseline_commit" 2>/dev/null || true
+      else
+        find "$work" -mindepth 1 -maxdepth 3 -not -path '*/.git/*' -print | sort > "$job/pre-files.txt"
+      fi
     else
-      find "$work" -mindepth 1 -maxdepth 3 -not -path '*/.git/*' -print | sort > "$job/pre-files.txt"
+      run_cwd="$requested_cwd"
+      work="$requested_cwd"
     fi
   fi
 
@@ -372,14 +386,18 @@ start_job() {
   printf '%s\n' "$complexity" > "$job/complexity"
   printf '%s\n' "$mode" > "$job/mode"
   printf '%s\n' "$workspace_mode" > "$job/workspace_mode"
+  printf '%s\n' "$requested_cwd" > "$job/requested_cwd"
   printf '%s\n' "$run_cwd" > "$job/run_cwd"
   printf '%s\n' "$work" > "$job/work"
+  printf '%s\n' "$worker_id" > "$job/worker_id"
+  printf '%s\n' "$worker_transport" > "$job/worker_transport"
   enqueue_job "$id"
   dispatch_job "$id" >/dev/null
   if [[ "$(state_of "$job" "$id")" == "queued" ]]; then
     start_scheduler
   fi
-  printf 'job_id=%s\nstate=%s\nagent=%s\nmode=%s\n' "$id" "$(state_of "$job" "$id")" "$agent" "$mode"
+  printf 'job_id=%s\nstate=%s\nagent=%s\nmode=%s\nworker_id=%s\nworker_transport=%s\n' \
+    "$id" "$(state_of "$job" "$id")" "$agent" "$mode" "$worker_id" "$worker_transport"
   printf 'cleanup_scheduled=%s\n' "$CLEANUP_SCHEDULED"
   if [[ "$(state_of "$job" "$id")" == "queued" ]]; then
     printf 'queue_position=%s\n' "$(queue_position "$id")"
@@ -393,6 +411,10 @@ show_status() {
   state=$(state_of "$job" "$id")
   [[ -f "$job/exit_code" ]] && rc=$(cat "$job/exit_code")
   printf 'job_id=%s\nstate=%s\n' "$id" "$state"
+  [[ -f "$job/worker_id" ]] && printf 'worker_id=%s\n' "$(cat "$job/worker_id")" || printf 'worker_id=twin-dev\n'
+  [[ -f "$job/worker_transport" ]] && printf 'worker_transport=%s\n' "$(cat "$job/worker_transport")"
+  [[ -f "$job/execution_host" ]] && printf 'execution_host=%s\n' "$(cat "$job/execution_host")"
+  [[ -f "$job/execution_cwd" ]] && printf 'execution_cwd=%s\n' "$(cat "$job/execution_cwd")"
   [[ -n "$rc" ]] && printf 'exit_code=%s\n' "$rc"
   [[ -f "$job/started_at" ]] && printf 'started_at=%s\n' "$(cat "$job/started_at")"
   [[ -f "$job/finished_at" ]] && printf 'finished_at=%s\n' "$(cat "$job/finished_at")"
@@ -557,7 +579,7 @@ collaboration_state() {
 }
 
 cancel_job() {
-  local id="$1" reason="${2:-user_request}" job workspace_mode work state
+  local id="$1" reason="${2:-user_request}" job workspace_mode work state worker_id worker_transport
   job=$(job_dir "$id")
   [[ -d "$job" ]] || { echo "job not found" >&2; exit 1; }
   case "$reason" in user_request|superseded|duplicate|wrong_scope|resource_pressure|other) ;; *) reason=other ;; esac
@@ -568,6 +590,19 @@ cancel_job() {
       return 0
       ;;
   esac
+  worker_id=$(cat "$job/worker_id" 2>/dev/null || echo twin-dev)
+  worker_transport=$(cat "$job/worker_transport" 2>/dev/null || echo local)
+  if [[ -f "$job/dispatched_at" && -x "$WORKER_ADAPTER_BIN" ]]; then
+    if ! "$WORKER_ADAPTER_BIN" cancel "$job" "$worker_id"; then
+      echo "worker cancellation failed; job remains active" >&2
+      return 1
+    fi
+    if [[ -f "$job/finished_at" ]]; then
+      tmux kill-session -t "twin-$id" 2>/dev/null || true
+      printf 'job_id=%s\nstate=finished\nworker_id=%s\n' "$id" "$worker_id"
+      return 0
+    fi
+  fi
   tmux kill-session -t "twin-$id" 2>/dev/null || true
   tmux kill-session -t "twinq-$id" 2>/dev/null || true
   rm -f "$job/queued_at"
@@ -575,7 +610,7 @@ cancel_job() {
   date -u +%FT%TZ > "$job/cancelled_at"
   workspace_mode=$(cat "$job/workspace_mode" 2>/dev/null || echo local_snapshot)
   work="$job/workspace"
-  if [[ "$workspace_mode" == "local_snapshot" && -n "$work" && -d "$work" ]]; then
+  if [[ "$worker_transport" == "local" && "$workspace_mode" == "local_snapshot" && -n "$work" && -d "$work" ]]; then
     git -C "$work" status --short > "$job/git-status.txt" 2>&1 || true
     git -C "$work" add -A >/dev/null 2>&1 || true
     if [[ -s "$job/baseline_commit" ]]; then
@@ -588,6 +623,7 @@ cancel_job() {
   echo "job_id=$id"
   echo "state=cancelled"
   echo "cancel_reason=$reason"
+  echo "worker_id=$worker_id"
 }
 
 remove_job_workspace() {
@@ -715,7 +751,7 @@ list_jobs() {
     id=${job##*/}
     valid_job "$id" || continue
     printf '%s\t%s' "$id" "$(state_of "$job" "$id")"
-    [[ -f "$job/metadata.json" ]] && printf '\t%s' "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("agent",""), d.get("mode",""), d.get("workspace_mode","local_snapshot"), d.get("local_cwd") or d.get("remote_cwd",""))' "$job/metadata.json")"
+    [[ -f "$job/metadata.json" ]] && printf '\t%s' "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("worker_id","twin-dev"), d.get("agent",""), d.get("mode",""), d.get("workspace_mode","local_snapshot"), d.get("local_cwd") or d.get("remote_cwd",""))' "$job/metadata.json")"
     echo
     count=$((count + 1))
     [[ "$count" -ge "$limit" ]] && break
@@ -745,6 +781,12 @@ health() {
   printf 'default_idle_timeout_long=%s\n' "420"
   [[ -x "$JOB_RUNNER_BIN" ]] && echo "job_runner=ok" || echo "job_runner=missing"
   [[ -x "$OUTPUT_BIN" ]] && echo "output_parser=ok" || echo "output_parser=missing"
+  if [[ -x "$WORKER_ADAPTER_BIN" ]]; then
+    echo "worker_adapter=ok"
+    "$WORKER_ADAPTER_BIN" health
+  else
+    echo "worker_adapter=missing"
+  fi
 }
 
 mkdir -p "$BASE/jobs"

@@ -45,7 +45,7 @@ class JobRunnerTest(unittest.TestCase):
             "#!/bin/bash\nout=''\nwhile [[ $# -gt 0 ]]; do\n  if [[ \"$1\" == '--output-last-message' ]]; then out=\"$2\"; shift 2; else shift; fi\ndone\ncat >/dev/null\nprintf 'Codex fallback recovered\\n' > \"$out\"\nprintf 'codex trace\\n'\n",
         )
         remote = root / "remote-helper"
-        self.make_executable(remote, "#!/bin/sh\nexit 0\n")
+        self.make_executable(remote, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$REMOTE_HELPER_LOG\"\nexit 0\n")
         env = os.environ.copy()
         env.update(
             {
@@ -55,6 +55,7 @@ class JobRunnerTest(unittest.TestCase):
                 "TWIN_AGENT_OUTPUT_BIN": str(OUTPUT),
                 "TWIN_AGENT_REMOTE_HELPER": str(remote),
                 "TWIN_AGENT_STATS_BIN": str(root / "missing-stats"),
+                "REMOTE_HELPER_LOG": str(root / "remote-helper.log"),
             }
         )
         return job, work, env
@@ -91,6 +92,26 @@ class JobRunnerTest(unittest.TestCase):
             self.assertEqual((job / "fallback_used").read_text().strip(), "0")
             attempts = (job / "attempts.jsonl").read_text().splitlines()
             self.assertEqual(len(attempts), 1)
+
+    def test_remote_worker_does_not_start_a_second_scheduler(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job, work, env = self.make_job(Path(temp_dir))
+            env["TWIN_AGENT_NOTIFY_SCHEDULER"] = "0"
+
+            result = self.run_job(job, work, env, "read_only")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            calls = Path(env["REMOTE_HELPER_LOG"]).read_text(encoding="utf-8").splitlines()
+            self.assertIn("compact-one job", calls)
+            self.assertNotIn("start-scheduler", calls)
+
+            local_root = Path(temp_dir) / "local"
+            local_root.mkdir()
+            second_job, second_work, local_env = self.make_job(local_root)
+            local_result = self.run_job(second_job, second_work, local_env, "read_only")
+            self.assertEqual(local_result.returncode, 0, local_result.stderr)
+            local_calls = Path(local_env["REMOTE_HELPER_LOG"]).read_text(encoding="utf-8").splitlines()
+            self.assertIn("start-scheduler", local_calls)
 
 
 if __name__ == "__main__":

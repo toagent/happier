@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "test": "python3 -m unittest discover -s tests -p 'test_*.py' && node --test tests/test_*.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

@@ -13,6 +13,8 @@ runner_bin="${TWIN_AGENT_RUNNER_BIN:-$HOME/.lan-dev-machine/bin/twin-agent-runne
 output_bin="${TWIN_AGENT_OUTPUT_BIN:-$HOME/.lan-dev-machine/bin/twin-agent-output}"
 remote_helper="${TWIN_AGENT_REMOTE_HELPER:-$HOME/.lan-dev-machine/bin/twin-agent-remote}"
 stats_bin="${TWIN_AGENT_STATS_BIN:-$HOME/.lan-dev-machine/bin/twin-agent-stats}"
+notify_scheduler="${TWIN_AGENT_NOTIFY_SCHEDULER:-1}"
+archive_stats="${TWIN_AGENT_ARCHIVE_STATS:-1}"
 
 read_value() {
   local path="$1" default_value="$2"
@@ -271,6 +273,10 @@ fi
 finish_workspace
 date -u +%FT%TZ > "$job/finished_at"
 "$remote_helper" compact-one "${job##*/}" >/dev/null 2>&1 || true
-[[ -x "$stats_bin" ]] && "$stats_bin" archive "$job" --history "$HOME/.twin-agent/history/jobs.jsonl" >/dev/null 2>&1 || true
-"$remote_helper" start-scheduler >/dev/null 2>&1 || true
+if [[ "$archive_stats" == "1" && -x "$stats_bin" ]]; then
+  "$stats_bin" archive "$job" --history "$HOME/.twin-agent/history/jobs.jsonl" >/dev/null 2>&1 || true
+fi
+if [[ "$notify_scheduler" == "1" ]]; then
+  "$remote_helper" start-scheduler >/dev/null 2>&1 || true
+fi
 exit "$final_rc"

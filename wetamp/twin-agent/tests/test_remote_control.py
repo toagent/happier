@@ -29,10 +29,29 @@ class RemoteControlTest(unittest.TestCase):
             encoding="utf-8",
         )
         tmux.chmod(0o700)
+        worker_adapter = self.fake_bin / "twin-agent-worker"
+        worker_adapter.write_text(
+            "#!/bin/sh\n"
+            "if [ \"$1\" = 'validate' ] && [ \"$2\" = 'twin-dev' ]; then\n"
+            "  echo 'transport=local'\n"
+            "  exit 0\n"
+            "fi\n"
+            "if [ \"$1\" = 'cancel' ]; then exit 0; fi\n"
+            "if [ \"$1\" = 'health' ]; then\n"
+            "  echo 'worker_id=twin-control transport=ssh host=control state=ready'\n"
+            "  echo 'worker_id=twin-dev transport=local host=localhost state=ready'\n"
+            "  echo 'worker_id=mac-mini transport=ssh host=mini state=ready'\n"
+            "  exit 0\n"
+            "fi\n"
+            "exit 2\n",
+            encoding="utf-8",
+        )
+        worker_adapter.chmod(0o700)
         self.env = os.environ.copy()
         self.env["PATH"] = f"{self.fake_bin}:{self.env['PATH']}"
         self.env["TWIN_AGENT_BASE"] = str(self.base)
         self.env["TWIN_AGENT_STATS_BIN"] = str(ROOT / "twin-agent-stats")
+        self.env["TWIN_AGENT_WORKER_ADAPTER_BIN"] = str(worker_adapter)
 
     def tearDown(self):
         self.temp_dir.cleanup()
@@ -179,6 +198,7 @@ class RemoteControlTest(unittest.TestCase):
         elapsed = time.monotonic() - started
 
         self.assertIn(f"job_id={new_id}", output)
+        self.assertIn("worker_id=twin-dev", output)
         self.assertIn("cleanup_scheduled=1", output)
         self.assertLess(elapsed, 2)
         self.assertTrue(expired.exists())
@@ -291,6 +311,7 @@ class RemoteControlTest(unittest.TestCase):
         )
 
         self.assertIn(f"job_id={job_id}", output)
+        self.assertIn("worker_id=twin-dev", output)
         self.assertFalse(hook_marker.exists())
         baseline = (job / "baseline_commit").read_text(encoding="utf-8").strip()
         resolved = subprocess.run(
