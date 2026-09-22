@@ -14,6 +14,7 @@ import {
     type SessionInitialGoalRequestV1,
     type SessionAttachMetadataIdentityPolicy,
     SessionMcpSelectionV1,
+    type SessionSchedulingTargetV1,
     SpawnSessionErrorCode,
     type SpawnSessionErrorDetail,
 } from '@happier-dev/protocol';
@@ -50,6 +51,8 @@ import type { PendingFirstInput } from '@/daemon/spawn/pendingFirstInput';
 export interface SpawnSessionOptions {
     machineId?: string;
     directory: string;
+    /** Optional daemon-owned worker target. Presence requires a configured scheduling adapter. */
+    schedulingTarget?: SessionSchedulingTargetV1;
     /**
      * Daemon-only spawn idempotency salt.
      *

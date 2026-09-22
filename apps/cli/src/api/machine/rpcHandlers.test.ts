@@ -348,6 +348,67 @@ describe('registerMachineRpcHandlers', () => {
     expect(resumeLog?.[1]).toMatchObject({ requestType: 'resume-session', sessionId: 'sess-inactive' });
   });
 
+  it('refuses a scheduling target when no daemon scheduling adapter is registered', async () => {
+    const registered = new Map<string, (params: any) => Promise<any>>();
+    const spawnSession = vi.fn(async () => ({ type: 'success', sessionId: 's1' } as const));
+    registerMachineRpcHandlers({
+      rpcHandlerManager: {
+        registerHandler: (method: string, handler: (params: any) => Promise<any>) => {
+          registered.set(method, handler);
+        },
+      } as any,
+      handlers: {
+        spawnSession,
+        stopSession: async () => true,
+        requestShutdown: () => {},
+      },
+    });
+
+    const result = await registered.get(RPC_METHODS.SPAWN_HAPPY_SESSION)?.({
+      type: 'spawn-in-directory',
+      directory: '/tmp',
+      backendTarget: { kind: 'builtInAgent', agentId: 'claude' },
+      schedulingTarget: { v: 1, workerId: 'twin-dev' },
+    });
+
+    expect(result).toMatchObject({
+      type: 'error',
+      errorCode: SPAWN_SESSION_ERROR_CODES.SCHEDULING_TARGET_UNAVAILABLE,
+    });
+    expect(spawnSession).not.toHaveBeenCalled();
+  });
+
+  it('routes a scheduling target through the daemon scheduling adapter only', async () => {
+    const registered = new Map<string, (params: any) => Promise<any>>();
+    const spawnSession = vi.fn(async () => ({ type: 'success', sessionId: 'local' } as const));
+    const spawnScheduledSession = vi.fn(async () => ({ type: 'success', sessionId: 'scheduled' } as const));
+    registerMachineRpcHandlers({
+      rpcHandlerManager: {
+        registerHandler: (method: string, handler: (params: any) => Promise<any>) => {
+          registered.set(method, handler);
+        },
+      } as any,
+      handlers: {
+        spawnSession,
+        spawnScheduledSession,
+        stopSession: async () => true,
+        requestShutdown: () => {},
+      },
+    });
+
+    const schedulingTarget = { v: 1, workerId: 'twin-dev' } as const;
+    const result = await registered.get(RPC_METHODS.SPAWN_HAPPY_SESSION)?.({
+      type: 'spawn-in-directory',
+      directory: '/tmp',
+      backendTarget: { kind: 'builtInAgent', agentId: 'claude' },
+      schedulingTarget,
+    });
+
+    expect(result).toMatchObject({ type: 'success', sessionId: 'scheduled' });
+    expect(spawnScheduledSession).toHaveBeenCalledWith(expect.objectContaining({ schedulingTarget }));
+    expect(spawnSession).not.toHaveBeenCalled();
+  });
+
   it('normalizes empty modelId to undefined when spawning a session', async () => {
     const registered = new Map<string, (params: any) => Promise<any>>();
     const rpcHandlerManager = {

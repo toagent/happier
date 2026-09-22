@@ -115,6 +115,17 @@ describe('SpawnDaemonSessionRequestSchema', () => {
     expect(parsed.approvedNewDirectoryCreation).toBe(true);
   });
 
+  it('preserves a validated scheduling target through parsing and option merging', () => {
+    const schedulingTarget = { v: 1, workerId: 'twin-dev' } as const;
+    const parsed = SpawnDaemonSessionRequestSchema.parse({
+      directory: '/tmp',
+      schedulingTarget,
+    });
+
+    expect(parsed.schedulingTarget).toEqual(schedulingTarget);
+    expect(mergeSpawnSessionOptions(parsed)).toMatchObject({ schedulingTarget });
+  });
+
   it('accepts initial transcript catch-up cursors from resume requests', () => {
     const parsed = SpawnDaemonSessionRequestSchema.parse({
       directory: '/tmp',

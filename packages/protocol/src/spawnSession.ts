@@ -18,6 +18,15 @@ export const SpawnSessionExecutionAuthorizationSchema = z.object({
 }).strict();
 export type SpawnSessionExecutionAuthorization = z.infer<typeof SpawnSessionExecutionAuthorizationSchema>;
 
+/** Opaque worker selection interpreted only by the daemon's configured scheduling adapter. */
+export const SessionSchedulingTargetV1Schema = z.object({
+  v: z.literal(1),
+  workerId: z.string().refine((value) => value.trim().length > 0, {
+    message: 'Scheduling worker id must not be blank',
+  }),
+}).strict();
+export type SessionSchedulingTargetV1 = z.infer<typeof SessionSchedulingTargetV1Schema>;
+
 /**
  * One-shot first user input carried by a fresh-session spawn until the runner can commit it to
  * Pending. The opaque local id is the cross-boundary de-duplication identity.
@@ -49,6 +58,7 @@ export const SPAWN_SESSION_ERROR_CODES = {
   SPAWN_FAILED: 'SPAWN_FAILED',
   DAEMON_RPC_UNAVAILABLE: 'DAEMON_RPC_UNAVAILABLE',
   DAEMON_UPGRADE_REQUIRED: 'DAEMON_UPGRADE_REQUIRED',
+  SCHEDULING_TARGET_UNAVAILABLE: 'SCHEDULING_TARGET_UNAVAILABLE',
   UNEXPECTED: 'UNEXPECTED',
 } as const;
 

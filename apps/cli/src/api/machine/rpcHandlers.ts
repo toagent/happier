@@ -31,6 +31,7 @@ import {
   SessionForkRpcParamsSchema,
   SessionInitialGoalRequestV1Schema,
   SessionMcpSelectionV1Schema,
+  SessionSchedulingTargetV1Schema,
   SessionRunnerStatusGetRequestV1Schema,
   SessionSpawnSourceContextV1Schema,
   getActionSpec,
@@ -226,6 +227,7 @@ function normalizeMachineStopSessionResult(result: MachineStopSessionHandlerResu
 
 export type MachineRpcHandlers = {
   spawnSession: (options: SpawnSessionOptions) => Promise<SpawnSessionResult>;
+  spawnScheduledSession?: (options: SpawnSessionOptions) => Promise<SpawnSessionResult>;
   spawnSessionForHandoff?: (
     options: SpawnSessionOptions,
     hooks: import('@/rpc/handlers/registerSessionHandlers').SpawnSessionRunnerAcceptanceHooks,
@@ -391,7 +393,27 @@ export function registerMachineRpcHandlers(params: Readonly<{
   deps?: MachineRpcHandlerDeps;
 }>): MachineRpcLifecycleRegistration {
   const { rpcHandlerManager, handlers } = params;
-  const { spawnSession, stopSession, requestShutdown, resolveSpawnSessionByNonce, abandonSpawnSessionByNonce } = handlers;
+  const {
+    spawnSession: spawnLocalSession,
+    spawnScheduledSession,
+    stopSession,
+    requestShutdown,
+    resolveSpawnSessionByNonce,
+    abandonSpawnSessionByNonce,
+  } = handlers;
+  const spawnSession = async (options: SpawnSessionOptions): Promise<SpawnSessionResult> => {
+    if (!options.schedulingTarget) {
+      return await spawnLocalSession(options);
+    }
+    if (!spawnScheduledSession) {
+      return {
+        type: 'error',
+        errorCode: SPAWN_SESSION_ERROR_CODES.SCHEDULING_TARGET_UNAVAILABLE,
+        errorMessage: `The daemon scheduling adapter is unavailable for worker ${options.schedulingTarget.workerId}`,
+      };
+    }
+    return await spawnScheduledSession(options);
+  };
   const stopSessionConfirmed = async (sessionId: string): Promise<boolean> => (
     normalizeMachineStopSessionResult(await stopSession(sessionId)).status === 'stopped'
   );
@@ -682,6 +704,7 @@ export function registerMachineRpcHandlers(params: Readonly<{
       pendingFirstInput,
       sessionId,
       machineId,
+      schedulingTarget,
       approvedNewDirectoryCreation,
       backendTarget,
       environmentVariables,
@@ -726,6 +749,19 @@ export function registerMachineRpcHandlers(params: Readonly<{
         type: 'error',
         errorCode: SPAWN_SESSION_ERROR_CODES.INVALID_REQUEST,
         errorMessage: 'Invalid sourceContext',
+      };
+    }
+
+    const normalizedSchedulingTarget = (() => {
+      if (schedulingTarget === undefined || schedulingTarget === null) return undefined;
+      const parsed = SessionSchedulingTargetV1Schema.safeParse(schedulingTarget);
+      return parsed.success ? parsed.data : null;
+    })();
+    if (normalizedSchedulingTarget === null) {
+      return {
+        type: 'error',
+        errorCode: SPAWN_SESSION_ERROR_CODES.INVALID_REQUEST,
+        errorMessage: 'Invalid schedulingTarget',
       };
     }
 
@@ -848,6 +884,7 @@ export function registerMachineRpcHandlers(params: Readonly<{
       directory: resolvedDirectory,
       sessionId,
       machineId,
+      schedulingTarget: normalizedSchedulingTarget,
       backendTarget: normalizedBackendTarget,
       approvedNewDirectoryCreation,
       profileId,
@@ -877,6 +914,7 @@ export function registerMachineRpcHandlers(params: Readonly<{
       spawnNonce: normalizedSpawnNonce,
       pendingFirstInput: normalizedPendingFirstInput,
       machineId,
+      schedulingTarget: normalizedSchedulingTarget,
       backendTarget: normalizedBackendTarget,
       environmentVariables: normalizedEnvironmentVariables,
       profileId,

@@ -7,6 +7,7 @@ import {
   SessionInitialGoalRequestV1Schema,
   SessionAttachMetadataIdentityPolicySchema,
   SessionMcpSelectionV1Schema,
+  SessionSchedulingTargetV1Schema,
   SessionSpawnSourceContextV1Schema,
   SpawnSessionExecutionAuthorizationSchema,
 } from '@happier-dev/protocol';
@@ -50,6 +51,7 @@ export { SpawnSessionExecutionAuthorizationSchema };
 const SpawnDaemonSessionRequestCompatSchema = z.object({
   directory: z.string(),
   machineId: z.string().trim().min(1).optional(),
+  schedulingTarget: SessionSchedulingTargetV1Schema.optional(),
   spawnNonce: z.string().trim().min(1).optional(),
   accountSettingsVersionHint: z.number().int().min(0).optional(),
   pendingFirstInput: PendingFirstInputV1Schema.optional(),
@@ -132,6 +134,7 @@ export function normalizeSpawnSessionDirectory(
 const SPAWN_SESSION_OPTION_KEYS = [
   'machineId',
   'directory',
+  'schedulingTarget',
   'spawnNonce',
   'accountSettingsVersionHint',
   'pendingFirstInput',
