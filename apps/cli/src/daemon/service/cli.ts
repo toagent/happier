@@ -1515,7 +1515,12 @@ export async function runDaemonServiceCliCommand(params: Readonly<{
     const shouldKickstartCurrentDarwinInstall = installRuntime.platform === 'darwin'
       && ownership.kind !== 'none'
       && ownership.owner.serviceManaged === true
-      && ownership.owner.state.serviceLabel === paths.label;
+      && ownership.owner.state.serviceLabel === paths.label
+      && plan.files[0] !== undefined
+      && doesInstalledDaemonServiceDefinitionMatchExpected({
+        installedPath: paths.installedPath,
+        expectedContents: plan.files[0].content,
+      });
 
     const strategy: DaemonServiceInstallStrategy | undefined =
       flags.replaceExisting === 'ring' ? 'replace-ring'

@@ -2677,6 +2677,23 @@ describe('runDaemonServiceCliCommand', () => {
       }
 
       expect(launchctlCalls.some((call) => call.startsWith('bootstrap '))).toBe(false);
+
+      envScope.patch({
+        HAPPIER_DAEMON_SERVICE_NODE_PATH: '/usr/local/bin/node',
+        HAPPIER_DAEMON_SERVICE_ENTRY_PATH: '/new/package-dist/index.mjs',
+      });
+      const changedOutput = captureStdoutJsonOutput<{
+        ok: boolean;
+        plan: { commands: Array<{ cmd: string; args: string[] }> };
+      }>();
+      try {
+        await runDaemonServiceCliCommand({ argv: ['install', '--dry-run', '--yes', '--json'] });
+        expect(changedOutput.json().plan.commands).toEqual(expect.arrayContaining([
+          expect.objectContaining({ cmd: 'launchctl', args: ['bootstrap', `gui/${runtime.uid}`, paths.installedPath] }),
+        ]));
+      } finally {
+        changedOutput.restore();
+      }
     });
   });
 
