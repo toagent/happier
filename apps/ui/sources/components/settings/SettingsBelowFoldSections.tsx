@@ -285,6 +285,12 @@ const SettingsFilesAndSourceControlSection = React.memo(function SettingsFilesAn
 }: SettingsFilesAndSourceControlSectionProps) {
     return (
         <ItemGroup title={t('settings.filesAndSourceControl')}>
+            <Item
+                testID="settings-code-server-review-row"
+                title={t('settingsSourceControl.codeServer.title')}
+                icon={<Icon name="code" size={29} color={theme.colors.accent.blue} />}
+                onPress={() => router.push('/settings/code-server')}
+            />
             {sourceControlEnabled ? (
                 <Item
                     title={t('settings.filesSourceControl')}

@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { act } from 'react-test-renderer';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { renderSettingsView, standardCleanup } from '@/dev/testkit';
@@ -127,6 +128,18 @@ describe('SettingsView keyboard shortcuts entry', () => {
         screen.pressRow('settings-keyboard-shortcuts-row');
 
         expect(shared.routerPushSpy).toHaveBeenCalledWith('/settings/keyboard');
+    });
+
+    it('keeps read-only code-server review settings reachable when SCM writes are disabled', async () => {
+        const { SettingsView } = await import('./SettingsView');
+        const screen = await renderSettingsView(<SettingsView />);
+
+        for (let stage = 0; stage < 4; stage += 1) {
+            await act(async () => { await new Promise((resolve) => setTimeout(resolve, 25)); });
+        }
+        expect(screen.findRow('settings-code-server-review-row')).not.toBeNull();
+        screen.pressRow('settings-code-server-review-row');
+        expect(shared.routerPushSpy).toHaveBeenCalledWith('/settings/code-server');
     });
 
     it('routes a hidden connected projection to the canonical service detail owner', async () => {

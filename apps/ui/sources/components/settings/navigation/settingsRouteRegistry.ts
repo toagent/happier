@@ -36,6 +36,7 @@ const SETTINGS_ROUTE_CHROME_DEFINITIONS: readonly SettingsRouteChromeDefinition[
     { name: 'connected-services/group', titleKey: 'connectedServices.detail.groupDetail.routeTitle' },
     { name: 'connected-services/oauth', titleKey: 'connectedServices.detail.addOauthProfileTitle' },
     { name: 'connected-services/profile', titleKey: 'connectedServices.profile.profileId' },
+    { name: 'code-server', titleKey: 'settingsSourceControl.codeServer.title' },
     { name: 'connected-services/provider-state-sharing', titleKey: 'connectedServices.providerStateSharing.title' },
     { name: 'diagnosis', titleKey: 'diagnosis.title' },
     { name: 'features', titleKey: 'settings.features' },

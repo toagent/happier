@@ -102,6 +102,14 @@ vi.mock('@/components/ui/lists/Item', () => ({
 }));
 
 describe('SourceControlSettingsView', () => {
+    it('renders the standalone code-server settings from the same owner', async () => {
+        const { CodeServerReviewSettings } = await import('./CodeServerReviewSettings');
+        const screen = await renderSettingsView(React.createElement(CodeServerReviewSettings));
+
+        expect(screen.findRowByTitle('control')).not.toBeNull();
+        expect(screen.findRowByTitle('settingsSourceControl.commitStrategy.options.atomic.title')).toBeNull();
+    });
+
     it('binds the code-server review target to a machine on the active server', async () => {
         setCodeServerReviewTarget.mockClear();
         const { SourceControlSettingsView } = await import('./SourceControlSettingsView');

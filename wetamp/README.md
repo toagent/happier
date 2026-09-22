@@ -7,7 +7,7 @@
 - [Y700 Android 定制路线](plans/y700-private-android-customization.md)：完整需求、源码落点、实施阶段与验收；修订 3 已获批准并开始执行。
 - [上游升级约定](UPSTREAM.md)：定制边界、源码合并、组件兼容、数据升级与回退。
 
-私有 APK 与三机 CLI 已有测试部署；完整的三机交互会话、同源审查和上游升级验收仍以每批真机证据为准。App 的版本控制设置可配置 code-server 审查机器、HTTPS 地址和授权根目录，原生 diff 工具栏仅为同 server、同机器且位于该目录内的会话提供打开入口。远端执行结果尚未物化为本机 review workspace，不能将远端目录直接填入本机 code-server。
+私有 APK 与三机 CLI 已有测试部署；完整的三机交互会话、同源审查和上游升级验收仍以每批真机证据为准。App 的设置 > 文件与源代码管理 > code-server 可配置审查机器、HTTPS 地址和授权根目录，即使 SCM 写操作关闭也可进入；原生 diff 工具栏仅为同 server、同机器且位于该目录内的会话提供打开入口。远端执行结果尚未物化为本机 review workspace，不能将远端目录直接填入本机 code-server。
 
 ## 目录边界
 
