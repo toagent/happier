@@ -1883,6 +1883,11 @@ export async function runDaemonServiceCliCommand(params: Readonly<{
           publicServerUrl: runtime.publicServerUrl,
           nodePath: runtime.nodePath,
           entryPath: runtime.entryPath,
+          twinSessionSchedulerConfigJson: resolveDaemonServiceTwinSchedulerConfigJson({
+            platform: runtime.platform,
+            installedPath: paths.installedPath,
+            processEnv: process.env,
+          }),
         });
         const expectedFile = expectedPlan.files[0];
         if (expectedFile) {

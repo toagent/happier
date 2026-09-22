@@ -1409,6 +1409,11 @@ describe('runDaemonServiceCliCommand', () => {
     await withTempDir('happier-service-start-drifted-active-unit-', async (homeDir) => {
       const spawnedCommands: Array<{ command: string; args: readonly string[] }> = [];
       const happierHomeDir = `${homeDir}/.happier`;
+      const schedulerConfig = JSON.stringify({
+        v: 1,
+        executable: '/opt/happier/twin-agent-remote',
+        workers: { 'twin-control': { machineId: 'controller-machine' } },
+      });
       let expectedServiceLabel = '';
       let expectedCliVersion = '';
       let writeDaemonStateImpl: ((state: DaemonLocallyPersistedState) => void) | null = null;
@@ -1420,6 +1425,7 @@ describe('runDaemonServiceCliCommand', () => {
         HAPPIER_DAEMON_SERVICE_HAPPIER_HOME_DIR: happierHomeDir,
         HAPPIER_DAEMON_SERVICE_TARGET_MODE: 'default-following',
         HAPPIER_PUBLIC_RELEASE_CHANNEL: 'preview',
+        HAPPIER_TWIN_SESSION_SCHEDULER_CONFIG_JSON: schedulerConfig,
         HAPPIER_DAEMON_SERVICE_OWNERSHIP_WAIT_TIMEOUT_MS: '120',
         HAPPIER_DAEMON_SERVICE_OWNERSHIP_ACTIVE_GRACE_TIMEOUT_MS: '0',
         HAPPIER_DAEMON_SERVICE_OWNERSHIP_WAIT_POLL_MS: '10',
@@ -1475,6 +1481,8 @@ describe('runDaemonServiceCliCommand', () => {
         expect(payload.ok).toBe(true);
         expect(payload.platform).toBe('linux');
         expect(spawnedCommands.some((entry) => entry.command === 'systemctl' && entry.args.includes('restart'))).toBe(true);
+        expect(readFileSync(paths.installedPath, 'utf-8')).toContain('HAPPIER_TWIN_SESSION_SCHEDULER_CONFIG_JSON');
+        expect(readFileSync(paths.installedPath, 'utf-8')).toContain('controller-machine');
       } finally {
         output.restore();
       }

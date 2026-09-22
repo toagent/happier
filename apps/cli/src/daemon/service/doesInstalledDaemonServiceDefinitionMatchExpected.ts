@@ -10,7 +10,8 @@ import fs from 'node:fs';
  * and cwd-derived `node_modules/.bin`. It also kept flagging drift when the
  * installed plist used the `[node, entry, daemon, start-sync]` ProgramArguments
  * form while the current plan-builder produces the semantically-equivalent
- * `[shim, daemon, start-sync]` form.
+ * `[shim, daemon, start-sync]` form. Two launchers of the same form remain
+ * identity-bearing: a different node, entry, or shim path is real drift.
  *
  * This comparator extracts only the fields that materially determine runtime
  * behavior and compares those. It intentionally ignores `PATH` and normalises
@@ -95,32 +96,47 @@ function shallowEqualStringMap(a: Readonly<Record<string, string>>, b: Readonly<
  *   - `[node, entry.mjs, 'daemon', 'start-sync']`    (node + entry form)
  *   - Future/legacy variants that still end in the same trailing args.
  *
- * We consider them equivalent when the trailing args match. The leading
- * launcher differs (shim vs node+entry), but the daemon reads its behavior
- * from the env vars (HAPPIER_HOME_DIR + HAPPIER_PUBLIC_RELEASE_CHANNEL +
- * HAPPIER_DAEMON_SERVICE_TARGET_MODE), which ARE compared strictly below.
- * Since those env vars pin the CLI install + channel + mode, a drifted
- * launcher path still ends up running the same daemon under the same config.
+ * We consider the two different forms equivalent when the trailing args match.
+ * Within one form, however, launcher paths must match exactly: the env vars
+ * compared below configure the daemon but do not replace the executable or
+ * entrypoint selected by launchd.
  */
 function compareProgramArgumentsSemantically(a: readonly string[], b: readonly string[]): boolean {
-  const aTrailing = trailingCommandArgs(a);
-  const bTrailing = trailingCommandArgs(b);
-  if (aTrailing.length !== bTrailing.length) return false;
-  for (let i = 0; i < aTrailing.length; i++) {
-    if (aTrailing[i] !== bTrailing[i]) return false;
+  const aDaemonIndex = a.indexOf('daemon');
+  const bDaemonIndex = b.indexOf('daemon');
+  if (aDaemonIndex < 0 || bDaemonIndex < 0) {
+    return arraysEqual(a, b);
+  }
+
+  const aTrailing = a.slice(aDaemonIndex);
+  const bTrailing = b.slice(bDaemonIndex);
+  if (!arraysEqual(aTrailing, bTrailing)) return false;
+
+  const aLauncher = a.slice(0, aDaemonIndex);
+  const bLauncher = b.slice(0, bDaemonIndex);
+  if (arraysEqual(aLauncher, bLauncher)) return true;
+
+  return (
+    isShimLauncher(aLauncher) && isNodeEntryLauncher(bLauncher)
+  ) || (
+    isNodeEntryLauncher(aLauncher) && isShimLauncher(bLauncher)
+  );
+}
+
+function arraysEqual(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
   }
   return true;
 }
 
-function trailingCommandArgs(args: readonly string[]): readonly string[] {
-  // Locate the `daemon` subcommand — everything from there on is the trailing
-  // command. This is robust to both `[shim, daemon, start-sync]` and
-  // `[node, entry, daemon, start-sync]` shapes.
-  const daemonIndex = args.indexOf('daemon');
-  if (daemonIndex >= 0) return args.slice(daemonIndex);
-  // No `daemon` token found — fall back to comparing the whole array so a
-  // genuinely different service shape still flags as drift.
-  return args;
+function isShimLauncher(args: readonly string[]): boolean {
+  return args.length === 1;
+}
+
+function isNodeEntryLauncher(args: readonly string[]): boolean {
+  return args.length === 2 && /\.(?:c|m)?js$/u.test(args[1] ?? '');
 }
 
 // ─────────────────────────────────────────────────────────────────────────

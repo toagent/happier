@@ -66,6 +66,12 @@ const PROGRAM_ARGS_NODE_ENTRY = `
       <string>daemon</string>
       <string>start-sync</string>`;
 
+const PROGRAM_ARGS_OLDER_NODE_ENTRY = `
+      <string>/Users/me/.local/share/fnm/node-versions/v22.22.1/installation/bin/node</string>
+      <string>/Users/me/.happier/cli-dev/versions/old/package-dist/index.mjs</string>
+      <string>daemon</string>
+      <string>start-sync</string>`;
+
 const PROGRAM_ARGS_SHIM = `
       <string>/Users/me/.happier/bin/happier</string>
       <string>daemon</string>
@@ -126,6 +132,17 @@ describe('doesInstalledDaemonServiceDefinitionMatchExpected', () => {
         installedPath,
         expectedContents,
       })).toBe(true);
+    });
+  });
+
+  it('returns false when node and entry launchers target different payloads', async () => {
+    await withTempDir('plist-signature-', async (dir) => {
+      const installedPath = writePlistFile(dir, plist(PROGRAM_ARGS_OLDER_NODE_ENTRY, PATH_A));
+      const expectedContents = plist(PROGRAM_ARGS_NODE_ENTRY, PATH_B);
+      expect(doesInstalledDaemonServiceDefinitionMatchExpected({
+        installedPath,
+        expectedContents,
+      })).toBe(false);
     });
   });
 
