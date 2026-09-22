@@ -108,10 +108,13 @@ test('deployment uses one immutable payload, official service lifecycle, and con
   assert.match(script, /versions="\$LOCAL_DEPLOY_ROOT\/versions"/);
   assert.match(script, /export HAPPIER_HOME_DIR="\$CONTROLLER_HOME"/);
   assert.match(script, /export HAPPIER_DAEMON_SERVICE_HAPPIER_HOME_DIR="\$CONTROLLER_HOME"/);
-  assert.match(script, /service install --takeover --replace-existing=all --yes --json/);
+  assert.match(script, /run_controller_service_command install --takeover --replace-existing=all --yes --json/);
+  assert.match(script, /run_worker_service_command install --takeover --replace-existing=all --yes --json/);
   assert.match(script, /HAPPIER_TWIN_SESSION_SCHEDULER_CONFIG_JSON/);
   assert.match(script, /install_controller_service/);
   assert.match(script, /install_worker_service/);
+  assert.match(script, /run_controller_service_command restart --takeover --json/);
+  assert.match(script, /run_worker_service_command restart --takeover --json/);
   assert.match(script, /scheduler_config=""/);
   assert.match(script, /twin-agent-remote queue/);
   assert.match(script, /read_local_identity\) \|\| fail/);

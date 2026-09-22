@@ -347,16 +347,20 @@ backup_local_service() {
   cp -p "$plist" "$LOCAL_DEPLOY_ROOT/backups/$DEPLOY_TIMESTAMP/com.happier.cli.daemon.default.plist"
 }
 
-install_controller_service() {
+run_controller_service_command() {
   local entry="$local_payload/package-dist/index.mjs"
-  backup_local_service
   HAPPIER_DAEMON_SERVICE_NODE_PATH="$local_node" \
   HAPPIER_DAEMON_SERVICE_ENTRY_PATH="$entry" \
   HAPPIER_DAEMON_SERVICE_CHANNEL=stable \
   HAPPIER_PUBLIC_RELEASE_CHANNEL=stable \
   HAPPIER_TWIN_SESSION_SCHEDULER_CONFIG_JSON="$scheduler_config" \
-    "$local_node" "$entry" service install --takeover --replace-existing=all --yes --json
-  "$local_node" "$entry" service restart --takeover --json
+    "$local_node" "$entry" service "$@"
+}
+
+install_controller_service() {
+  backup_local_service
+  run_controller_service_command install --takeover --replace-existing=all --yes --json
+  run_controller_service_command restart --takeover --json
 }
 
 install_worker_service() {
@@ -375,13 +379,16 @@ install -d -m 0700 "$backup_root"
 if [[ -f "$plist" ]]; then
   cp -p "$plist" "$backup_root/com.happier.cli.daemon.default.plist"
 fi
-HAPPIER_DAEMON_SERVICE_NODE_PATH="$node_path" \
-HAPPIER_DAEMON_SERVICE_ENTRY_PATH="$entry" \
-HAPPIER_DAEMON_SERVICE_CHANNEL=stable \
-HAPPIER_PUBLIC_RELEASE_CHANNEL=stable \
-HAPPIER_TWIN_SESSION_SCHEDULER_CONFIG_JSON="$scheduler_config" \
-  "$node_path" "$entry" service install --takeover --replace-existing=all --yes --json
-"$node_path" "$entry" service restart --takeover --json
+run_worker_service_command() {
+  HAPPIER_DAEMON_SERVICE_NODE_PATH="$node_path" \
+  HAPPIER_DAEMON_SERVICE_ENTRY_PATH="$entry" \
+  HAPPIER_DAEMON_SERVICE_CHANNEL=stable \
+  HAPPIER_PUBLIC_RELEASE_CHANNEL=stable \
+  HAPPIER_TWIN_SESSION_SCHEDULER_CONFIG_JSON="$scheduler_config" \
+    "$node_path" "$entry" service "$@"
+}
+run_worker_service_command install --takeover --replace-existing=all --yes --json
+run_worker_service_command restart --takeover --json
 REMOTE
 }
 
