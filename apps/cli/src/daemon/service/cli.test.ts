@@ -47,6 +47,7 @@ const SCOPED_ENV_KEYS = [
   'HAPPIER_DAEMON_SERVICE_CHANNEL',
   'HAPPIER_DAEMON_SERVICE_TARGET_MODE',
   'HAPPIER_DAEMON_SERVICE_AUTOSTART',
+  'HAPPIER_TWIN_SESSION_SCHEDULER_CONFIG_JSON',
   'HAPPIER_PUBLIC_RELEASE_CHANNEL',
   'HAPPIER_SERVER_URL',
   'HAPPIER_PUBLIC_SERVER_URL',
@@ -72,6 +73,7 @@ function writeValidInstalledDaemonServiceFile(
   options: Readonly<{
     activeServerId?: string;
     releaseChannel?: 'stable' | 'preview' | 'dev';
+    schedulerConfig?: string;
     targetMode?: 'default-following' | 'pinned';
   }> = {},
 ): void {
@@ -85,6 +87,9 @@ function writeValidInstalledDaemonServiceFile(
         HAPPIER_DAEMON_SERVICE_TARGET_MODE: options.targetMode ?? 'default-following',
         HAPPIER_ACTIVE_SERVER_ID: options.activeServerId ?? 'cloud',
         HAPPIER_PUBLIC_RELEASE_CHANNEL: options.releaseChannel ?? 'stable',
+        ...(options.schedulerConfig
+          ? { HAPPIER_TWIN_SESSION_SCHEDULER_CONFIG_JSON: options.schedulerConfig }
+          : {}),
       },
       wantedBy: 'default.target',
     }),
@@ -2767,6 +2772,84 @@ describe('runDaemonServiceCliCommand', () => {
     } finally {
       output.restore();
     }
+  });
+
+  it('includes the twin scheduler config in the real service install plan', async () => {
+    const { runDaemonServiceCliCommand } = await loadCliModule();
+    envScope.patch({
+      HAPPIER_DAEMON_SERVICE_PLATFORM: 'linux',
+      HAPPIER_DAEMON_SERVICE_USER_HOME_DIR: '/tmp',
+      HAPPIER_DAEMON_SERVICE_HAPPIER_HOME_DIR: '/tmp/happier',
+      HAPPIER_DAEMON_SERVICE_NODE_PATH: '/usr/local/bin/happier',
+      HAPPIER_DAEMON_SERVICE_ENTRY_PATH: '',
+      HAPPIER_TWIN_SESSION_SCHEDULER_CONFIG_JSON: JSON.stringify({
+        v: 1,
+        executable: '/opt/happier/twin-agent-remote',
+        workers: { 'twin-control': { machineId: 'controller-machine' } },
+      }),
+      PATH: '/usr/bin',
+    });
+
+    const output = captureStdoutJsonOutput<{
+      ok: boolean;
+      plan: { files: Array<{ content: string }> };
+    }>();
+    try {
+      await runDaemonServiceCliCommand({ argv: ['install', '--dry-run', '--json'] });
+
+      const definition = output.json().plan.files[0]?.content ?? '';
+      expect(definition).toContain('HAPPIER_TWIN_SESSION_SCHEDULER_CONFIG_JSON');
+      expect(definition).toContain('controller-machine');
+    } finally {
+      output.restore();
+    }
+  });
+
+  it('preserves the installed twin scheduler config in the real service reinstall plan', async () => {
+    await withTempDir('happier-service-install-preserves-twin-scheduler-', async (homeDir) => {
+      const happierHomeDir = `${homeDir}/.happier`;
+      envScope.patch({
+        HAPPIER_HOME_DIR: happierHomeDir,
+        HAPPIER_DAEMON_SERVICE_PLATFORM: 'linux',
+        HAPPIER_DAEMON_SERVICE_USER_HOME_DIR: homeDir,
+        HAPPIER_DAEMON_SERVICE_HAPPIER_HOME_DIR: happierHomeDir,
+        HAPPIER_DAEMON_SERVICE_NODE_PATH: '/usr/local/bin/happier',
+        HAPPIER_DAEMON_SERVICE_ENTRY_PATH: '',
+        PATH: '/usr/bin',
+      });
+      delete process.env.HAPPIER_TWIN_SESSION_SCHEDULER_CONFIG_JSON;
+      vi.resetModules();
+
+      const {
+        runDaemonServiceCliCommand,
+        resolveDaemonServiceCliRuntimeFromEnv,
+        resolveDaemonServicePaths,
+      } = await loadCliModule();
+      const runtime = resolveDaemonServiceCliRuntimeFromEnv({ processEnv: process.env });
+      const paths = resolveDaemonServicePaths(runtime);
+      mkdirSync(dirname(paths.installedPath), { recursive: true });
+      writeValidInstalledDaemonServiceFile(paths.installedPath, {
+        schedulerConfig: JSON.stringify({
+          v: 1,
+          executable: '/opt/happier/twin-agent-remote',
+          workers: { 'twin-control': { machineId: 'installed-controller-machine' } },
+        }),
+      });
+
+      const output = captureStdoutJsonOutput<{
+        ok: boolean;
+        plan: { files: Array<{ content: string }> };
+      }>();
+      try {
+        await runDaemonServiceCliCommand({ argv: ['install', '--dry-run', '--json'] });
+
+        const definition = output.json().plan.files[0]?.content ?? '';
+        expect(definition).toContain('HAPPIER_TWIN_SESSION_SCHEDULER_CONFIG_JSON');
+        expect(definition).toContain('installed-controller-machine');
+      } finally {
+        output.restore();
+      }
+    });
   });
 
   it('reports the autostart mode in install dry-run JSON and drops the login trigger on request', async () => {

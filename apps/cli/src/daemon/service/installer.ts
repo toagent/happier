@@ -35,6 +35,32 @@ import { TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY } from '@/integrations/twin/twinS
 
 type SupportedPlatform = 'darwin' | 'linux' | 'win32';
 
+export function resolveDaemonServiceTwinSchedulerConfigJson(params: Readonly<{
+  platform: SupportedPlatform;
+  installedPath?: string | null;
+  explicitConfig?: string | null;
+  processEnv?: NodeJS.ProcessEnv;
+}>): string {
+  const processEnv = params.processEnv ?? process.env;
+  const hasProcessConfig = Object.prototype.hasOwnProperty.call(
+    processEnv,
+    TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY,
+  );
+  const explicitConfig = params.explicitConfig !== undefined
+    ? params.explicitConfig
+    : hasProcessConfig
+      ? processEnv[TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY]
+      : undefined;
+  const installedConfig = params.installedPath
+    ? readInstalledDaemonServiceEnvValue({
+        platform: params.platform,
+        path: params.installedPath,
+        key: TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY,
+      })
+    : null;
+  return String(explicitConfig !== undefined ? explicitConfig ?? '' : installedConfig ?? '').trim();
+}
+
 function resolveSupportedPlatform(p: string): SupportedPlatform | null {
   if (p === 'darwin') return 'darwin';
   if (p === 'linux') return 'linux';
@@ -208,25 +234,11 @@ export async function previewDaemonServiceInstall(options: Readonly<{
   const installedAutostart = installedTargetService
     ? readInstalledDaemonServiceAutostartMode({ platform, path: installedTargetService.path })
     : null;
-  const hasProcessSchedulerConfig = Object.prototype.hasOwnProperty.call(
-    process.env,
-    TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY,
-  );
-  const explicitSchedulerConfig = options.twinSessionSchedulerConfigJson !== undefined
-    ? options.twinSessionSchedulerConfigJson
-    : hasProcessSchedulerConfig
-      ? process.env[TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY]
-      : undefined;
-  const installedSchedulerConfig = installedTargetService
-    ? readInstalledDaemonServiceEnvValue({
-        platform,
-        path: installedTargetService.path,
-        key: TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY,
-      })
-    : null;
-  const twinSessionSchedulerConfigJson = String(
-    explicitSchedulerConfig !== undefined ? explicitSchedulerConfig ?? '' : installedSchedulerConfig ?? '',
-  ).trim();
+  const twinSessionSchedulerConfigJson = resolveDaemonServiceTwinSchedulerConfigJson({
+    platform,
+    installedPath: installedTargetService?.path,
+    explicitConfig: options.twinSessionSchedulerConfigJson,
+  });
   const autostart: DaemonServiceAutostartMode = options.autostart ?? installedAutostart ?? 'at-login';
   const buildPlan = (planAutostart: DaemonServiceAutostartMode, autostartTriggerChangeOnly = false) => planDaemonServiceInstall({
     platform,
@@ -346,6 +358,7 @@ export async function installDaemonService(options: Readonly<{
   publicServerUrl?: string;
   nodePath?: string;
   entryPath?: string;
+  twinSessionSchedulerConfigJson?: string | null;
   runCommands?: boolean;
   commandFailureMode?: DaemonServiceCommandFailureMode;
 }> = {}): Promise<void> {

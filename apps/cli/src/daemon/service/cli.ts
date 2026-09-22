@@ -20,6 +20,7 @@ import {
   describeDaemonServiceInstallConflict,
   installDaemonService,
   previewDaemonServiceInstall,
+  resolveDaemonServiceTwinSchedulerConfigJson,
   uninstallDaemonService,
 } from './installer';
 import {
@@ -1487,6 +1488,11 @@ export async function runDaemonServiceCliCommand(params: Readonly<{
       })
       ?? inheritedAutostart
       ?? 'at-login';
+    const twinSessionSchedulerConfigJson = resolveDaemonServiceTwinSchedulerConfigJson({
+      platform: installRuntime.platform,
+      installedPath: paths.installedPath,
+      processEnv: process.env,
+    });
     const plan = planDaemonServiceInstall({
       platform: installRuntime.platform,
       mode,
@@ -1504,6 +1510,7 @@ export async function runDaemonServiceCliCommand(params: Readonly<{
       publicServerUrl: installRuntime.publicServerUrl,
       nodePath: installRuntime.nodePath,
       entryPath: installRuntime.entryPath,
+      twinSessionSchedulerConfigJson,
     });
     const shouldKickstartCurrentDarwinInstall = installRuntime.platform === 'darwin'
       && ownership.kind !== 'none'
@@ -1536,6 +1543,7 @@ export async function runDaemonServiceCliCommand(params: Readonly<{
         publicServerUrl: installRuntime.publicServerUrl,
         nodePath: installRuntime.nodePath,
         entryPath: installRuntime.entryPath,
+        twinSessionSchedulerConfigJson,
       });
       const installConflict = describeDaemonServiceInstallConflict({
         exactTargetExists: preview.exactTargetExists,
@@ -1607,6 +1615,7 @@ export async function runDaemonServiceCliCommand(params: Readonly<{
             publicServerUrl: installRuntime.publicServerUrl,
             nodePath: installRuntime.nodePath,
             entryPath: installRuntime.entryPath,
+            twinSessionSchedulerConfigJson,
             strategy,
             runCommands: true,
             commandFailureMode: 'strict',
