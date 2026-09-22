@@ -25,9 +25,21 @@ class WorkerAdapterTest(unittest.TestCase):
                 {
                     "version": 1,
                     "workers": [
-                        {"id": "twin-control", "transport": "ssh", "host": "control-host", "home": "/Users/control"},
+                        {
+                            "id": "twin-control",
+                            "transport": "ssh",
+                            "host": "control-host",
+                            "home": "/Users/control",
+                            "tmux": "/opt/homebrew/bin/tmux",
+                        },
                         {"id": "twin-dev", "transport": "local", "home": "/Users/dev"},
-                        {"id": "mac-mini", "transport": "ssh", "host": "mini-host", "home": "/Users/mini"},
+                        {
+                            "id": "mac-mini",
+                            "transport": "ssh",
+                            "host": "mini-host",
+                            "home": "/Users/mini",
+                            "tmux": "/opt/homebrew/bin/tmux",
+                        },
                     ],
                 }
             ),
@@ -79,6 +91,7 @@ class WorkerAdapterTest(unittest.TestCase):
         self.assertIn("worker_id=mac-mini", valid.stdout)
         self.assertIn("transport=ssh", valid.stdout)
         self.assertIn("host=mini-host", valid.stdout)
+        self.assertIn("tmux=/opt/homebrew/bin/tmux", valid.stdout)
 
         unknown = self.run_adapter("validate", "unknown-worker", check=False)
         self.assertNotEqual(0, unknown.returncode)
@@ -158,7 +171,14 @@ class WorkerAdapterTest(unittest.TestCase):
         self.assertEqual("mac-mini", (job / "execution_worker_id").read_text(encoding="utf-8").strip())
         self.assertEqual("ssh", (job / "worker_transport").read_text(encoding="utf-8").strip())
         ssh_args = [event["args"] for event in self.events() if event["command"] == "ssh"]
-        self.assertTrue(any("mini-host" in args and "new-session" in args for args in ssh_args))
+        self.assertTrue(
+            any(
+                "mini-host" in args
+                and "/opt/homebrew/bin/tmux" in args
+                and "new-session" in args
+                for args in ssh_args
+            )
+        )
         self.assertTrue(any(f"twin-worker-{job_id}" in args for args in ssh_args))
         rsync_args = [event["args"] for event in self.events() if event["command"] == "rsync"]
         self.assertEqual(2, len(rsync_args))
@@ -187,6 +207,7 @@ class WorkerAdapterTest(unittest.TestCase):
         self.assertTrue(
             any(
                 "control-host" in event["args"]
+                and "/opt/homebrew/bin/tmux" in event["args"]
                 and "kill-session" in event["args"]
                 and f"twin-worker-{job_id}" in event["args"]
                 for event in ssh_events
@@ -210,6 +231,30 @@ class WorkerAdapterTest(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode)
         self.assertFalse((job / "changes.patch").exists())
+
+    def test_health_checks_the_configured_tmux_and_worker_runtime(self):
+        self.install_command_logger(
+            "ssh",
+            "if 'control-host' in sys.argv and '/opt/homebrew/bin/tmux' in sys.argv:\n"
+            "    raise SystemExit(1)\n"
+            "raise SystemExit(0)",
+        )
+
+        result = self.run_adapter("health")
+
+        self.assertEqual(0, result.returncode)
+        self.assertIn("worker_id=twin-control transport=ssh host=control-host state=unavailable", result.stdout)
+        self.assertIn("worker_id=mac-mini transport=ssh host=mini-host state=ready", result.stdout)
+        ssh_args = [event["args"] for event in self.events() if event["command"] == "ssh"]
+        self.assertTrue(
+            any(
+                "mini-host" in args
+                and "test" in args
+                and "/opt/homebrew/bin/tmux" in args
+                and "/Users/mini/.lan-dev-machine/bin/twin-agent-job-runner" in args
+                for args in ssh_args
+            )
+        )
 
 
 if __name__ == "__main__":

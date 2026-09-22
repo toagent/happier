@@ -18,6 +18,9 @@ from typing import NoReturn
 REQUIRED_WORKER_IDS = {"twin-control", "twin-dev", "mac-mini"}
 JOB_ID_PATTERN = re.compile(r"^[0-9]{14}-[a-f0-9]{6}$")
 SAFE_HOST_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+SAFE_ABSOLUTE_PATH_PATTERN = re.compile(
+    r"^/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+$"
+)
 SAFE_RELATIVE_PATTERN = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*$"
 )
@@ -33,6 +36,7 @@ class Worker:
     transport: str
     home: PurePosixPath
     host: str | None = None
+    tmux: PurePosixPath | None = None
 
     @property
     def runtime_bin(self) -> PurePosixPath:
@@ -68,6 +72,7 @@ def load_workers(path: Path) -> dict[str, Worker]:
         transport = item.get("transport")
         home = item.get("home")
         host = item.get("host")
+        tmux = item.get("tmux")
         if worker_id not in REQUIRED_WORKER_IDS or worker_id in workers:
             raise WorkerConfigError(f"invalid or duplicate worker id: {worker_id}")
         if transport not in {"local", "ssh"}:
@@ -78,13 +83,20 @@ def load_workers(path: Path) -> dict[str, Worker]:
             not isinstance(host, str) or not SAFE_HOST_PATTERN.fullmatch(host)
         ):
             raise WorkerConfigError(f"invalid ssh host for {worker_id}")
+        if transport == "ssh" and (
+            not isinstance(tmux, str) or not SAFE_ABSOLUTE_PATH_PATTERN.fullmatch(tmux)
+        ):
+            raise WorkerConfigError(f"invalid tmux path for {worker_id}")
         if transport == "local" and host is not None:
             raise WorkerConfigError(f"local worker {worker_id} must not define host")
+        if transport == "local" and tmux is not None:
+            raise WorkerConfigError(f"local worker {worker_id} must not define tmux")
         workers[worker_id] = Worker(
             worker_id=worker_id,
             transport=transport,
             home=PurePosixPath(home),
             host=host,
+            tmux=PurePosixPath(tmux) if tmux is not None else None,
         )
 
     if set(workers) != REQUIRED_WORKER_IDS:
@@ -219,8 +231,12 @@ def sync_progress(worker: Worker, remote_job: PurePosixPath, job: Path) -> None:
 
 
 def cancel_remote(worker: Worker, job_id: str) -> subprocess.CompletedProcess[str]:
+    assert worker.tmux is not None
     session = f"twin-worker-{job_id}"
-    return run(ssh_command(worker, ["tmux", "kill-session", "-t", session]), check=False)
+    return run(
+        ssh_command(worker, [str(worker.tmux), "kill-session", "-t", session]),
+        check=False,
+    )
 
 
 def sync_remote_results(worker: Worker, remote_job: PurePosixPath, job: Path) -> bool:
@@ -299,6 +315,7 @@ def launch_ssh(
     rsync_bin = os.environ.get("TWIN_AGENT_RSYNC_BIN", "rsync")
     poll_seconds = max(0.0, float(os.environ.get("TWIN_AGENT_WORKER_POLL_SECONDS", "2")))
     assert worker.host is not None
+    assert worker.tmux is not None
 
     run(ssh_command(worker, ["mkdir", "-p", str(remote_job), str(remote_work)]))
     outbound = [rsync_bin, "-a", "--delete"]
@@ -321,7 +338,7 @@ def launch_ssh(
     )
     record_worker(job, worker, str(remote_run_cwd))
     remote_command = [
-        "tmux",
+        str(worker.tmux),
         "new-session",
         "-d",
         "-s",
@@ -356,7 +373,10 @@ def launch_ssh(
     try:
         while not cancelled:
             status = run(
-                ssh_command(worker, ["tmux", "has-session", "-t", session]),
+                ssh_command(
+                    worker,
+                    [str(worker.tmux), "has-session", "-t", session],
+                ),
                 check=False,
             )
             if status.returncode == 1:
@@ -392,6 +412,8 @@ def command_validate(worker_id: str) -> int:
     print(f"transport={worker.transport}")
     print(f"host={worker.host or 'localhost'}")
     print(f"home={worker.home}")
+    if worker.tmux is not None:
+        print(f"tmux={worker.tmux}")
     print(f"workspace_root={worker.workspace_root}")
     return 0
 
@@ -439,9 +461,24 @@ def command_health() -> int:
         if worker.transport == "local":
             state = "ready"
         else:
+            assert worker.tmux is not None
+            required_executables = [
+                worker.tmux,
+                worker.runtime_bin / "twin-agent-job-runner",
+                worker.runtime_bin / "twin-agent-worker",
+                worker.runtime_bin / "twin-agent-remote",
+                worker.runtime_bin / "twin-agent-runner",
+                worker.runtime_bin / "twin-agent-output",
+                worker.runtime_bin / "twin-agent-stats",
+            ]
+            test_args = ["test"]
+            for index, executable in enumerate(required_executables):
+                if index:
+                    test_args.append("-a")
+                test_args.extend(["-x", str(executable)])
             state = (
                 "ready"
-                if run(ssh_command(worker, ["true"]), check=False).returncode == 0
+                if run(ssh_command(worker, test_args), check=False).returncode == 0
                 else "unavailable"
             )
         print(

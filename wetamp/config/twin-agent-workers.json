@@ -5,7 +5,8 @@
       "id": "twin-control",
       "transport": "ssh",
       "host": "twin-control",
-      "home": "/Users/yong"
+      "home": "/Users/yong",
+      "tmux": "/opt/homebrew/bin/tmux"
     },
     {
       "id": "twin-dev",
@@ -16,7 +17,8 @@
       "id": "mac-mini",
       "transport": "ssh",
       "host": "twin-mini",
-      "home": "/Users/bubei"
+      "home": "/Users/bubei",
+      "tmux": "/opt/homebrew/bin/tmux"
     }
   ]
 }
