@@ -44,6 +44,13 @@ worker 配置、部署包或 SSH 参数值。
   `~/.twin-agent/history/jobs.jsonl`，用于长期成功率和耗时趋势，不保留项目源码或完整 prompt。
 - `fetch_job_patch` 下载完整 patch，`apply_job_patch` 默认只做应用前校验。
 - 三个本机客户端和三个执行 worker 共享一个 FIFO 队列，默认合计最多同时运行 3 个 AI 任务。
+- Happier 交互会话通过持久化 session lease 占用同一个 FIFO 槽位；lease 与一次性 MCP job
+  共用全局票号、严格按票号启动，不能另建旁路队列。
+- lease 只在 owner 显式释放后归还槽位。控制 daemon 暂时断线或重启不会自动释放；恢复时用同一
+  lease id、worker 和 owner token 查询原状态。owner token 只保存 SHA-256 摘要，错误 owner、
+  重复 lease 改投其他 worker 和未知 worker 均 fail closed。
+- 会话 owner 必须先确认目标 Happier session 已停止或退出，再调用 `lease-release`；后续
+  resume/fork 使用新的 lease 并重新排队。一次性 job timeout 不适用于交互 lease。
 - 超出并发上限的任务自动等待，运行槽位释放后按创建顺序启动。
 - worker 不可达或取消未确认时 fail closed，不会把仍可能运行的任务标成已取消。
 - 排队任务共用一个 `twin-scheduler`，不再为每个任务创建每秒轮询的独立 watcher。
@@ -163,3 +170,14 @@ twin-collab-report all --format json
 工具：`collaboration_event`、`delegate_agent`、`collaboration_stats`、`job_status`、
 `wait_job`、`job_result`、`collect_ready_results`、`cancel_job`、`list_jobs`、`fetch_job_patch`、`apply_job_patch`、
 `queue_status`、`twin_agent_health`。
+
+Happier daemon adapter 使用 queue owner 的内部命令管理交互槽位：
+
+```text
+twin-agent-remote lease-acquire <lease-id> <worker-id> <owner-token>
+twin-agent-remote lease-status <lease-id> <owner-token>
+twin-agent-remote lease-release <lease-id> <owner-token>
+```
+
+`lease-acquire` 和 `lease-status` 返回 `queued` 或 `acquired`；`lease-release` 幂等返回
+`released`。这些命令只管理统一调度槽，不负责启动、停止或伪装 Happier session。

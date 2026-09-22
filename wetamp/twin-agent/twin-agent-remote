@@ -23,9 +23,26 @@ valid_job() {
   [[ "${1:-}" =~ ^[0-9]{14}-[a-f0-9]{6}$ ]]
 }
 
+valid_lease_id() {
+  [[ "${1:-}" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ ]]
+}
+
+valid_lease_owner_token() {
+  [[ "${1:-}" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$ ]]
+}
+
 job_dir() {
   valid_job "$1" || { echo "invalid job id" >&2; exit 2; }
   printf '%s/jobs/%s' "$BASE" "$1"
+}
+
+lease_dir() {
+  valid_lease_id "$1" || { echo "invalid lease id" >&2; exit 2; }
+  printf '%s/leases/%s' "$BASE" "$1"
+}
+
+lease_owner_digest() {
+  printf '%s' "$1" | python3 -c 'import hashlib, sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
 }
 
 cleanup_old_jobs() {
@@ -101,25 +118,32 @@ release_scheduler_lock() {
   rmdir "$LOCK_DIR" 2>/dev/null || true
 }
 
+active_lease_count() {
+  local lease count=0
+  for lease in "$BASE"/leases/*; do
+    [[ -d "$lease" && -f "$lease/acquired_at" && ! -f "$lease/released_at" ]] || continue
+    count=$((count + 1))
+  done
+  echo "$count"
+}
+
 running_count() {
-  local sessions rc
+  local sessions rc job_count=0 lease_count
   set +e
   sessions=$(tmux list-sessions -F '#S' 2>&1)
   rc=$?
   set -e
   if (( rc == 0 )); then
-    printf '%s\n' "$sessions" | awk '/^twin-[0-9]/{count++} END{print count+0}'
-    return 0
+    job_count=$(printf '%s\n' "$sessions" | awk '/^twin-[0-9]/{count++} END{print count+0}')
+  elif [[ "$sessions" != *"no server running"* && "$sessions" != *"no sessions"* ]]; then
+    printf 'tmux status unavailable: %s\n' "$sessions" >&2
+    return 1
   fi
-  if [[ "$sessions" == *"no server running"* || "$sessions" == *"no sessions"* ]]; then
-    echo 0
-    return 0
-  fi
-  printf 'tmux status unavailable: %s\n' "$sessions" >&2
-  return 1
+  lease_count=$(active_lease_count)
+  echo "$((job_count + lease_count))"
 }
 
-queued_ids() {
+queued_entries() {
   local candidate id ticket
   for candidate in "$BASE"/jobs/*; do
     [[ -d "$candidate" && -f "$candidate/queued_at" ]] || continue
@@ -127,31 +151,49 @@ queued_ids() {
     valid_job "$id" || continue
     ticket=$(cat "$candidate/queue_ticket" 2>/dev/null || echo 999999999999)
     [[ "$ticket" =~ ^[0-9]+$ ]] || ticket=999999999999
-    printf '%020d\t%s\n' "$ticket" "$id"
-  done | sort -n | cut -f2
+    printf '%020d\tjob\t%s\n' "$ticket" "$id"
+  done
+  for candidate in "$BASE"/leases/*; do
+    [[ -d "$candidate" && -f "$candidate/queued_at" && ! -f "$candidate/released_at" ]] || continue
+    id=${candidate##*/}
+    valid_lease_id "$id" || continue
+    ticket=$(cat "$candidate/queue_ticket" 2>/dev/null || echo 999999999999)
+    [[ "$ticket" =~ ^[0-9]+$ ]] || ticket=999999999999
+    printf '%020d\tlease\t%s\n' "$ticket" "$id"
+  done
+}
+
+sorted_queued_entries() {
+  queued_entries | sort -n | cut -f2-
 }
 
 queue_position() {
-  local target="$1" id position=0
-  while IFS= read -r id; do
+  local target_kind="$1" target_id="$2" kind id position=0
+  while IFS=$'\t' read -r kind id; do
     position=$((position + 1))
-    if [[ "$id" == "$target" ]]; then
+    if [[ "$kind" == "$target_kind" && "$id" == "$target_id" ]]; then
       echo "$position"
       return 0
     fi
-  done < <(queued_ids)
+  done < <(sorted_queued_entries)
   echo 0
+}
+
+next_queue_ticket_locked() {
+  local sequence
+  sequence=$(cat "$BASE/run/queue-sequence" 2>/dev/null || echo 0)
+  [[ "$sequence" =~ ^[0-9]+$ ]] || sequence=0
+  sequence=$((sequence + 1))
+  printf '%s\n' "$sequence" > "$BASE/run/queue-sequence.tmp.$$"
+  mv "$BASE/run/queue-sequence.tmp.$$" "$BASE/run/queue-sequence"
+  echo "$sequence"
 }
 
 enqueue_job() {
   local id="$1" job sequence timestamp
   job=$(job_dir "$id")
   acquire_scheduler_lock
-  sequence=$(cat "$BASE/run/queue-sequence" 2>/dev/null || echo 0)
-  [[ "$sequence" =~ ^[0-9]+$ ]] || sequence=0
-  sequence=$((sequence + 1))
-  printf '%s\n' "$sequence" > "$BASE/run/queue-sequence.tmp.$$"
-  mv "$BASE/run/queue-sequence.tmp.$$" "$BASE/run/queue-sequence"
+  sequence=$(next_queue_ticket_locked)
   printf '%s\n' "$sequence" > "$job/queue_ticket"
   timestamp=$(date -u +%FT%TZ)
   printf '%s\n' "$timestamp" > "$job/enqueued_at"
@@ -183,7 +225,7 @@ state_of() {
 }
 
 dispatch_job() {
-  local id="$1" job state active oldest agent mode workspace_mode run_cwd work worker_id launched=0
+  local id="$1" job state active oldest expected agent mode workspace_mode run_cwd work worker_id launched=0
   job=$(job_dir "$id")
   [[ -d "$job" ]] || { echo "job not found" >&2; exit 1; }
   acquire_scheduler_lock
@@ -199,8 +241,9 @@ dispatch_job() {
     release_scheduler_lock
     return 1
   fi
-  oldest=$(queued_ids | head -1)
-  if (( active < MAX_CONCURRENT )) && [[ "$oldest" == "$id" ]]; then
+  oldest=$(sorted_queued_entries | head -1)
+  expected=$(printf 'job\t%s' "$id")
+  if (( active < MAX_CONCURRENT )) && [[ "$oldest" == "$expected" ]]; then
     agent=$(cat "$job/agent")
     mode=$(cat "$job/mode")
     workspace_mode=$(cat "$job/workspace_mode" 2>/dev/null || echo local_snapshot)
@@ -221,14 +264,153 @@ dispatch_job() {
   if (( launched == 1 )); then
     printf 'job_id=%s\nstate=running\n' "$id"
   else
-    printf 'job_id=%s\nstate=queued\nqueue_position=%s\n' "$id" "$(queue_position "$id")"
+    printf 'job_id=%s\nstate=queued\nqueue_position=%s\n' "$id" "$(queue_position job "$id")"
   fi
 }
 
+lease_state() {
+  local lease="$1"
+  if [[ -f "$lease/released_at" ]]; then
+    echo "released"
+  elif [[ -f "$lease/acquired_at" ]]; then
+    echo "acquired"
+  elif [[ -f "$lease/queued_at" ]]; then
+    echo "queued"
+  else
+    echo "unknown"
+  fi
+}
+
+require_lease_owner() {
+  local lease="$1" owner_token="$2" expected actual
+  valid_lease_owner_token "$owner_token" || { echo "invalid lease owner token" >&2; return 2; }
+  [[ -s "$lease/owner_digest" ]] || { echo "lease owner unavailable" >&2; return 1; }
+  expected=$(cat "$lease/owner_digest")
+  actual=$(lease_owner_digest "$owner_token")
+  [[ "$actual" == "$expected" ]] || { echo "lease owner mismatch" >&2; return 1; }
+}
+
+dispatch_lease() {
+  local id="$1" lease state active oldest expected
+  lease=$(lease_dir "$id")
+  [[ -d "$lease" ]] || { echo "lease not found" >&2; exit 1; }
+  acquire_scheduler_lock
+  state=$(lease_state "$lease")
+  if [[ "$state" != "queued" ]]; then
+    release_scheduler_lock
+    printf 'lease_id=%s\nstate=%s\n' "$id" "$state"
+    return 0
+  fi
+  if ! active=$(running_count); then
+    release_scheduler_lock
+    return 1
+  fi
+  oldest=$(sorted_queued_entries | head -1)
+  expected=$(printf 'lease\t%s' "$id")
+  if (( active < MAX_CONCURRENT )) && [[ "$oldest" == "$expected" ]]; then
+    rm -f "$lease/queued_at"
+    date -u +%FT%TZ > "$lease/acquired_at"
+    state="acquired"
+  fi
+  release_scheduler_lock
+  printf 'lease_id=%s\nstate=%s\nworker_id=%s\n' "$id" "$state" "$(cat "$lease/worker_id")"
+  if [[ "$state" == "queued" ]]; then
+    printf 'queue_position=%s\n' "$(queue_position lease "$id")"
+  fi
+}
+
+acquire_lease() {
+  local id="$1" worker_id="$2" owner_token="$3" lease temporary sequence timestamp worker_description worker_transport state
+  valid_lease_id "$id" || { echo "invalid lease id" >&2; exit 2; }
+  valid_lease_owner_token "$owner_token" || { echo "invalid lease owner token" >&2; exit 2; }
+  [[ -x "$WORKER_ADAPTER_BIN" ]] || { echo "worker adapter missing: $WORKER_ADAPTER_BIN" >&2; exit 1; }
+  worker_description=$("$WORKER_ADAPTER_BIN" validate "$worker_id")
+  worker_transport=$(printf '%s\n' "$worker_description" | awk -F= '$1 == "transport" {print $2; exit}')
+  case "$worker_transport" in local|ssh) ;; *) echo "worker adapter returned invalid transport" >&2; exit 1 ;; esac
+
+  mkdir -p "$BASE/leases"
+  lease=$(lease_dir "$id")
+  acquire_scheduler_lock
+  if [[ -d "$lease" ]]; then
+    if ! require_lease_owner "$lease" "$owner_token"; then
+      release_scheduler_lock
+      exit 1
+    fi
+    if [[ "$(cat "$lease/worker_id" 2>/dev/null || true)" != "$worker_id" ]]; then
+      release_scheduler_lock
+      echo "lease worker mismatch" >&2
+      exit 1
+    fi
+    state=$(lease_state "$lease")
+    release_scheduler_lock
+    printf 'lease_id=%s\nstate=%s\nworker_id=%s\n' "$id" "$state" "$worker_id"
+    if [[ "$state" == "queued" ]]; then
+      printf 'queue_position=%s\n' "$(queue_position lease "$id")"
+      start_scheduler
+    fi
+    return 0
+  fi
+
+  sequence=$(next_queue_ticket_locked)
+  timestamp=$(date -u +%FT%TZ)
+  temporary="$BASE/leases/.${id}.tmp.$$"
+  mkdir "$temporary"
+  printf '%s\n' "$worker_id" > "$temporary/worker_id"
+  printf '%s\n' "$worker_transport" > "$temporary/worker_transport"
+  lease_owner_digest "$owner_token" > "$temporary/owner_digest"
+  printf '%s\n' "$sequence" > "$temporary/queue_ticket"
+  printf '%s\n' "$timestamp" > "$temporary/enqueued_at"
+  printf '%s\n' "$timestamp" > "$temporary/queued_at"
+  mv "$temporary" "$lease"
+  release_scheduler_lock
+
+  dispatch_lease "$id" >/dev/null
+  state=$(lease_state "$lease")
+  [[ "$state" == "queued" ]] && start_scheduler
+  printf 'lease_id=%s\nstate=%s\nworker_id=%s\n' "$id" "$state" "$worker_id"
+  if [[ "$state" == "queued" ]]; then
+    printf 'queue_position=%s\n' "$(queue_position lease "$id")"
+  fi
+}
+
+show_lease_status() {
+  local id="$1" owner_token="$2" lease state
+  lease=$(lease_dir "$id")
+  [[ -d "$lease" ]] || { echo "lease not found" >&2; exit 1; }
+  require_lease_owner "$lease" "$owner_token"
+  state=$(lease_state "$lease")
+  printf 'lease_id=%s\nstate=%s\nworker_id=%s\n' "$id" "$state" "$(cat "$lease/worker_id")"
+  [[ -f "$lease/acquired_at" ]] && printf 'acquired_at=%s\n' "$(cat "$lease/acquired_at")"
+  [[ -f "$lease/released_at" ]] && printf 'released_at=%s\n' "$(cat "$lease/released_at")"
+  if [[ "$state" == "queued" ]]; then
+    printf 'queue_position=%s\n' "$(queue_position lease "$id")"
+  fi
+}
+
+release_lease() {
+  local id="$1" owner_token="$2" lease state
+  lease=$(lease_dir "$id")
+  [[ -d "$lease" ]] || { echo "lease not found" >&2; exit 1; }
+  acquire_scheduler_lock
+  if ! require_lease_owner "$lease" "$owner_token"; then
+    release_scheduler_lock
+    exit 1
+  fi
+  state=$(lease_state "$lease")
+  if [[ "$state" != "released" ]]; then
+    rm -f "$lease/queued_at"
+    date -u +%FT%TZ > "$lease/released_at"
+    state="released"
+  fi
+  release_scheduler_lock
+  start_scheduler
+  printf 'lease_id=%s\nstate=%s\nworker_id=%s\n' "$id" "$state" "$(cat "$lease/worker_id")"
+}
+
 schedule_jobs() {
-  local oldest active empty_checks=0
+  local oldest kind id active empty_checks=0
   while true; do
-    oldest=$(queued_ids | head -1)
+    oldest=$(sorted_queued_entries | head -1)
     if [[ -z "$oldest" ]]; then
       empty_checks=$((empty_checks + 1))
       (( empty_checks >= 5 )) && return 0
@@ -241,7 +423,11 @@ schedule_jobs() {
       continue
     fi
     if (( active < MAX_CONCURRENT )); then
-      dispatch_job "$oldest" >/dev/null 2>&1 || true
+      IFS=$'\t' read -r kind id <<< "$oldest"
+      case "$kind" in
+        job) dispatch_job "$id" >/dev/null 2>&1 || true ;;
+        lease) dispatch_lease "$id" >/dev/null 2>&1 || true ;;
+      esac
       sleep 0.1
     else
       sleep 1
@@ -400,7 +586,7 @@ start_job() {
     "$id" "$(state_of "$job" "$id")" "$agent" "$mode" "$worker_id" "$worker_transport"
   printf 'cleanup_scheduled=%s\n' "$CLEANUP_SCHEDULED"
   if [[ "$(state_of "$job" "$id")" == "queued" ]]; then
-    printf 'queue_position=%s\n' "$(queue_position "$id")"
+    printf 'queue_position=%s\n' "$(queue_position job "$id")"
   fi
 }
 
@@ -446,7 +632,7 @@ for key in ("outcome", "caller", "collaboration_id", "task_title", "local_work",
 '
   fi
   if [[ "$state" == "queued" ]]; then
-    printf 'queue_position=%s\n' "$(queue_position "$id")"
+    printf 'queue_position=%s\n' "$(queue_position job "$id")"
   fi
   running=$(running_count 2>/dev/null || echo unknown)
   printf 'running=%s\nmax_concurrent=%s\n' "$running" "$MAX_CONCURRENT"
@@ -728,18 +914,18 @@ PY
 }
 
 show_queue() {
-  local ids count running="unknown"
-  ids=$(queued_ids)
-  if [[ -n "$ids" ]]; then
-    count=$(printf '%s\n' "$ids" | wc -l | tr -d ' ')
+  local entries count running="unknown"
+  entries=$(sorted_queued_entries)
+  if [[ -n "$entries" ]]; then
+    count=$(printf '%s\n' "$entries" | wc -l | tr -d ' ')
   else
     count=0
   fi
   running=$(running_count 2>/dev/null || echo unknown)
   printf 'running=%s\nqueued=%s\nmax_concurrent=%s\n' "$running" "$count" "$MAX_CONCURRENT"
-  if [[ -n "$ids" ]]; then
+  if [[ -n "$entries" ]]; then
     echo "--- fifo ---"
-    printf '%s\n' "$ids" | nl -w1 -s $'\t'
+    printf '%s\n' "$entries" | awk -F '\t' '{print NR "\t" $1 ":" $2}'
   fi
 }
 
@@ -770,7 +956,7 @@ health() {
   echo "retention_days=7"
   running=$(running_count 2>/dev/null || echo unknown)
   printf 'running=%s\n' "$running"
-  printf 'queued=%s\n' "$(queued_ids | wc -l | tr -d ' ')"
+  printf 'queued=%s\n' "$(sorted_queued_entries | wc -l | tr -d ' ')"
   printf 'max_concurrent=%s\n' "$MAX_CONCURRENT"
   printf 'cleanup_failures_total=%s\n' "$(cleanup_failure_count)"
   printf 'default_timeout_short=%s\n' "600"
@@ -789,7 +975,7 @@ health() {
   fi
 }
 
-mkdir -p "$BASE/jobs"
+mkdir -p "$BASE/jobs" "$BASE/leases"
 case "${1:-}" in
   start) shift; start_job "$@" ;;
   dispatch) shift; dispatch_job "$@" ;;
@@ -797,6 +983,9 @@ case "${1:-}" in
   schedule) schedule_jobs ;;
   start-scheduler) start_scheduler ;;
   status) shift; show_status "$@" ;;
+  lease-acquire) shift; acquire_lease "$@" ;;
+  lease-status) shift; show_lease_status "$@" ;;
+  lease-release) shift; release_lease "$@" ;;
   result) shift; show_result "$@" ;;
   wait) shift; wait_job "$@" ;;
   pending) shift; pending_results "$@" ;;
@@ -810,5 +999,5 @@ case "${1:-}" in
   cleanup-old) shift; cleanup_old_jobs "${1:-7}" ;;
   compact) shift; compact_jobs "$@" ;;
   compact-one) shift; remove_job_workspace "$@" ;;
-  *) echo "usage: twin-agent-remote {start|dispatch|watch|schedule|start-scheduler|status|result|wait|pending|collaboration-state|cancel|list|queue|stats|evaluate|health|cleanup-old|compact|compact-one}" >&2; exit 2 ;;
+  *) echo "usage: twin-agent-remote {start|dispatch|watch|schedule|start-scheduler|status|lease-acquire|lease-status|lease-release|result|wait|pending|collaboration-state|cancel|list|queue|stats|evaluate|health|cleanup-old|compact|compact-one}" >&2; exit 2 ;;
 esac
