@@ -10,9 +10,8 @@ import { GradientSurface } from '@/components/ui/surfaces/GradientSurface';
 
 const stylesheet = StyleSheet.create((theme, runtime) => ({
     container: {
-        position: 'absolute',
-        left: 16,
-        right: 16,
+        marginHorizontal: 16,
+        paddingTop: 16,
     },
     button: {
         borderRadius: 12,
@@ -42,7 +41,7 @@ export const FABWide = React.memo(({ onPress }: { onPress: () => void }) => {
         <View
             style={[
                 styles.container,
-                { bottom: safeArea.bottom + 16 }
+                { paddingBottom: safeArea.bottom + 16 }
             ]}
         >
             <Pressable

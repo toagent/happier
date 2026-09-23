@@ -296,6 +296,11 @@ describe('MainView sidebar actions', () => {
         tree = (await renderScreen(<MainView variant="sidebar" />)).tree;
 
         const fab = tree!.findByType('FABWide');
+        const sidebarLayout = tree!.findByProps({ testID: 'main-sidebar-session-layout' });
+        const sidebarFooter = tree!.findByProps({ testID: 'main-sidebar-session-footer' });
+
+        expect(sidebarFooter.parent).toBe(sidebarLayout);
+        expect(sidebarFooter.findByType('FABWide')).toBe(fab);
         fab.props.onPress({ nativeEvent: { ctrlKey: true } });
 
         expect(routerPushSpy).toHaveBeenCalledWith({

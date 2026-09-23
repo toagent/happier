@@ -62,10 +62,18 @@ const styles = StyleSheet.create((theme) => ({
     container: {
         flex: 1,
     },
+    sidebarLayout: {
+        flex: 1,
+        flexBasis: 0,
+        flexGrow: 1,
+    },
     sidebarContainer: {
         flex: 1,
         flexBasis: 0,
         flexGrow: 1,
+    },
+    sidebarFooter: {
+        flexShrink: 0,
     },
     phoneContainer: {
         flex: 1,
@@ -383,10 +391,12 @@ const SidebarMainViewContent = React.memo(function SidebarMainViewContent({
     }
 
     return (
-        <>
+        <View testID="main-sidebar-session-layout" style={styles.sidebarLayout}>
             {content}
-            <FABWide onPress={handleNewSession} />
-        </>
+            <View testID="main-sidebar-session-footer" style={styles.sidebarFooter}>
+                <FABWide onPress={handleNewSession} />
+            </View>
+        </View>
     );
 });
 
