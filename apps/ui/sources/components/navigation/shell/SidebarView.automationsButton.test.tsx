@@ -347,7 +347,7 @@ describe('SidebarView header automations button', () => {
         expect(findTestInstanceByTypeContainingText(friendsButton!, 'Text', '2')).toBeTruthy();
     });
 
-    it('constrains the server status row to the shrinking title column before the header icons', async () => {
+    it('lets the native server status shrink ahead of the header icons on the action row', async () => {
         const { SidebarView } = await import('./SidebarView');
 
         const screen = await renderScreen(<SidebarView />);
@@ -355,10 +355,10 @@ describe('SidebarView header automations button', () => {
         expect(control.props.variant).toBe('sidebar');
 
         const wrapper = control.parent;
+        expect(wrapper?.parent?.props.testID).toBe('desktop-sidebar-chrome-actions-row');
         expect(flattenStyle(wrapper?.props.style)).toMatchObject({
             alignSelf: 'stretch',
             flexShrink: 1,
-            maxWidth: '100%',
             minWidth: 0,
         });
     });

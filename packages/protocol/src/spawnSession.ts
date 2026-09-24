@@ -18,14 +18,26 @@ export const SpawnSessionExecutionAuthorizationSchema = z.object({
 }).strict();
 export type SpawnSessionExecutionAuthorization = z.infer<typeof SpawnSessionExecutionAuthorizationSchema>;
 
-/** Opaque worker selection interpreted only by the daemon's configured scheduling adapter. */
-export const SessionSchedulingTargetV1Schema = z.object({
+const SessionSchedulingWorkerTargetV1Schema = z.object({
   v: z.literal(1),
   workerId: z.string().refine((value) => value.trim().length > 0, {
     message: 'Scheduling worker id must not be blank',
   }),
 }).strict();
+
+/**
+ * Worker selection interpreted only by the daemon's configured scheduling adapter: an explicit
+ * worker, or `auto` to let the controller pick one. Only the controller ever sees `auto`; it
+ * dispatches (and persists into session metadata) the concrete worker it chose, so resume keeps
+ * returning to that worker. Send `auto` only to a controller advertising `twinSessionAutoDispatchV1`;
+ * older controllers reject it through this strict schema instead of misrouting it.
+ */
+export const SessionSchedulingTargetV1Schema = z.union([
+  SessionSchedulingWorkerTargetV1Schema,
+  z.object({ v: z.literal(1), auto: z.literal(true) }).strict(),
+]);
 export type SessionSchedulingTargetV1 = z.infer<typeof SessionSchedulingTargetV1Schema>;
+export type SessionSchedulingWorkerTargetV1 = z.infer<typeof SessionSchedulingWorkerTargetV1Schema>;
 
 const TwinSessionSchedulingWorkerV1Schema = z.object({
   workerId: z.string().trim().min(1),

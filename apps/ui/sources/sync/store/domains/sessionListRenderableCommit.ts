@@ -31,11 +31,12 @@ import {
     type SessionListRenderablePatch,
     type SessionListRenderableStoreUpdatePlan,
 } from './sessionListRenderableStoreUpdate';
+import { resolveSessionListGroupingForSection, type SessionListGroupingV1 } from '@/sync/domains/session/listing/sessionListGrouping';
 
 type SessionListRenderableCommitSettings = Readonly<{
     groupInactiveSessionsByProject?: boolean;
-    sessionListActiveGroupingV1?: 'project' | 'date';
-    sessionListInactiveGroupingV1?: 'project' | 'date';
+    sessionListActiveGroupingV1?: SessionListGroupingV1;
+    sessionListInactiveGroupingV1?: SessionListGroupingV1;
     sessionListSectionModeV1?: 'activity' | 'single';
     sessionListAttentionPromotionModeV1?: SessionListAttentionPromotionMode;
     sessionListWorkingPlacementModeV1?: SessionListWorkingPlacementMode;
@@ -92,14 +93,12 @@ function normalizeTargetServerId(serverId: string | null | undefined): string | 
 function resolveSessionListGroupingForSettings(
     section: 'active' | 'inactive',
     settings: SessionListRenderableCommitSettings,
-): 'project' | 'date' {
-    if (section === 'active') {
-        return settings.sessionListActiveGroupingV1 ?? 'project';
-    }
-    if (settings.sessionListInactiveGroupingV1) {
-        return settings.sessionListInactiveGroupingV1;
-    }
-    return settings.groupInactiveSessionsByProject === true ? 'project' : 'date';
+): SessionListGroupingV1 {
+    return resolveSessionListGroupingForSection(section, {
+        activeGrouping: settings.sessionListActiveGroupingV1,
+        inactiveGrouping: settings.sessionListInactiveGroupingV1,
+        groupInactiveSessionsByProject: settings.groupInactiveSessionsByProject,
+    });
 }
 
 function isSessionListDateGroupingForRenderable(

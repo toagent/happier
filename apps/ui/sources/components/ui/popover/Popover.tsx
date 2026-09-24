@@ -1414,7 +1414,12 @@ export function Popover(props: PopoverWithBackdrop | PopoverWithoutBackdrop) {
                     (shouldPortalWeb || shouldPortalNative) ? { opacity: portalOpacity } : null,
                     shouldPortal ? { zIndex: portalZ + 1 } : null,
                 ]}
-                pointerEvents={overlayPresence.exiting || ((shouldPortalWeb || shouldPortalNative) && portalOpacity === 0) ? 'none' : 'auto'}
+                // On native this frame is padded outward so the card's shadow is not clipped; 'box-none'
+                // keeps that invisible margin from swallowing taps, which fall through to the dismiss
+                // backdrop while the card itself stays fully interactive.
+                pointerEvents={overlayPresence.exiting || ((shouldPortalWeb || shouldPortalNative) && portalOpacity === 0)
+                    ? 'none'
+                    : (Platform.OS === 'web' ? 'auto' : 'box-none')}
                 onLayout={(e) => {
                     // Used to improve portal alignment (especially left/right centering)
                     const layout = e?.nativeEvent?.layout;

@@ -29,6 +29,7 @@ import {
     createWarmCacheSaveScheduler,
     WARM_CACHE_PROGRESS_SAVE_DEBOUNCE_MS,
 } from './warmCacheSaveScheduler';
+import { resolveSessionListGroupingForSection, type SessionListGroupingV1 } from '@/sync/domains/session/listing/sessionListGrouping';
 
 export type MachinesDomain = {
     machines: Record<string, Machine>;
@@ -56,12 +57,12 @@ type MachinesDomainDependencies = Readonly<{
 function resolveGroupingForSection(
     section: 'active' | 'inactive',
     settings: Settings,
-): 'project' | 'date' {
-    if (section === 'active') {
-        return settings.sessionListActiveGroupingV1 ?? 'project';
-    }
-    if (settings.sessionListInactiveGroupingV1) return settings.sessionListInactiveGroupingV1;
-    return settings.groupInactiveSessionsByProject ? 'project' : 'date';
+): SessionListGroupingV1 {
+    return resolveSessionListGroupingForSection(section, {
+        activeGrouping: settings.sessionListActiveGroupingV1,
+        inactiveGrouping: settings.sessionListInactiveGroupingV1,
+        groupInactiveSessionsByProject: settings.groupInactiveSessionsByProject,
+    });
 }
 
 function resolveMachineGroupId(

@@ -131,10 +131,15 @@ export default React.memo(function SessionSettingsScreen() {
             title: t('settingsFeatures.sessionListGrouping.dateTitle'),
             subtitle: t('settingsFeatures.sessionListGrouping.dateSubtitle'),
         },
+        {
+            id: 'flat',
+            title: t('settingsFeatures.sessionListGrouping.flatTitle'),
+            subtitle: t('settingsFeatures.sessionListGrouping.flatSubtitle'),
+        },
     ], []);
 
     const selectGrouping = React.useCallback((itemId: string, section: 'active' | 'inactive') => {
-        if (itemId !== 'project' && itemId !== 'date') return;
+        if (itemId !== 'project' && itemId !== 'date' && itemId !== 'flat') return;
         if (section === 'active') {
             setSessionListActiveGroupingV1(itemId);
             return;

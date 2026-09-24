@@ -168,15 +168,18 @@ function buildNewSessionLaunchScopeKey(params: Readonly<{
     selectedPath: string;
     useProfiles: boolean;
     selectedProfileId: string | null;
-    schedulingWorkerId: string | null;
+    schedulingTarget: SessionSchedulingTargetV1 | null | undefined;
 }>): string {
+    const worker = !params.schedulingTarget
+        ? null
+        : 'workerId' in params.schedulingTarget ? params.schedulingTarget.workerId : 'auto';
     return [
         `machine:${normalizeLaunchScopePart(params.machineId)}`,
         `server:${normalizeLaunchScopePart(params.serverId)}`,
         `path:${normalizeLaunchScopePart(params.selectedPath)}`,
         `profiles:${params.useProfiles ? 'on' : 'off'}`,
         `profile:${normalizeLaunchScopePart(params.selectedProfileId)}`,
-        `worker:${normalizeLaunchScopePart(params.schedulingWorkerId)}`,
+        `worker:${normalizeLaunchScopePart(worker)}`,
     ].join('|');
 }
 
@@ -405,7 +408,7 @@ export function useCreateNewSession(params: Readonly<{
                 selectedPath: trimmedEffectiveSelectedPath,
                 useProfiles: current.useProfiles,
                 selectedProfileId: current.useProfiles ? current.selectedProfileId : null,
-                schedulingWorkerId: current.schedulingTarget?.workerId ?? null,
+                schedulingTarget: current.schedulingTarget,
             });
             const resolveCurrentLaunchScopeKey = (): string => {
                 const latest = latestParamsRef.current;
@@ -435,7 +438,7 @@ export function useCreateNewSession(params: Readonly<{
                     selectedPath: latestEffectiveSelectedPath,
                     useProfiles: latest.useProfiles,
                     selectedProfileId: latest.useProfiles ? latest.selectedProfileId : null,
-                    schedulingWorkerId: latest.schedulingTarget?.workerId ?? null,
+                    schedulingTarget: latest.schedulingTarget,
                 });
             };
             const isLaunchScopeStillActive = (): boolean => resolveCurrentLaunchScopeKey() === launchScopeKey;

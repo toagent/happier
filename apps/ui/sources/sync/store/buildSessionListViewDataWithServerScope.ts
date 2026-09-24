@@ -1,3 +1,4 @@
+import type { SessionListGroupingV1 } from '@/sync/domains/session/listing/sessionListGrouping';
 import { getServerProfileById } from '../domains/server/serverProfiles';
 import { getActiveServerSnapshot } from '../domains/server/serverRuntime';
 import { buildSessionListViewData, type SessionListViewItem } from '../domains/session/listing/sessionListViewData';
@@ -106,8 +107,8 @@ export function buildSessionListViewDataWithServerScope(params: {
     machineRecords?: Record<string, Machine>;
     serverId?: string | null;
     groupInactiveSessionsByProject: boolean;
-    activeGroupingV1?: 'project' | 'date';
-    inactiveGroupingV1?: 'project' | 'date';
+    activeGroupingV1?: SessionListGroupingV1;
+    inactiveGroupingV1?: SessionListGroupingV1;
     sectionModeV1?: 'activity' | 'single';
     workspacePathDisplayModeV1?: WorkspacePathDisplayModeV1 | null;
     getProjectForSession?: (sessionId: string) => ProjectLookupResult;

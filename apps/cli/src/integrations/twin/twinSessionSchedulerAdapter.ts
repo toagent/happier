@@ -405,6 +405,11 @@ export function createTwinSessionSchedulerAdapter(params: Readonly<{
     controllerMachineId: params.controllerMachineId,
     store,
     resolveWorker: (workerId) => params.config.workers[workerId] ?? null,
+    // The default worker is the controller itself in production config, so it is tried first.
+    autoWorkerOrder: () => [
+      params.config.defaultWorkerId,
+      ...Object.keys(params.config.workers).filter((workerId) => workerId !== params.config.defaultWorkerId),
+    ],
     acquireLease: async (input) => await leaseClient.acquire(input),
     readLease: async (input) => await leaseClient.read(input),
     releaseLease: async (input) => await leaseClient.release(input),

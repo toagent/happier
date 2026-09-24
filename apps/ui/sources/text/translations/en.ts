@@ -4290,6 +4290,8 @@ export const en = {
             projectSubtitle: 'Group sessions by machine + path',
             dateTitle: 'Date',
             dateSubtitle: 'Group sessions by last activity date',
+            flatTitle: 'None',
+            flatSubtitle: 'Every session in one list, without group headers',
         },
         groupInactiveSessionsByProject: 'Group inactive sessions by project',
         groupInactiveSessionsByProjectSubtitle: 'Organize inactive chats under each project',
@@ -5958,6 +5960,9 @@ export const en = {
             updated: 'Sort by last activity',
         },
         attentionSectionTitle: 'Needs attention',
+        activeSectionTitle: 'Active',
+        inactiveSectionTitle: 'Inactive',
+        pinnedSectionTitle: 'Pinned',
         reminders: {
             due: 'Reminder due',
             title: 'Remind me',

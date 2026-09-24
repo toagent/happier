@@ -284,14 +284,15 @@ export const ACCOUNT_CORE_SETTING_DEFINITIONS = defineSettingDefinitions({
         analytics: { trackCurrentState: true, trackChanges: true, valueKind: 'boolean', privacy: 'safe', identityScope: 'person' },
     },
     sessionListActiveGroupingV1: {
-        schema: z.enum(['project', 'date']),
+        // `flat` needs no migration: older clients fall back to this field's default per field.
+        schema: z.enum(['project', 'date', 'flat']),
         default: 'project',
         description: 'How to group active sessions in the session list',
         storageScope: 'account',
         analytics: { trackCurrentState: true, trackChanges: true, valueKind: 'enum', privacy: 'safe', identityScope: 'person' },
     },
     sessionListInactiveGroupingV1: {
-        schema: z.enum(['project', 'date']),
+        schema: z.enum(['project', 'date', 'flat']),
         default: 'date',
         description: 'How to group inactive sessions in the session list',
         storageScope: 'account',

@@ -92,70 +92,7 @@ const GROUPING_OPTIONS = {
     inactiveGroupingV1: 'project',
 } as const;
 
-describe('buildSessionListViewData (machine-first grouping)', () => {
-    it('emits one machine header per machine above that machine project groups', () => {
-        const { sessions, machines } = buildThreeMachineFixture();
-
-        const list = buildSessionListViewData(sessions, machines, { ...GROUPING_OPTIONS });
-
-        const machineHeaders = list.filter((item): item is Extract<typeof item, { type: 'header' }> =>
-            item.type === 'header' && item.headerKind === 'machine',
-        );
-        expect(machineHeaders.map((item) => item.title)).toEqual(['Yong-2', 'YongMac']);
-    });
-
-    it('keeps every project group underneath its own machine header', () => {
-        const { sessions, machines } = buildThreeMachineFixture();
-
-        const list = buildSessionListViewData(sessions, machines, { ...GROUPING_OPTIONS });
-
-        // Walk the list and attribute each project header to the machine header preceding it.
-        const projectsByMachine = new Map<string, string[]>();
-        let currentMachine: string | null = null;
-        for (const item of list) {
-            if (item.type !== 'header') continue;
-            if (item.headerKind === 'machine') {
-                currentMachine = item.title;
-                projectsByMachine.set(item.title, []);
-                continue;
-            }
-            if (item.headerKind === 'project' && currentMachine) {
-                projectsByMachine.get(currentMachine)?.push(item.title);
-            }
-        }
-
-        expect(projectsByMachine.get('Yong-2')).toEqual(['happier', 'Home']);
-        expect(projectsByMachine.get('YongMac')).toEqual(['happier']);
-    });
-
-    it('carries machine online state on the machine header so the row can show reachability', () => {
-        const { sessions, machines } = buildThreeMachineFixture();
-
-        const list = buildSessionListViewData(sessions, machines, { ...GROUPING_OPTIONS });
-
-        const machineHeaders = list.filter((item): item is Extract<typeof item, { type: 'header' }> =>
-            item.type === 'header' && item.headerKind === 'machine',
-        );
-        expect(machineHeaders.map((item) => [item.title, item.machine?.active])).toEqual([
-            ['Yong-2', true],
-            ['YongMac', false],
-        ]);
-    });
-
-    it('drops the redundant machine subtitle from project headers now that the machine owns its own row', () => {
-        const { sessions, machines } = buildThreeMachineFixture();
-
-        const list = buildSessionListViewData(sessions, machines, { ...GROUPING_OPTIONS });
-
-        const projectHeaders = list.filter((item): item is Extract<typeof item, { type: 'header' }> =>
-            item.type === 'header' && item.headerKind === 'project',
-        );
-        expect(projectHeaders.length).toBeGreaterThan(0);
-        for (const header of projectHeaders) {
-            expect(header.subtitle).toBeUndefined();
-        }
-    });
-
+describe('buildSessionListViewData (home workspace title)', () => {
     it('gives the home directory a readable project title instead of a bare tilde', () => {
         const { sessions, machines } = buildThreeMachineFixture();
 

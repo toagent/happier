@@ -157,11 +157,10 @@ import {
 } from './selection/sessionListSelectionKeys';
 import { SessionListSelectionActionBarHost } from './selection/SessionListSelectionActionBar';
 import { Icon } from '@/components/ui/icons/Icon';
-import { StatusDot } from '@/components/ui/status/StatusDot';
-import { Text } from '@/components/ui/text/Text';
 import { readMachineControlTargetForSession } from '@/sync/ops/sessionMachineTarget';
 import { resolveSessionOrganizationMutationScope } from '@/sync/domains/session/organization/mutationScope';
 import { NewSessionDraftsSection } from './NewSessionDraftsSection';
+import { resolveSessionListHeaderTitle } from './sessionListHeaderTitle';
 
 const BULK_MUTATION_SCOPE_REQUIREMENT_BY_REASON = {
     'server-id': 'a server id',
@@ -179,14 +178,6 @@ const stylesheet = StyleSheet.create((theme) => ({
         justifyContent: 'center',
         alignItems: 'stretch',
         backgroundColor: theme.colors.background.canvas,
-    },
-    machineReachability: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-    },
-    machineReachabilityText: {
-        fontSize: 11,
     },
     contentContainer: {
         position: 'relative',
@@ -2081,20 +2072,10 @@ export const SessionsListContent = React.memo(function SessionsListContent(props
 
         const collapseKey = item.groupKey || `${item.headerKind ?? ''}:${item.serverId ?? 'local'}`;
         const isCollapsed = Boolean(collapsedKeys[collapseKey]);
-        const title =
-            item.headerKind === 'server'
-                ? t('sessionsList.serverHeader', { server: item.title })
-                : item.title;
+        const title = resolveSessionListHeaderTitle(item);
         const controlsAnchorKey = getSessionListHeaderControlsAnchorKey(item);
         const shouldRenderHeaderControls = isSessionListPrimaryHeaderKind(item.headerKind)
             && (headerControlsAnchorKey === null || controlsAnchorKey === headerControlsAnchorKey);
-        // A machine row is only useful if you can tell whether that machine can actually run work,
-        // so it carries its own reachability state instead of relying on a separate status screen.
-        const machineReachability = item.headerKind === 'machine' && item.machine
-            ? (item.machine.active
-                ? { color: theme.colors.status.connected, label: t('systemStatus.machine.online') }
-                : { color: theme.colors.status.disconnected, label: t('systemStatus.machine.offline') })
-            : null;
 
         return (
             <SessionListHeaderFrame
@@ -2108,22 +2089,7 @@ export const SessionsListContent = React.memo(function SessionsListContent(props
                     collapsed={isCollapsed}
                     onPress={() => handleToggleCollapse(collapseKey)}
                     headerTestId={headerTestId}
-                    rightElement={shouldRenderHeaderControls
-                        ? renderHeaderControls(controlsAnchorKey)
-                        : machineReachability
-                            ? (
-                                <View
-                                    style={styles.machineReachability}
-                                    testID={`session-list-machine-reachability:${item.groupKey ?? item.title}`}
-                                >
-                                    {/* The dot is decorative; the adjacent label already announces reachability. */}
-                                    <StatusDot color={machineReachability.color} size={6} />
-                                    <Text style={[styles.machineReachabilityText, { color: machineReachability.color }]}>
-                                        {machineReachability.label}
-                                    </Text>
-                                </View>
-                            )
-                            : null}
+                    rightElement={shouldRenderHeaderControls ? renderHeaderControls(controlsAnchorKey) : null}
                 />
             </SessionListHeaderFrame>
         );
@@ -2153,8 +2119,6 @@ export const SessionsListContent = React.memo(function SessionsListContent(props
         workspaceLabelsV1,
         workspaceFaviconsEnabled,
         workspaceMachineSubtitlesEnabled,
-        styles,
-        theme,
     ]);
 
     const pinnedKeysSignature = React.useMemo(

@@ -29,6 +29,7 @@ function makeSession(partial: Partial<Session> & Pick<Session, 'id'>): Session {
         latestUsage: partial.latestUsage ?? null,
         owner: partial.owner,
         accessLevel: partial.accessLevel,
+        ...(partial.meaningfulActivityAt !== undefined ? { meaningfulActivityAt: partial.meaningfulActivityAt } : {}),
     };
 }
 
@@ -135,14 +136,11 @@ describe('buildSessionListViewData', () => {
 
         expect(summary).toEqual([
             'header:active:Active',
-            'header:machine:m1',
             'header:project:repoA',
             'session:active:active:no-path',
             'header:inactive:Inactive',
-            'header:machine:m2',
             'header:project:repoB',
             'session:b1:inactive:no-path',
-            'header:machine:m1',
             'header:project:repoA',
             'session:a2:inactive:no-path',
             'session:a1:inactive:no-path',
@@ -194,12 +192,64 @@ describe('buildSessionListViewData', () => {
 
         expect(summary).toEqual([
             'header:sessions:Sessions',
-            'header:machine:m1',
             'header:project:repoA',
             'session:active:active:project:no-path',
             'session:inactive:inactive:project:no-path',
             'header:project:repoB',
             'session:other:inactive:project:no-path',
+        ]);
+    });
+
+    it('can render every task as one flat list without machine, project, or date headers', () => {
+        const machineA = makeMachine({ id: 'm1', metadata: { host: 'm1', platform: 'darwin', happyCliVersion: '0.0.0', happyHomeDir: '/h', homeDir: '/home/u' } });
+        const machineB = makeMachine({ id: 'm2', metadata: { host: 'm2', platform: 'darwin', happyCliVersion: '0.0.0', happyHomeDir: '/h', homeDir: '/home/u' } });
+        const dayMs = 24 * 60 * 60 * 1000;
+        const now = Date.now();
+
+        const sessions: Record<string, Session> = {
+            older: makeSession({
+                id: 'older',
+                active: false,
+                createdAt: now - 3 * dayMs,
+                updatedAt: now - 3 * dayMs,
+                meaningfulActivityAt: now - 3 * dayMs,
+                metadata: { machineId: 'm2', path: '/home/u/repoB', homeDir: '/home/u', host: 'm2', version: '0.0.0', flavor: 'claude' },
+            }),
+            running: makeSession({
+                id: 'running',
+                active: true,
+                createdAt: now - 2 * dayMs,
+                updatedAt: now,
+                meaningfulActivityAt: now,
+                metadata: { machineId: 'm1', path: '/home/u/repoA', homeDir: '/home/u', host: 'm1', version: '0.0.0', flavor: 'claude' },
+            }),
+            finished: makeSession({
+                id: 'finished',
+                active: false,
+                createdAt: now - dayMs,
+                updatedAt: now - dayMs,
+                meaningfulActivityAt: now - dayMs,
+                metadata: { machineId: 'm1', path: '/home/u/repoA', homeDir: '/home/u', host: 'm1', version: '0.0.0', flavor: 'claude' },
+            }),
+        };
+
+        const data = buildSessionListViewData(sessions, { m1: machineA, m2: machineB }, {
+            groupInactiveSessionsByProject: false,
+            activeGroupingV1: 'flat',
+            inactiveGroupingV1: 'date',
+            sectionModeV1: 'single',
+        });
+
+        const summary = data.map((item) => item.type === 'header'
+            ? `header:${item.headerKind ?? 'unknown'}`
+            : `session:${item.session.id}:${item.section ?? 'unknown'}`);
+
+        // The one list header stays: it carries search and view options, including the way back.
+        expect(summary).toEqual([
+            'header:sessions',
+            'session:running:active',
+            'session:finished:inactive',
+            'session:older:inactive',
         ]);
     });
 
@@ -300,7 +350,6 @@ describe('buildSessionListViewData', () => {
 
         expect(summary).toEqual([
             'header:active:Active:root:0',
-            'header:machine:m1:root:0',
             'header:project:repoA:root:0',
             'header:folder:Planning:folder-a:0',
             'session:assigned:folder:folder-a:1',
@@ -383,7 +432,6 @@ describe('buildSessionListViewData', () => {
             : `session:${item.session.id}:${item.folderId ?? 'root'}:${item.folderDepth ?? 0}`
         )).toEqual([
             'header:active:Active:root:0',
-            'header:machine:m1:root:0',
             'header:project:repoA:root:0',
             'header:folder:Parent:parent-folder:0',
             'header:folder:Child:child-folder:1',
@@ -584,13 +632,7 @@ describe('buildSessionListViewData', () => {
         );
 
         expect(projectHeaders).toHaveLength(1);
-
-        // The resolved machine is now its own header row instead of a project-header subtitle.
-        const machineHeaders = data.filter((item): item is Extract<typeof item, { type: 'header' }> =>
-            item.type === 'header' && item.headerKind === 'machine',
-        );
-        expect(machineHeaders).toHaveLength(1);
-        expect(machineHeaders[0]?.title).toBe('target.local');
+        expect(projectHeaders[0]?.subtitle).toBe('target.local');
     });
 
     it('does not treat /home/userfoo as inside /home/user', () => {
@@ -698,7 +740,6 @@ describe('buildSessionListViewData', () => {
 
             expect(summary).toEqual([
                 'header:active:Active',
-                'header:machine:m1',
                 'header:project:repoB',
                 'session:act2:active:no-path',
                 'header:project:repoA',
@@ -768,7 +809,6 @@ describe('buildSessionListViewData', () => {
                 'header:active:Active',
                 'header:shared:Shared sessions',
                 'session:sharedActive:active:shared',
-                'header:machine:m1',
                 'header:project:own-active',
                 'session:ownActive:active:project',
                 'header:inactive:Inactive',

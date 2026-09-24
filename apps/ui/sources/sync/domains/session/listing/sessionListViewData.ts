@@ -9,6 +9,7 @@ import {
 } from '@/sync/ops/sessionMachineTarget';
 import { isUserFacingSession } from './isUserFacingSession';
 import { deriveSessionListMeaningfulActivityAt } from './deriveSessionListActivity';
+import { resolveSessionListGroupingForSection, type SessionListGroupingV1 } from './sessionListGrouping';
 import { resolveSessionWorkspacePresentation, type WorkspacePathDisplayModeV1 } from './sessionWorkspacePresentation';
 import {
     buildSessionFolderAssignmentKey,
@@ -23,7 +24,7 @@ export type SessionListViewItem =
     | {
         type: 'header';
         title: string;
-        headerKind?: 'date' | 'server' | 'machine' | 'active' | 'inactive' | 'sessions' | 'project' | 'pinned' | 'attention' | 'working' | 'shared' | 'folder';
+        headerKind?: 'date' | 'server' | 'active' | 'inactive' | 'sessions' | 'project' | 'pinned' | 'attention' | 'working' | 'shared' | 'folder';
         groupKey?: string;
         workspaceKey?: string;
         workspace?: SessionFolderWorkspaceRefV1;
@@ -58,8 +59,8 @@ export type SessionListViewItem =
 
 export interface BuildSessionListViewDataOptions {
     groupInactiveSessionsByProject: boolean;
-    activeGroupingV1?: 'project' | 'date';
-    inactiveGroupingV1?: 'project' | 'date';
+    activeGroupingV1?: SessionListGroupingV1;
+    inactiveGroupingV1?: SessionListGroupingV1;
     sectionModeV1?: 'activity' | 'single';
     workspacePathDisplayModeV1?: WorkspacePathDisplayModeV1 | null;
     /**
@@ -101,12 +102,12 @@ function resolveSectionForSession(
 function resolveGroupingForSection(
     section: 'active' | 'inactive',
     options: BuildSessionListViewDataOptions,
-): 'project' | 'date' {
-    if (section === 'active') {
-        return options.activeGroupingV1 ?? 'project';
-    }
-    if (options.inactiveGroupingV1) return options.inactiveGroupingV1;
-    return options.groupInactiveSessionsByProject ? 'project' : 'date';
+): SessionListGroupingV1 {
+    return resolveSessionListGroupingForSection(section, {
+        activeGrouping: options.activeGroupingV1,
+        inactiveGrouping: options.inactiveGroupingV1,
+        groupInactiveSessionsByProject: options.groupInactiveSessionsByProject,
+    });
 }
 
 function normalizeServerIdForKey(serverId?: string): string {
@@ -252,26 +253,6 @@ function groupSessionsByProject(params: Readonly<{
     return sortedGroups;
 }
 
-/**
- * Machine-first ordering: every project group of one machine stays contiguous so a single machine
- * header can own them. Machines keep the recency order the caller already established (the machine
- * whose newest project group is newest comes first), which preserves "most recently used first"
- * while making the machine — not the repeatable project basename — the primary axis.
- */
-function orderProjectGroupsByMachine(groups: ReadonlyArray<ProjectGroup>): ProjectGroup[] {
-    const byMachine = new Map<string, ProjectGroup[]>();
-    for (const group of groups) {
-        const machineKey = group.workspaceMachineId ?? group.machine.id;
-        const bucket = byMachine.get(machineKey);
-        if (bucket) {
-            bucket.push(group);
-            continue;
-        }
-        byMachine.set(machineKey, [group]);
-    }
-    return Array.from(byMachine.values()).flat();
-}
-
 function pushProjectGroupsToList(params: Readonly<{
     listData: SessionListViewItem[];
     groups: ReadonlyArray<ProjectGroup>;
@@ -280,20 +261,7 @@ function pushProjectGroupsToList(params: Readonly<{
     serverScopeMeta: ServerScopeMeta;
     sessionFolders?: BuildSessionListViewDataOptions['sessionFolders'];
 }>): void {
-    let openMachineKey: string | null = null;
-    for (const group of orderProjectGroupsByMachine(params.groups)) {
-        const machineKey = group.workspaceMachineId ?? group.machine.id;
-        if (machineKey !== openMachineKey) {
-            openMachineKey = machineKey;
-            params.listData.push({
-                type: 'header',
-                title: getMachineDisplaySubtitle(group.machine, machineKey),
-                headerKind: 'machine',
-                groupKey: `server:${params.serverKey}:machine:${machineKey}`,
-                machine: group.machine,
-                ...params.serverScopeMeta,
-            });
-        }
+    for (const group of params.groups) {
         const hasGroupHeader = Boolean(group.displayPath);
         const groupKey = `server:${params.serverKey}:project:${group.workspaceHash}`;
         const projectHeader: Extract<SessionListViewItem, { type: 'header' }> = {
@@ -311,6 +279,7 @@ function pushProjectGroupsToList(params: Readonly<{
                 : null,
             seedSessionId: group.sessions[0]?.id ?? null,
             machine: group.machine,
+            subtitle: getMachineDisplaySubtitle(group.machine, group.workspaceMachineId ?? group.machine.id),
             ...params.serverScopeMeta,
         };
 
@@ -548,8 +517,26 @@ function pushDateGroupsToList(params: Readonly<{
     section: SessionListSectionScope;
     serverKey: string;
     serverScopeMeta: ServerScopeMeta;
+    /** `false` is the flat grouping: the same chronological rows, with no per-day headers. */
+    withDayHeaders: boolean;
 }>): void {
     if (params.sessions.length === 0) return;
+
+    if (!params.withDayHeaders) {
+        // One stable key rather than one per day, so a flat list does not re-key at midnight.
+        const groupKey = `server:${params.serverKey}:${params.section}:flat`;
+        for (const session of params.sessions.slice().sort(compareSessionsStableNewestUpdatedFirst)) {
+            params.listData.push({
+                type: 'session',
+                session,
+                section: resolveSectionForSession(params.section, session),
+                groupKey,
+                groupKind: 'date',
+                ...params.serverScopeMeta,
+            });
+        }
+        return;
+    }
 
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -640,7 +627,7 @@ function pushOwnedSessionsToList(params: Readonly<{
     listData: SessionListViewItem[];
     sessions: ReadonlyArray<SessionListRenderableSession>;
     section: SessionListSectionScope;
-    grouping: 'project' | 'date';
+    grouping: SessionListGroupingV1;
     machines: Record<string, MachineDisplayRenderable>;
     serverKey: string;
     serverScopeMeta: ServerScopeMeta;
@@ -673,6 +660,7 @@ function pushOwnedSessionsToList(params: Readonly<{
         section: params.section,
         serverKey: params.serverKey,
         serverScopeMeta: params.serverScopeMeta,
+        withDayHeaders: params.grouping === 'date',
     });
 }
 

@@ -194,6 +194,50 @@ describe('Popover rect-anchor (portal native)', () => {
 });
 
 describe('Popover above-anchor backdrop (portal native)', () => {
+    it('lets taps on the transparent shadow margin fall through to the dismiss backdrop', async () => {
+        const { Popover } = await import('./Popover');
+        const { OverlayPortalProvider, OverlayPortalHost } = await import('./OverlayPortal');
+        const { PopoverPortalTargetContextProvider } = await import('./PopoverPortalTarget');
+        const portalTarget = {
+            rootRef: { current: { measureInWindow: (cb: any) => cb(0, 0, 1000, 800), measure: (cb: any) => cb(0, 0, 1000, 800, 0, 0) } as any },
+            layout: { width: 1000, height: 800 },
+        } as const;
+
+        const screen = await renderScreen(
+            <PopoverPortalTargetContextProvider value={portalTarget}>
+                <OverlayPortalProvider>
+                    <Popover
+                        open
+                        anchor={{ kind: 'rect', rect: { left: 50, top: 100, height: 18 } }}
+                        portal={{ native: true }}
+                        placement="bottom"
+                        maxHeightCap={200}
+                        onRequestClose={() => {}}
+                    >
+                        {() => React.createElement('PopoverChild')}
+                    </Popover>
+                    <OverlayPortalHost />
+                </OverlayPortalProvider>
+            </PopoverPortalTargetContextProvider>,
+        );
+        await act(async () => {
+            await flushHookEffects({ cycles: 1, turns: 6 });
+        });
+
+        // The content frame is padded outward so the card's native shadow is not clipped. That margin is
+        // invisible, so it must not swallow the tap a user makes just beside the card.
+        const child = screen.root.findAll((node) => String(node.type) === 'PopoverChild')[0];
+        let frame = child?.parent ?? null;
+        while (frame && !(readPadding(frame) >= 16)) frame = frame.parent;
+        expect(frame, 'expected the shadow-padded content frame').toBeTruthy();
+        expect(frame?.props.pointerEvents).toBe('box-none');
+
+        function readPadding(node: { props: { style?: unknown } }): number {
+            const value = flattenStyle(node.props.style).paddingTop;
+            return typeof value === 'number' ? value : 0;
+        }
+    });
+
     it('sizes the dismiss backdrop in portal space so the band above the anchor is fully covered', async () => {
         const { Popover } = await import('./Popover');
         const { OverlayPortalProvider, OverlayPortalHost } = await import('./OverlayPortal');

@@ -7,17 +7,16 @@ type HeaderItem = Extract<SessionListViewItem, { type: 'header' }>;
 /**
  * Depth of a group header inside a section.
  *
- * Group headers nest — a machine owns projects, a project owns folders — so a surviving row has to
+ * Group headers nest — a project owns folders, folders own subfolders — so a surviving row has to
  * re-emit every ancestor, not just the innermost one. Keeping a single pending header silently
- * dropped the machine row above each project.
+ * dropped the project row above a folder.
  */
 function resolveGroupHeaderDepth(item: HeaderItem): number {
-    if (item.headerKind === 'machine') return 0;
     if (item.headerKind === 'folder') {
         const depth = typeof item.depth === 'number' && Number.isFinite(item.depth) ? item.depth : 0;
-        return 2 + Math.max(0, depth);
+        return 1 + Math.max(0, depth);
     }
-    return 1;
+    return 0;
 }
 
 export function filterSessionListViewDataByStorageKind(

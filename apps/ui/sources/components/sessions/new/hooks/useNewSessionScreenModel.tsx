@@ -74,6 +74,7 @@ import { useNewSessionServerTargetState } from '@/components/sessions/new/hooks/
 import { useNewSessionActiveServerSource } from '@/components/sessions/new/hooks/serverTarget/useNewSessionActiveServerSource';
 import { useNewSessionBackendTargetState } from '@/components/sessions/new/hooks/screenModel/useNewSessionBackendTargetState';
 import { useNewSessionMachinePathState } from '@/components/sessions/new/hooks/screenModel/useNewSessionMachinePathState';
+import { resolveAutoDispatchController, resolveNewSessionSchedulingTarget } from '@/components/sessions/new/hooks/screenModel/newSessionAutoDispatch';
 import { useNewSessionPreflightModelsState } from '@/components/sessions/new/hooks/screenModel/useNewSessionPreflightModelsState';
 import { useNewSessionPreflightConfigOptionsState } from '@/components/sessions/new/hooks/screenModel/useNewSessionPreflightConfigOptionsState';
 import { useNewSessionPreflightSessionModesState } from '@/components/sessions/new/hooks/screenModel/useNewSessionPreflightSessionModesState';
@@ -479,6 +480,13 @@ export function useNewSessionScreenModel(params?: Readonly<{ draftId?: string }>
     }, [allProfiles, settings.profileEnabledById]);
     const selectableProfileMap = useProfileMap(selectableProfiles);
     const machines = useLaunchSelectionMachines();
+    // With an auto-dispatching controller online, a task is launched through it and the controller
+    // picks the executing machine, so it is the only launch target and there is nothing to choose.
+    const autoDispatchController = React.useMemo(() => resolveAutoDispatchController(machines), [machines]);
+    const launchTargetMachines = React.useMemo(
+        () => (autoDispatchController ? [autoDispatchController] : machines),
+        [autoDispatchController, machines],
+    );
     const sessionRecentPathEntries = useSessionRecentPathEntries();
     const hasExplicitSeededProfileSelection = React.useMemo(() => {
         if (!useProfiles) {
@@ -694,7 +702,7 @@ export function useNewSessionScreenModel(params?: Readonly<{ draftId?: string }>
         getRequestedPath,
         getBestPathForMachine,
     } = useNewSessionMachinePathState({
-        machines,
+        machines: launchTargetMachines,
         recentMachinePaths,
         sessions: sessionRecentPathEntries,
         machineIdParam: effectiveMachineIdParam,
@@ -760,9 +768,10 @@ export function useNewSessionScreenModel(params?: Readonly<{ draftId?: string }>
         if (!selectedMachineId || !schedulingCapability || !schedulingCapability.workers.some((worker) => worker.workerId === workerId)) return;
         setSchedulingSelection({ machineId: selectedMachineId, workerId });
     }, [schedulingCapability, selectedMachineId]);
-    const schedulingTarget = React.useMemo<SessionSchedulingTargetV1 | null>(() => (
-        selectedSchedulingWorkerId ? { v: 1, workerId: selectedSchedulingWorkerId } : null
-    ), [selectedSchedulingWorkerId]);
+    const schedulingTarget = React.useMemo<SessionSchedulingTargetV1 | null>(() => resolveNewSessionSchedulingTarget({
+        machine: selectedMachine,
+        selectedWorkerId: selectedSchedulingWorkerId,
+    }), [selectedMachine, selectedSchedulingWorkerId]);
     // Routed through the registry like every other composer host: the eligible-kind
     // subset is the only thing that decides which triggers resolve here (INV-1),
     // and a hand-rolled `startsWith('/')` would be a second decision-maker.
@@ -1290,7 +1299,7 @@ export function useNewSessionScreenModel(params?: Readonly<{ draftId?: string }>
         useMachinePickerSearch,
     ]);
 
-    const machinePopover = React.useMemo<AgentInputContentPopoverConfig>(() => ({
+    const machinePopoverConfig = React.useMemo<AgentInputContentPopoverConfig>(() => ({
         renderContent: ({ requestClose, maxHeight }) => (
             <NewSessionMachineSelectionContent
                 groups={machinePopoverGroups}
@@ -1327,6 +1336,7 @@ export function useNewSessionScreenModel(params?: Readonly<{ draftId?: string }>
         setSelectedMachineId,
         setSelectedPath,
     ]);
+    const machinePopover = autoDispatchController ? undefined : machinePopoverConfig;
 
     const resolvePreferredCompatibleProfileBackendEntry = React.useCallback((profile: AIBackendProfile) => {
         const compatibleBackendEntries = getCompatibleProfileBackendEntries(profile);
@@ -1774,10 +1784,10 @@ export function useNewSessionScreenModel(params?: Readonly<{ draftId?: string }>
             draft: launchIntentWithoutText,
             machineId: selectedMachineId,
             targetServerId: targetServerId ?? null,
-            schedulingWorkerId: selectedSchedulingWorkerId,
+            schedulingTarget,
             sourceContext: sourceContextState.sourceContext,
         });
-    }, [currentAuthoringDraft, selectedMachineId, selectedSchedulingWorkerId, sourceContextState.sourceContext, targetServerId]);
+    }, [currentAuthoringDraft, schedulingTarget, selectedMachineId, sourceContextState.sourceContext, targetServerId]);
     const previousLaunchIntentSignatureRef = React.useRef(launchIntentSignature);
     React.useEffect(() => {
         if (previousLaunchIntentSignatureRef.current === launchIntentSignature) return;
@@ -1861,7 +1871,8 @@ export function useNewSessionScreenModel(params?: Readonly<{ draftId?: string }>
         theme,
         selectedMachine,
         selectedMachineSpawnReadiness,
-        schedulingWorkers: schedulingCapability?.workers ?? null,
+        // The controller picks the worker itself under auto dispatch, so there is no worker to choose.
+        schedulingWorkers: autoDispatchController ? null : schedulingCapability?.workers ?? null,
         selectedSchedulingWorkerId,
         onSchedulingWorkerChange: setSelectedSchedulingWorkerId,
         automationFeatureEnabled,

@@ -59,6 +59,26 @@ function scheduledOptions(overrides: Partial<SpawnSessionOptions> = {}): SpawnSe
   };
 }
 
+const WORKER_MACHINES: Record<string, string> = {
+  'twin-dev': 'target-machine',
+  'twin-control': 'controller-machine',
+  'mac-mini': 'mini-machine',
+};
+
+function occupyWorker(store: MemoryAttemptStore, workerId: string, spawnNonce: string, phase: TwinSessionSchedulerAttempt['phase'] = 'running'): void {
+  store.attempts.set(spawnNonce, {
+    v: 1,
+    spawnNonce,
+    requestDigest: `digest-${spawnNonce}`,
+    workerId,
+    machineId: WORKER_MACHINES[workerId]!,
+    leaseId: `lease-${spawnNonce}`,
+    ownerToken: 'owner-token',
+    phase,
+    options: scheduledOptions({ spawnNonce, schedulingTarget: { v: 1, workerId } }),
+  });
+}
+
 function createHarness(params: Readonly<{
   store?: MemoryAttemptStore;
   leaseState?: 'queued' | 'acquired';
@@ -117,9 +137,8 @@ function createHarness(params: Readonly<{
     scheduler: createTwinSessionScheduler({
       controllerMachineId: 'controller-machine',
       store,
-      resolveWorker: (workerId) => workerId === 'twin-dev'
-        ? { machineId: 'target-machine' }
-        : null,
+      resolveWorker: (workerId) => WORKER_MACHINES[workerId] ? { machineId: WORKER_MACHINES[workerId]! } : null,
+      autoWorkerOrder: () => ['twin-control', 'twin-dev', 'mac-mini'],
       acquireLease,
       readLease,
       releaseLease,
@@ -141,6 +160,71 @@ function createHarness(params: Readonly<{
 }
 
 describe('twin session scheduler', () => {
+  describe('automatic worker selection', () => {
+    const autoOptions = (spawnNonce: string) => scheduledOptions({ spawnNonce, schedulingTarget: { v: 1, auto: true } });
+
+    it('runs on the controller while it has no scheduled task, dispatching a concrete worker target', async () => {
+      const harness = createHarness();
+
+      await harness.scheduler.spawn(autoOptions('auto-1'));
+
+      expect(harness.store.attempts.get('auto-1')).toMatchObject({ workerId: 'twin-control', machineId: 'controller-machine' });
+      expect(harness.acquireLease).toHaveBeenCalledWith(expect.objectContaining({ workerId: 'twin-control' }));
+      // Workers and the persisted session metadata only ever see the worker actually chosen.
+      expect(harness.spawnTarget).toHaveBeenCalledWith(expect.objectContaining({
+        schedulingTarget: { v: 1, workerId: 'twin-control' },
+      }));
+    });
+
+    it('overflows to the next idle worker while the controller is busy', async () => {
+      const store = new MemoryAttemptStore();
+      occupyWorker(store, 'twin-control', 'busy-control');
+      const harness = createHarness({ store });
+
+      await harness.scheduler.spawn(autoOptions('auto-2'));
+      expect(harness.store.attempts.get('auto-2')?.workerId).toBe('twin-dev');
+
+      await harness.scheduler.spawn(autoOptions('auto-3'));
+      expect(harness.store.attempts.get('auto-3')?.workerId).toBe('mac-mini');
+    });
+
+    it('queues on the least busy worker, preferring the controller, once every worker is busy', async () => {
+      const store = new MemoryAttemptStore();
+      occupyWorker(store, 'twin-control', 'c1');
+      occupyWorker(store, 'twin-dev', 'd1');
+      occupyWorker(store, 'twin-dev', 'd2', 'queued');
+      occupyWorker(store, 'mac-mini', 'm1', 'dispatching');
+      const harness = createHarness({ store });
+
+      await harness.scheduler.spawn(autoOptions('auto-4'));
+
+      expect(harness.store.attempts.get('auto-4')?.workerId).toBe('twin-control');
+    });
+
+    it('does not count released or failed attempts as load', async () => {
+      const store = new MemoryAttemptStore();
+      occupyWorker(store, 'twin-control', 'old-released', 'released');
+      occupyWorker(store, 'twin-control', 'old-failed', 'failed');
+      const harness = createHarness({ store });
+
+      await harness.scheduler.spawn(autoOptions('auto-5'));
+
+      expect(harness.store.attempts.get('auto-5')?.workerId).toBe('twin-control');
+    });
+
+    it('keeps the first choice when the same spawn nonce is retried after load changed', async () => {
+      const harness = createHarness();
+      await harness.scheduler.spawn(autoOptions('auto-6'));
+      occupyWorker(harness.store, 'twin-control', 'later-busy');
+
+      const retried = await harness.scheduler.spawn(autoOptions('auto-6'));
+
+      expect(retried).toMatchObject({ type: 'success', sessionId: 'session-1' });
+      expect(harness.store.attempts.get('auto-6')?.workerId).toBe('twin-control');
+      expect(harness.spawnTarget).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('prepares one isolated workspace before spawning and reuses it for the same attempt', async () => {
     const harness = createHarness();
 

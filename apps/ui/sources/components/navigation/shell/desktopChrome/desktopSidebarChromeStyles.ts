@@ -182,6 +182,13 @@ export const desktopSidebarChromeStyles = StyleSheet.create((theme) => ({
         justifyContent: 'flex-end',
         marginLeft: 0,
     },
+    nativeTouchStatusSlot: {
+        flexShrink: 1,
+        minWidth: 0,
+        marginRight: 'auto',
+        alignSelf: 'stretch',
+        justifyContent: 'center',
+    },
     nativeTouchIconButton: {
         width: DESKTOP_SIDEBAR_CHROME_NATIVE_TOUCH_TARGET_SIZE_PX,
         height: DESKTOP_SIDEBAR_CHROME_NATIVE_TOUCH_TARGET_SIZE_PX,

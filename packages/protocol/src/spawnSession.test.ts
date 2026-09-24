@@ -5,6 +5,7 @@ import {
   SPAWN_SESSION_ERROR_DETAIL_KINDS,
   PendingFirstInputV1Schema,
   ScheduledWorkspaceV1Schema,
+  SessionSchedulingTargetV1Schema,
   SpawnSessionExecutionAuthorizationSchema,
   TwinSessionSchedulingV1Schema,
   isConnectedServiceUxDiagnosticSpawnErrorDetail,
@@ -35,6 +36,14 @@ describe('twin-session scheduling contracts', () => {
       ...capability,
       defaultWorkerId: 'mac-mini',
     }).success).toBe(false);
+  });
+
+  it('accepts an automatic scheduling target alongside an explicit worker', () => {
+    expect(SessionSchedulingTargetV1Schema.parse({ v: 1, auto: true })).toEqual({ v: 1, auto: true });
+    expect(SessionSchedulingTargetV1Schema.parse({ v: 1, workerId: 'twin-dev' })).toEqual({ v: 1, workerId: 'twin-dev' });
+    expect(SessionSchedulingTargetV1Schema.safeParse({ v: 1, auto: true, workerId: 'twin-dev' }).success).toBe(false);
+    expect(SessionSchedulingTargetV1Schema.safeParse({ v: 1, auto: false }).success).toBe(false);
+    expect(SessionSchedulingTargetV1Schema.safeParse({ v: 1, workerId: ' ' }).success).toBe(false);
   });
 
   it('validates the execution-to-review workspace projection', () => {

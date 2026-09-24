@@ -36,6 +36,9 @@ import path from 'node:path';
 /** Installed source that owns the report/remove ordering. */
 export const REANIMATED_PROXY_SOURCE = 'Common/cpp/reanimated/NativeModules/ReanimatedModuleProxy.cpp';
 
+/** Installed Android source whose UI-thread event dispatch may flush Fabric mounts. */
+export const REANIMATED_NODES_MANAGER_SOURCE = 'android/src/main/java/com/swmansion/reanimated/NodesManager.java';
+
 /** Installed source that owns the `timestampMap_` write the flag gates. */
 export const REANIMATED_REGISTRY_SOURCE = 'Common/cpp/reanimated/Fabric/updates/AnimatedPropsRegistry.cpp';
 
@@ -123,6 +126,22 @@ export const REANIMATED_PATCH_CHECKS = Object.freeze([
         removeWhen: 'upstream removes the flag and ships settled updates unconditionally, or this '
             + 'repository deliberately turns the mechanism off (in which case delete the patch too)',
     },
+    {
+        id: 'event-dispatch-flush-requires-handler',
+        file: REANIMATED_NODES_MANAGER_SOURCE,
+        defect: 'NodesManager.onEventDispatch ran handleEvent + performOperationsRespectingDrawPass on '
+            + 'the UI thread for EVERY Fabric event, so an event with no worklet handler still flushed '
+            + 'pending Fabric mounts synchronously from inside whatever view callback emitted it. '
+            + "ReactEditText.onAttachedToWindow emits a content-size event while react-native-screens' "
+            + 'commitNowAllowingStateLoss is attaching the new-session screen; the flushed batch '
+            + 'removed views from a parent mid-dispatchAttachedToWindow, the parent read a null '
+            + 'child, and the React host was destroyed — a blank app that needed a force stop. '
+            + 'Device-proven on the Y700: ~1 in 4 opens of the new-session screen, with a removal '
+            + 'listener capturing the synchronous flush stack inside the attach traversal.',
+        evidence: '.project/reviews/2026-09-24-reanimated-event-flush-during-attach/',
+        removeWhen: 'upstream only flushes operations for handled events (its handleRawEvent TODO), or '
+            + 'defers event-driven flushes off the calling view callback',
+    },
 ]);
 
 /**
@@ -182,7 +201,44 @@ export function verifyVendoredReanimatedPatchMarkers(params) {
 
     checkStaticFlag({ packageDir, appPackageJsonPath: params.appPackageJsonPath, fail });
 
+    const nodesManagerSource = readInstalledSource(packageDir, REANIMATED_NODES_MANAGER_SOURCE);
+    if (nodesManagerSource === null) {
+        fail('event-dispatch-flush-requires-handler', `${REANIMATED_NODES_MANAGER_SOURCE} is not readable, so the fix could not be certified`);
+    } else {
+        checkEventDispatchHandlerGate(nodesManagerSource, fail);
+    }
+
     return failures.length > 0 ? { status: 'failed', failures } : { status: 'ok', failures: [] };
+}
+
+const EVENT_DISPATCH_SIGNATURE = 'public void onEventDispatch(';
+const UI_THREAD_BRANCH = 'if (UiThreadUtil.isOnUiThread()) {';
+
+/**
+ * The handler check must sit inside the UI-thread branch and before both the dispatch and the flush.
+ * Upstream's off-UI-thread branch already calls isAnyHandlerWaitingForEvent, so finding the call
+ * anywhere in the method (or file) would certify the unpatched code.
+ */
+function checkEventDispatchHandlerGate(source, fail) {
+    const id = 'event-dispatch-flush-requires-handler';
+    const body = extractFunctionBody(source, EVENT_DISPATCH_SIGNATURE);
+    if (body === null) {
+        fail(id, `${EVENT_DISPATCH_SIGNATURE}) not found; upstream renamed or removed the method that owns the fix`);
+        return;
+    }
+    const branchStart = body.indexOf(UI_THREAD_BRANCH);
+    const branchEnd = branchStart < 0 ? -1 : body.indexOf('} else {', branchStart);
+    if (branchStart < 0 || branchEnd < 0) {
+        fail(id, 'the UI-thread branch of onEventDispatch was not found; re-derive where the synchronous flush happens');
+        return;
+    }
+    const branch = body.slice(branchStart, branchEnd);
+    const gate = branch.indexOf('isAnyHandlerWaitingForEvent(');
+    const dispatch = branch.indexOf('handleEvent(event)');
+    const flush = branch.search(/performOperations\w*\(/);
+    if (gate < 0 || (dispatch >= 0 && gate > dispatch) || (flush >= 0 && gate > flush)) {
+        fail(id, 'the UI-thread branch dispatches and flushes without first checking for a waiting handler');
+    }
 }
 
 /** @param {ReturnType<typeof verifyVendoredReanimatedPatchMarkers>} result */

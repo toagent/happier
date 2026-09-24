@@ -8443,7 +8443,7 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
                     return {
                       type: 'error',
                       errorCode: SPAWN_SESSION_ERROR_CODES.SCHEDULING_TARGET_UNAVAILABLE,
-                      errorMessage: `The daemon scheduling adapter is unavailable for worker ${options.schedulingTarget.workerId}`,
+                      errorMessage: `The daemon scheduling adapter is unavailable for worker ${'workerId' in options.schedulingTarget ? options.schedulingTarget.workerId : 'auto'}`,
                     };
                   }
                   return await twinSessionScheduler.spawn(options, hooks);

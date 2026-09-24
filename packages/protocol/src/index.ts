@@ -1355,6 +1355,7 @@ export {
   type ScheduledWorkspaceV1,
   type SessionSchedulingLeaseV1,
   type SessionSchedulingTargetV1,
+  type SessionSchedulingWorkerTargetV1,
   type TwinSessionSchedulingV1,
   type ConnectedServiceResumeUnreachableSpawnErrorDetail,
   type ConnectedServiceUxDiagnosticSpawnErrorDetail,

@@ -142,11 +142,25 @@ export const DesktopSidebarChrome = React.memo((props: DesktopSidebarChromeProps
         );
     }, [styles.topIconButton, styles.topSettingsIconButton, theme.colors.chrome.header.foreground]);
 
+    // On native the server switcher lives at the leading edge of the action row: under the title it
+    // could only be a 16px line, while this row is already a full touch target tall with free space.
+    const statusControl = (
+        <ConnectionStatusControl
+            variant="sidebar"
+            alignSelf="stretch"
+            minTouchHeight={isNativeTouchSidebar ? DESKTOP_SIDEBAR_CHROME_NATIVE_TOUCH_TARGET_SIZE_PX : undefined}
+        />
+    );
     const actionsRow = (
         <View
             testID="desktop-sidebar-chrome-actions-row"
             style={[styles.rightContainer, isNativeTouchSidebar ? styles.nativeTouchActionsRow : null]}
         >
+            {isNativeTouchSidebar ? (
+                <View style={styles.nativeTouchStatusSlot}>
+                    {statusControl}
+                </View>
+            ) : null}
             <ItemRowActions
                 title={t('common.moreActions')}
                 actions={contentHeaderActions}
@@ -331,12 +345,11 @@ export const DesktopSidebarChrome = React.memo((props: DesktopSidebarChromeProps
                                 </View>
                             ) : null}
                         </View>
-                        <View style={styles.statusControlWrapper}>
-                            <ConnectionStatusControl
-                                variant="sidebar"
-                                alignSelf="stretch"
-                            />
-                        </View>
+                        {isNativeTouchSidebar ? null : (
+                            <View style={styles.statusControlWrapper}>
+                                {statusControl}
+                            </View>
+                        )}
                     </View>
                 </View>
 

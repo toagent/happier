@@ -48,10 +48,14 @@ describe('initialMachineMetadata', () => {
     );
 
     expect(published.twinSessionSchedulingV1).toEqual(capability);
-    expect(refreshMachineMetadataForCurrentDaemon(
+    // Clients may send an `auto` scheduling target only to a controller that says it can pick a worker.
+    expect(published.twinSessionAutoDispatchV1).toBe(true);
+    const withdrawn = refreshMachineMetadataForCurrentDaemon(
       published,
       published.host,
       null,
-    )).not.toHaveProperty('twinSessionSchedulingV1');
+    );
+    expect(withdrawn).not.toHaveProperty('twinSessionSchedulingV1');
+    expect(withdrawn).not.toHaveProperty('twinSessionAutoDispatchV1');
   });
 });

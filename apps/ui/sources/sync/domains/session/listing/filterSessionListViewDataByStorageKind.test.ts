@@ -59,13 +59,13 @@ describe('filterSessionListViewDataByStorageKind', () => {
         ]);
     });
 
-    it('keeps the machine header above the project header that still owns a visible row', () => {
-        // Machine and project are two distinct grouping levels; keeping only the innermost one
-        // silently drops the machine row the sidebar needs to say where the work runs.
+    it('keeps the project header above the folder header that still owns a visible row', () => {
+        // Project and folder are two distinct grouping levels; keeping only the innermost one
+        // silently drops the project row the folder belongs to.
         const source: SessionListViewItem[] = [
             { type: 'header', title: 'Active', headerKind: 'active', groupKey: 'active', serverId: 'server-a' },
-            { type: 'header', title: 'Yong-2', headerKind: 'machine', groupKey: 'server:server-a:machine:m1', serverId: 'server-a' },
             { type: 'header', title: 'happier', headerKind: 'project', groupKey: 'project-a', serverId: 'server-a' },
+            { type: 'header', title: 'docs', headerKind: 'folder', groupKey: 'folder-a', depth: 0, serverId: 'server-a' },
             makeSession('persisted-1', false),
         ];
 
@@ -73,23 +73,23 @@ describe('filterSessionListViewDataByStorageKind', () => {
 
         expect(result.map((item) => (item.type === 'header' ? `h:${item.title}` : `s:${item.session.id}`))).toEqual([
             'h:Active',
-            'h:Yong-2',
             'h:happier',
+            'h:docs',
             's:persisted-1',
         ]);
     });
 
-    it('emits each surviving ancestor once across sibling projects and machines', () => {
+    it('emits each surviving ancestor once across sibling folders and projects', () => {
         const source: SessionListViewItem[] = [
             { type: 'header', title: 'Active', headerKind: 'active', groupKey: 'active', serverId: 'server-a' },
-            { type: 'header', title: 'Yong-2', headerKind: 'machine', groupKey: 'server:server-a:machine:m1', serverId: 'server-a' },
-            { type: 'header', title: 'happier', headerKind: 'project', groupKey: 'project-a1', serverId: 'server-a' },
+            { type: 'header', title: 'happier', headerKind: 'project', groupKey: 'project-a', serverId: 'server-a' },
+            { type: 'header', title: 'docs', headerKind: 'folder', groupKey: 'folder-a1', depth: 0, serverId: 'server-a' },
             makeSession('a1', false),
             makeSession('a2', false),
-            { type: 'header', title: 'Home', headerKind: 'project', groupKey: 'project-a2', serverId: 'server-a' },
+            { type: 'header', title: 'ui', headerKind: 'folder', groupKey: 'folder-a2', depth: 0, serverId: 'server-a' },
             makeSession('a3', false),
-            { type: 'header', title: 'YongMac', headerKind: 'machine', groupKey: 'server:server-a:machine:m2', serverId: 'server-a' },
-            { type: 'header', title: 'happier', headerKind: 'project', groupKey: 'project-b1', serverId: 'server-a' },
+            { type: 'header', title: 'wetamp', headerKind: 'project', groupKey: 'project-b', serverId: 'server-a' },
+            { type: 'header', title: 'docs', headerKind: 'folder', groupKey: 'folder-b1', depth: 0, serverId: 'server-a' },
             makeSession('b1', false),
         ];
 
@@ -97,26 +97,26 @@ describe('filterSessionListViewDataByStorageKind', () => {
 
         expect(result.map((item) => (item.type === 'header' ? `h:${item.title}` : `s:${item.session.id}`))).toEqual([
             'h:Active',
-            'h:Yong-2',
             'h:happier',
+            'h:docs',
             's:a1',
             's:a2',
-            'h:Home',
+            'h:ui',
             's:a3',
-            'h:YongMac',
-            'h:happier',
+            'h:wetamp',
+            'h:docs',
             's:b1',
         ]);
     });
 
-    it('drops a machine whose every project loses its rows to the storage filter', () => {
+    it('drops a project whose every folder loses its rows to the storage filter', () => {
         const source: SessionListViewItem[] = [
             { type: 'header', title: 'Active', headerKind: 'active', groupKey: 'active', serverId: 'server-a' },
-            { type: 'header', title: 'Yong-2', headerKind: 'machine', groupKey: 'server:server-a:machine:m1', serverId: 'server-a' },
-            { type: 'header', title: 'happier', headerKind: 'project', groupKey: 'project-a1', serverId: 'server-a' },
+            { type: 'header', title: 'happier', headerKind: 'project', groupKey: 'project-a', serverId: 'server-a' },
+            { type: 'header', title: 'docs', headerKind: 'folder', groupKey: 'folder-a1', depth: 0, serverId: 'server-a' },
             makeSession('direct-only', true),
-            { type: 'header', title: 'YongMac', headerKind: 'machine', groupKey: 'server:server-a:machine:m2', serverId: 'server-a' },
-            { type: 'header', title: 'happier', headerKind: 'project', groupKey: 'project-b1', serverId: 'server-a' },
+            { type: 'header', title: 'wetamp', headerKind: 'project', groupKey: 'project-b', serverId: 'server-a' },
+            { type: 'header', title: 'docs', headerKind: 'folder', groupKey: 'folder-b1', depth: 0, serverId: 'server-a' },
             makeSession('persisted-1', false),
         ];
 
@@ -124,8 +124,8 @@ describe('filterSessionListViewDataByStorageKind', () => {
 
         expect(result.map((item) => (item.type === 'header' ? `h:${item.title}` : `s:${item.session.id}`))).toEqual([
             'h:Active',
-            'h:YongMac',
-            'h:happier',
+            'h:wetamp',
+            'h:docs',
             's:persisted-1',
         ]);
     });

@@ -39,3 +39,25 @@ index 313c66d..dd6e17e 100644
  }
  
  bool ReanimatedModuleProxy::handleEvent(
+diff --git a/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.java b/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.java
+index 9346941..4f125b4 100644
+--- a/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.java
++++ b/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.java
+@@ -213,6 +213,17 @@ public class NodesManager implements EventDispatcherListener {
+       // Events can be dispatched from any thread so we have to make sure handleEvent is run from
+       // the UI thread.
+       if (UiThreadUtil.isOnUiThread()) {
++        // Only an event with a waiting worklet handler has work to do here; for any other event
++        // handleEvent is a no-op, and flushing anyway ran pending Fabric mounts synchronously
++        // from inside unrelated view callbacks. When that callback is ReactEditText's
++        // onAttachedToWindow while react-native-screens attaches a screen, a mount that removes
++        // views mid-attach corrupts the parent's attach loop: NPE, React host destroyed, blank
++        // screen. Pending operations still flush on the next animation frame. This is the same
++        // handler check the off-UI-thread branch below already uses.
++        String eventName = mCustomEventNamesResolver.resolveCustomEventName(event.getEventName());
++        if (!mNativeProxy.isAnyHandlerWaitingForEvent(eventName, event.getViewTag())) {
++          return;
++        }
+         handleEvent(event);
+         performOperationsRespectingDrawPass();
+       } else {

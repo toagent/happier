@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
     REANIMATED_PATCH_CHECKS,
+    REANIMATED_NODES_MANAGER_SOURCE,
     REANIMATED_PROXY_SOURCE,
     REANIMATED_REGISTRY_SOURCE,
     REANIMATED_STATIC_FLAGS_FILE,
@@ -67,6 +68,34 @@ void AnimatedPropsRegistry::update(jsi::Runtime &rt, const jsi::Value &operation
 }
 `;
 
+const CORRECT_NODES_MANAGER_BODY = `
+  @Override
+  public void onEventDispatch(Event<?> event) {
+    try {
+      if (mNativeProxy == null) {
+        return;
+      }
+      if (UiThreadUtil.isOnUiThread()) {
+        String eventName = mCustomEventNamesResolver.resolveCustomEventName(event.getEventName());
+        if (!mNativeProxy.isAnyHandlerWaitingForEvent(eventName, event.getViewTag())) {
+          return;
+        }
+        handleEvent(event);
+        performOperationsRespectingDrawPass();
+      } else {
+        String eventName = mCustomEventNamesResolver.resolveCustomEventName(event.getEventName());
+        int viewTag = event.getViewTag();
+        boolean shouldSaveEvent = mNativeProxy.isAnyHandlerWaitingForEvent(eventName, viewTag);
+        if (shouldSaveEvent) {
+          mEventQueue.offer(new CopiedEvent(event));
+        }
+        startUpdatingOnAnimationFrame();
+      }
+    } finally {
+    }
+  }
+`;
+
 /**
  * A stand-in installed package. Every source starts from bytes that mirror the real patched tree, so
  * a test that mutates one of them is measuring the gate rather than the generator.
@@ -84,6 +113,9 @@ function createFakePackage(options = {}) {
     }
     if (!options.omitFiles?.includes(REANIMATED_REGISTRY_SOURCE)) {
         write(REANIMATED_REGISTRY_SOURCE, options.registrySource ?? CORRECT_REGISTRY_BODY);
+    }
+    if (!options.omitFiles?.includes(REANIMATED_NODES_MANAGER_SOURCE)) {
+        write(REANIMATED_NODES_MANAGER_SOURCE, options.nodesManagerSource ?? CORRECT_NODES_MANAGER_BODY);
     }
     if (!options.omitFiles?.includes(REANIMATED_STATIC_FLAGS_FILE)) {
         write(REANIMATED_STATIC_FLAGS_FILE, JSON.stringify(options.staticFlags ?? {
@@ -276,6 +308,44 @@ test('DISCRIMINATES: an upstream rename of the flag fails rather than defaulting
     assert.match(formatVendoredReanimatedPatchFailure(result), /no longer declared/);
 });
 
+test('DISCRIMINATES: an event without a waiting handler must not flush Fabric mounts on the UI thread', () => {
+    // The defect: the UI-thread branch ran handleEvent + performOperations for EVERY event, so a
+    // TextInput content-size event fired from onAttachedToWindow flushed pending mounts while
+    // react-native-screens was still attaching the screen — NPE, React host destroyed, blank screen.
+    const upstream = CORRECT_NODES_MANAGER_BODY.replace(
+        `        String eventName = mCustomEventNamesResolver.resolveCustomEventName(event.getEventName());
+        if (!mNativeProxy.isAnyHandlerWaitingForEvent(eventName, event.getViewTag())) {
+          return;
+        }
+        handleEvent(event);`,
+        '        handleEvent(event);',
+    );
+    assert.notEqual(upstream, CORRECT_NODES_MANAGER_BODY);
+    const result = verifyVendoredReanimatedPatchMarkers({ packageDir: createFakePackage({ nodesManagerSource: upstream }) });
+    assert.equal(result.status, 'failed');
+    assert.deepEqual(idsOf(result), ['event-dispatch-flush-requires-handler']);
+});
+
+test('DISCRIMINATES: the handler check must guard the UI-thread flush, not merely exist in the file', () => {
+    // The off-UI-thread branch already calls isAnyHandlerWaitingForEvent upstream, so a file-wide
+    // search would certify the unpatched method.
+    const checkAfterFlush = CORRECT_NODES_MANAGER_BODY.replace(
+        `        if (!mNativeProxy.isAnyHandlerWaitingForEvent(eventName, event.getViewTag())) {
+          return;
+        }
+        handleEvent(event);
+        performOperationsRespectingDrawPass();`,
+        `        handleEvent(event);
+        performOperationsRespectingDrawPass();
+        if (!mNativeProxy.isAnyHandlerWaitingForEvent(eventName, event.getViewTag())) {
+          return;
+        }`,
+    );
+    assert.notEqual(checkAfterFlush, CORRECT_NODES_MANAGER_BODY);
+    const result = verifyVendoredReanimatedPatchMarkers({ packageDir: createFakePackage({ nodesManagerSource: checkAfterFlush }) });
+    assert.deepEqual(idsOf(result), ['event-dispatch-flush-requires-handler']);
+});
+
 test('skips rather than fails when the package is absent', () => {
     // A fresh clone or a pruned install is not a patch-integrity failure.
     const result = verifyVendoredReanimatedPatchMarkers({
@@ -288,7 +358,7 @@ test('skips rather than fails when the package is absent', () => {
 test('DISCRIMINATES: an installed package missing a source it needs fails rather than skips', () => {
     // A file the gate cannot read is a file it cannot certify. Reporting `ok` for whatever subset
     // happens to exist is the exact vacuity this gate replaced.
-    for (const omitted of [REANIMATED_PROXY_SOURCE, REANIMATED_REGISTRY_SOURCE, REANIMATED_STATIC_FLAGS_FILE]) {
+    for (const omitted of [REANIMATED_PROXY_SOURCE, REANIMATED_REGISTRY_SOURCE, REANIMATED_STATIC_FLAGS_FILE, REANIMATED_NODES_MANAGER_SOURCE]) {
         const result = verifyVendoredReanimatedPatchMarkers({ packageDir: createFakePackage({ omitFiles: [omitted] }) });
         assert.equal(result.status, 'failed', `omitting ${omitted} must fail the gate`);
         assert.ok(
@@ -313,6 +383,7 @@ test('every check id can actually be emitted, so no entry is decorative', () => 
     collect(verifyVendoredReanimatedPatchMarkers({ packageDir: createFakePackage({ proxySource: CORRECT_PROXY_BODY.replaceAll('getSettledUpdates', 'x') }) }));
     collect(verifyVendoredReanimatedPatchMarkers({ packageDir: createFakePackage({ registrySource: 'void update() {}' }) }));
     collect(verifyVendoredReanimatedPatchMarkers({ packageDir: createFakePackage({ staticFlags: {} }) }));
+    collect(verifyVendoredReanimatedPatchMarkers({ packageDir: createFakePackage({ nodesManagerSource: 'class NodesManager {}' }) }));
     assert.deepEqual([...emitted].sort(), REANIMATED_PATCH_CHECKS.map((check) => check.id).sort());
 });
 

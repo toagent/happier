@@ -78,6 +78,11 @@ const stylesheet = StyleSheet.create((theme) => ({
         paddingVertical: 4,
         borderRadius: 5,
     },
+    // Tapped with a finger on native: a 30px pill is too easy to miss (44pt is Apple's minimum).
+    // Compact bars keep their dense sizing; they are an explicit opt-in for tight spaces.
+    tabNativeTouch: {
+        minHeight: 44,
+    },
     tabActive: {
         backgroundColor: theme.colors.segmentedControl.activeBackground,
         ...shadowLevelStyle(theme.colors.shadowLevels[1]),
@@ -161,7 +166,7 @@ function SegmentedTabBarInner<T extends string>(props: SegmentedTabBarProps<T>) 
                             } : {})}
                             testID={props.testIDPrefix ? `${props.testIDPrefix}:${tab.id}` : undefined}
                             onPress={() => props.onSelectTab(tab.id)}
-                            style={[styles.tab, compact ? styles.tabCompact : null, active ? styles.tabActive : null, Platform.OS === 'web' ? WEB_FOCUS_OUTLINE_RESET : null]}
+                            style={[styles.tab, compact ? styles.tabCompact : null, !compact && Platform.OS !== 'web' ? styles.tabNativeTouch : null, active ? styles.tabActive : null, Platform.OS === 'web' ? WEB_FOCUS_OUTLINE_RESET : null]}
                             accessibilityRole="tab"
                             accessibilityState={{ selected: active }}
                             aria-selected={active}

@@ -4281,6 +4281,8 @@ export const de: TranslationStructure = {
             projectSubtitle: 'Sessions nach Rechner + Pfad gruppieren',
             dateTitle: 'Datum',
             dateSubtitle: 'Sessions nach dem Datum der letzten Aktivität gruppieren',
+            flatTitle: 'Keine',
+            flatSubtitle: 'Alle Sessions in einer Liste, ohne Gruppenüberschriften',
         },
         groupInactiveSessionsByProject: 'Inaktive Sessions nach Projekt gruppieren',
         groupInactiveSessionsByProjectSubtitle: 'Inaktive Chats unter ihrem jeweiligen Projekt einsortieren',
@@ -5943,6 +5945,9 @@ export const de: TranslationStructure = {
             updated: 'Nach letzter Aktivität sortieren',
         },
         attentionSectionTitle: 'Braucht Aufmerksamkeit',
+        activeSectionTitle: 'Aktiv',
+        inactiveSectionTitle: 'Inaktiv',
+        pinnedSectionTitle: 'Angeheftet',
         reminders: {
             due: 'Erinnerung fällig',
             title: 'Erinnere mich', inOneHour: 'In 1 Stunde', inThreeHours: 'In 3 Stunden',

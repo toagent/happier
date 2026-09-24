@@ -1,3 +1,4 @@
+import type { SessionListGroupingV1 } from '@/sync/domains/session/listing/sessionListGrouping';
 import type {
     ScmCommitSelectionPatch,
     ScmStatus,
@@ -263,8 +264,8 @@ type SessionsDomainDependencies = {
     // Keep resilient: older settings payloads (or partial boot states) may not yet include this key.
     settings: {
         groupInactiveSessionsByProject?: boolean;
-        sessionListActiveGroupingV1?: 'project' | 'date';
-        sessionListInactiveGroupingV1?: 'project' | 'date';
+        sessionListActiveGroupingV1?: SessionListGroupingV1;
+        sessionListInactiveGroupingV1?: SessionListGroupingV1;
         sessionListSectionModeV1?: 'activity' | 'single';
         sessionListAttentionPromotionModeV1?: SessionListAttentionPromotionMode;
         sessionListWorkingPlacementModeV1?: SessionListWorkingPlacementMode;

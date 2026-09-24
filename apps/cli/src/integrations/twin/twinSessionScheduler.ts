@@ -80,6 +80,8 @@ type TwinSessionSchedulerDeps = Readonly<{
   controllerMachineId: string;
   store: TwinSessionSchedulerAttemptStore;
   resolveWorker: (workerId: string) => Readonly<{ machineId: string }> | null;
+  /** Workers eligible for `auto` targets, the controller-preferred one first. */
+  autoWorkerOrder: () => readonly string[];
   acquireLease: (input: Readonly<{ leaseId: string; workerId: string; ownerToken: string }>) => Promise<TwinSessionLeaseState>;
   readLease: (input: Readonly<{ leaseId: string; ownerToken: string }>) => Promise<TwinSessionLeaseState>;
   releaseLease: (input: Readonly<{ leaseId: string; ownerToken: string }>) => Promise<TwinSessionLeaseState>;
@@ -382,14 +384,38 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
     }
   };
 
+  // "Controller first, overflow when busy": the least loaded worker wins and ties go to the earlier
+  // one in `autoWorkerOrder`, so an idle controller is always chosen first. Load is this scheduler's
+  // own unreleased, non-failed attempts; FIFO admission still happens through the lease afterwards.
+  // Two concurrent auto spawns may pick the same worker; the lease queue then serializes them.
+  const chooseAutoWorker = async (): Promise<string> => {
+    const order = deps.autoWorkerOrder();
+    const load = new Map(order.map((workerId) => [workerId, 0]));
+    for (const attempt of await deps.store.listRecoverable()) {
+      const current = load.get(attempt.workerId);
+      if (current !== undefined && attempt.phase !== 'failed') load.set(attempt.workerId, current + 1);
+    }
+    let chosen = order[0] ?? '';
+    for (const workerId of order) {
+      if ((load.get(workerId) ?? 0) < (load.get(chosen) ?? 0)) chosen = workerId;
+    }
+    return chosen;
+  };
+
   return {
     spawn: async (
       options: SpawnSessionOptions,
       acceptanceHooks?: SpawnSessionRunnerAcceptanceHooks,
     ): Promise<SpawnSessionResult> => {
       const spawnNonce = typeof options.spawnNonce === 'string' ? options.spawnNonce.trim() : '';
-      const workerId = options.schedulingTarget?.workerId.trim() ?? '';
       if (!spawnNonce) return invalidRequest('Scheduled session spawn requires a spawnNonce');
+      const target = options.schedulingTarget;
+      // A retried `auto` request must stay on the worker chosen the first time.
+      const workerId = !target
+        ? ''
+        : 'workerId' in target
+          ? target.workerId.trim()
+          : (await deps.store.load(spawnNonce))?.workerId ?? await chooseAutoWorker();
       if (!workerId) return invalidRequest('Scheduled session spawn requires a worker target');
       const worker = deps.resolveWorker(workerId);
       if (!worker) {
@@ -408,7 +434,7 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
         leaseId: deriveTwinSessionLeaseId(spawnNonce, workerId),
         ownerToken: deps.createOwnerToken(),
         phase: 'created',
-        options: { ...options, spawnNonce },
+        options: { ...options, spawnNonce, schedulingTarget: { v: 1, workerId } },
         ...(acceptanceHooks ? { runnerAcceptanceRequired: true } : {}),
       };
       const attempt = await deps.store.createIfAbsent(requested);

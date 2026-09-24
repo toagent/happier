@@ -125,6 +125,33 @@ describe('DesktopSidebarChrome', () => {
         expect(itemRowActionsState.lastButtonSize).toBe(48);
     });
 
+    it('puts the server switcher on the native action row as a 48-point target', async () => {
+        platformState.os = 'ios';
+        const { DesktopSidebarChrome } = await import('./DesktopSidebarChrome');
+        const screen = await renderScreen(
+            <DesktopSidebarChrome
+                sidebarWidthPx={320}
+                headerHeightPx={56}
+                onPressHome={vi.fn()}
+                environmentBadge={null}
+                headerActions={[
+                    { id: 'settings', title: 'Settings', inlineTestID: 'nav-settings', icon: 'gear', onPress: vi.fn() },
+                ]}
+                renderHeaderOverflowVisual={() => <View testID="desktop-sidebar-overflow-visual" />}
+                popoverBoundaryRef={{ current: null }}
+            />,
+        );
+
+        // Under the title it could only be a 16px line; the action row already has 48px of height
+        // and free space on its leading side.
+        const actionsRow = requireTestInstance(screen.findByTestId('desktop-sidebar-chrome-actions-row'), 'actions row');
+        const titleContainer = requireTestInstance(screen.findByTestId('desktop-sidebar-title-container'), 'title container');
+        const statusInActions = actionsRow.findAll((node) => String(node.type) === 'ConnectionStatusControl');
+        expect(statusInActions).toHaveLength(1);
+        expect(statusInActions[0]?.props.minTouchHeight).toBe(48);
+        expect(titleContainer.findAll((node) => String(node.type) === 'ConnectionStatusControl')).toHaveLength(0);
+    });
+
     it('places utility controls above the branded sidebar row', async () => {
         const { DesktopSidebarChrome } = await import('./DesktopSidebarChrome');
         const screen = await renderScreen(

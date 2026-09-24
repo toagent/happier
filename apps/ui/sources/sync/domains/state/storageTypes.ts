@@ -599,6 +599,8 @@ export const MachineMetadataSchema = z.object({
     daemonTerminalSessionAttachSupported: z.boolean().optional(),
     daemonSessionGoalControlsSupported: z.boolean().optional(),
     twinSessionSchedulingV1: TwinSessionSchedulingV1Schema.optional(),
+    // Set with twinSessionSchedulingV1 when the controller picks the worker for an `auto` target.
+    twinSessionAutoDispatchV1: z.literal(true).optional(),
     // Daemon status fields
     daemonLastKnownStatus: z.enum(['running', 'shutting-down']).optional(),
     daemonLastKnownPid: z.number().optional(),

@@ -335,6 +335,8 @@ export const MachineMetadataSchema = z.object({
   daemonTerminalSessionAttachSupported: z.boolean().optional(),
   daemonSessionGoalControlsSupported: z.boolean().optional(),
   twinSessionSchedulingV1: TwinSessionSchedulingV1Schema.optional(),
+  /** Set alongside `twinSessionSchedulingV1` when the controller accepts `auto` scheduling targets. */
+  twinSessionAutoDispatchV1: z.literal(true).optional(),
 })
 
 export type MachineMetadata = z.infer<typeof MachineMetadataSchema>

@@ -6,6 +6,7 @@ import { Eyebrow } from '@/components/ui/text/Eyebrow';
 import type { SessionListViewItem } from '@/sync/domains/state/storage';
 import { isSessionListPrimaryHeaderKind } from './sessionListPrimaryHeader';
 import { Icon } from '@/components/ui/icons/Icon';
+import { SESSION_LIST_NATIVE_TOUCH_TARGET_SIZE } from './sessionListRowHeights';
 
 const stylesheet = StyleSheet.create((theme) => ({
     headerSection: {
@@ -22,6 +23,19 @@ const stylesheet = StyleSheet.create((theme) => ({
         paddingHorizontal: 24,
         paddingTop: 10,
         paddingBottom: 5,
+    },
+    // On touch the row itself is the finger-sized target, so the padding that used to pad a 28px
+    // pointer row is folded into it instead of stacking on top (which also left 44px controls sitting
+    // in a needlessly tall primary header).
+    headerSectionNativeTouch: {
+        paddingTop: 4,
+    },
+    groupHeaderSectionNativeTouch: {
+        paddingTop: 0,
+        paddingBottom: 0,
+    },
+    headerRowNativeTouch: {
+        minHeight: SESSION_LIST_NATIVE_TOUCH_TARGET_SIZE,
     },
     groupHeaderTitle: {
         fontSize: 12,
@@ -79,13 +93,15 @@ export const CollapsibleSectionHeader = React.memo(function CollapsibleSectionHe
     const showChevron = !isWeb || props.collapsed || isHovered;
     return (
         <Pressable
-            style={isPrimaryHeader ? styles.headerSection : styles.groupHeaderSection}
+            style={isPrimaryHeader
+                ? (isWeb ? styles.headerSection : [styles.headerSection, styles.headerSectionNativeTouch])
+                : (isWeb ? styles.groupHeaderSection : [styles.groupHeaderSection, styles.groupHeaderSectionNativeTouch])}
             onPress={props.onPress}
             testID={props.headerTestId}
             onHoverIn={isWeb ? () => setIsHovered(true) : undefined}
             onHoverOut={isWeb ? () => setIsHovered(false) : undefined}
         >
-            <View style={styles.headerRow}>
+            <View style={isWeb ? styles.headerRow : [styles.headerRow, styles.headerRowNativeTouch]}>
                 <View style={styles.headerLabelRow}>
                     <Eyebrow style={isPrimaryHeader ? styles.headerText : styles.groupHeaderTitle}>{props.title}</Eyebrow>
                     <View

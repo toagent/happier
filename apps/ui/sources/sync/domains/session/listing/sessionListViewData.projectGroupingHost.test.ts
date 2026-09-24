@@ -162,15 +162,8 @@ describe('buildSessionListViewData (project grouping)', () => {
             item.type === 'header' && item.headerKind === 'project',
         );
         expect(projectHeaders).toHaveLength(1);
+        expect(projectHeaders[0]?.subtitle).toBe(host);
         expect(projectHeaders[0]?.machine?.id).toBe('m_new');
-
-        // The owning machine is now its own header row rather than a project-header subtitle.
-        const machineHeaders = list.filter((item): item is Extract<typeof item, { type: 'header' }> =>
-            item.type === 'header' && item.headerKind === 'machine',
-        );
-        expect(machineHeaders).toHaveLength(1);
-        expect(machineHeaders[0]?.title).toBe(host);
-        expect(machineHeaders[0]?.machine?.id).toBe('m_new');
 
         const sessionRows = list.filter((item) => item.type === 'session');
         expect(sessionRows).toHaveLength(2);

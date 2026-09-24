@@ -198,6 +198,8 @@ export const ConnectionStatusControl = React.memo(function ConnectionStatusContr
     dotSize?: number;
     chevronSize?: number;
     alignSelf?: 'auto' | 'flex-start' | 'center' | 'flex-end' | 'stretch' | 'baseline';
+    /** Grows the trigger to a finger-sized row where the control is tapped rather than clicked. */
+    minTouchHeight?: number;
 }) {
     const styles = stylesheet;
     const { theme } = useUnistyles();
@@ -465,7 +467,9 @@ export const ConnectionStatusControl = React.memo(function ConnectionStatusContr
                 collapsable={false}
             >
                 <Pressable
-                    style={styles.statusContainer}
+                    style={props.minTouchHeight
+                        ? [styles.statusContainer, { minHeight: props.minTouchHeight, marginTop: 0 }]
+                        : styles.statusContainer}
                     onPress={() => setOpen((currentOpen) => !currentOpen)}
                     accessibilityRole="button"
                 >

@@ -38,7 +38,11 @@ export function refreshMachineMetadataForCurrentDaemon(
   host: string,
   twinSessionSchedulingV1: TwinSessionSchedulingV1 | null = null,
 ): MachineMetadata {
-  const { twinSessionSchedulingV1: _previousTwinSessionSchedulingV1, ...preserved } = current;
+  const {
+    twinSessionSchedulingV1: _previousTwinSessionSchedulingV1,
+    twinSessionAutoDispatchV1: _previousTwinSessionAutoDispatchV1,
+    ...preserved
+  } = current;
   const next: MachineMetadata = {
     ...preserved,
     host,
@@ -49,7 +53,8 @@ export function refreshMachineMetadataForCurrentDaemon(
     happyLibDir: projectPath(),
     daemonTerminalSessionAttachSupported: true,
     daemonSessionGoalControlsSupported: true,
-    ...(twinSessionSchedulingV1 ? { twinSessionSchedulingV1 } : {}),
+    // Every controller running this scheduler can pick a worker for an `auto` target.
+    ...(twinSessionSchedulingV1 ? { twinSessionSchedulingV1, twinSessionAutoDispatchV1: true as const } : {}),
   };
   if (
     current.host === next.host
@@ -61,6 +66,7 @@ export function refreshMachineMetadataForCurrentDaemon(
     && current.daemonTerminalSessionAttachSupported === next.daemonTerminalSessionAttachSupported
     && current.daemonSessionGoalControlsSupported === next.daemonSessionGoalControlsSupported
     && JSON.stringify(current.twinSessionSchedulingV1) === JSON.stringify(next.twinSessionSchedulingV1)
+    && current.twinSessionAutoDispatchV1 === next.twinSessionAutoDispatchV1
   ) {
     return current as MachineMetadata;
   }
