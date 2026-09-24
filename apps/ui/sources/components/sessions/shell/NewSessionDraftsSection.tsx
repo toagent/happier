@@ -41,9 +41,8 @@ import {
     resolveSessionListRowIdentityMetrics,
     resolveSessionListRowTitleTextMetrics,
     SESSION_LIST_ROW_STATUS_TEXT_METRICS,
-    shouldUseReadableNativePhoneMinimalSessionRow,
+    shouldUseReadableNativeTouchMinimalSessionRow,
 } from '@/components/sessions/shell/sessionListRowDensity';
-import { useIsTablet } from '@/utils/platform/responsive';
 import { deleteNewSessionDraftAfterConfirmation } from '@/components/sessions/drafts/deleteNewSessionDraftAfterConfirmation';
 
 export { buildNewSessionDraftRowPresentation } from '@/components/sessions/drafts/newSessionDraftPresentation';
@@ -86,7 +85,6 @@ const NewSessionDraftRow = React.memo(function NewSessionDraftRow(props: Readonl
 }>) {
     const { theme } = useUnistyles();
     const styles = stylesheet;
-    const isTablet = useIsTablet();
     const presentation = buildNewSessionDraftRowPresentation(props.draft, props.names);
     const draftId = props.draft.draftId;
     const status = presentation.statusKey ? t(presentation.statusKey) : null;
@@ -98,25 +96,23 @@ const NewSessionDraftRow = React.memo(function NewSessionDraftRow(props: Readonl
             : 'compact';
     const compact = props.density !== 'default';
     const compactMinimal = props.density === 'minimal';
-    const readableNativePhoneMinimal = shouldUseReadableNativePhoneMinimalSessionRow({
+    const readableNativeTouchMinimal = shouldUseReadableNativeTouchMinimalSessionRow({
         compact,
         compactMinimal,
-        isTablet,
         platform: Platform.OS,
     });
     const rowHeight = resolveSessionListRowHeight({
         compact,
         compactMinimal,
-        isTablet,
         platform: Platform.OS,
     });
     const titleTextMetrics = resolveSessionListRowTitleTextMetrics({
         density: props.density,
-        readableNativePhoneMinimal,
+        readableNativeTouchMinimal,
     });
     const identityMetrics = resolveSessionListRowIdentityMetrics({
         density: props.density,
-        readableNativePhoneMinimal,
+        readableNativeTouchMinimal,
     });
     const agentId = resolveNewSessionDraftAgentId(props.draft);
     const subtitleTextMetrics = SESSION_LIST_ROW_STATUS_TEXT_METRICS[props.density];

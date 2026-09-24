@@ -5848,6 +5848,7 @@ deps: {
     sessionsList: {
         serverHeader: ({ server }: { server: string }) => `Servidor: ${server}`,
         storagePersistedTab: 'Happier',
+        homeWorkspaceTitle: 'Inici',
         storageDirectTab: 'Directes',
         renameWorkspace: "Reanomena l'espai de treball",
         renameWorkspacePromptTitle: "Reanomena l'espai de treball",

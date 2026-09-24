@@ -5862,6 +5862,7 @@ export const en = {
     sessionsList: {
         serverHeader: ({ server }: { server: string }) => `Server: ${server}`,
         storagePersistedTab: 'Happier',
+        homeWorkspaceTitle: 'Home',
         storageDirectTab: 'Direct',
         renameWorkspace: 'Rename workspace',
         renameWorkspacePromptTitle: 'Rename workspace',

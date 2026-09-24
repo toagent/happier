@@ -6471,6 +6471,7 @@ localTailscale: {
   sessionsList: {
     serverHeader: ({ server }: { server: string }) => `サーバー: ${server}`,
     storagePersistedTab: "Happier",
+    homeWorkspaceTitle: "ホーム",
     storageDirectTab: "ダイレクト",
     renameWorkspace: 'ワークスペース名を変更',
     renameWorkspacePromptTitle: 'ワークスペース名を変更',

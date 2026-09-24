@@ -5184,6 +5184,7 @@ export const ru: TranslationStructure = {
   sessionsList: {
     serverHeader: ({ server }: { server: string }) => `Сервер: ${server}`,
     storagePersistedTab: "Happier",
+    homeWorkspaceTitle: "Домашняя папка",
     storageDirectTab: "Прямые",
     renameWorkspace: 'Переименовать рабочую область',
     renameWorkspacePromptTitle: 'Переименовать рабочую область',

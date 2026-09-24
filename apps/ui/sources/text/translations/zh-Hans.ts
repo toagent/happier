@@ -6004,6 +6004,7 @@ export const zhHans: TranslationStructure = {
   sessionsList: {
     serverHeader: ({ server }: { server: string }) => `服务器：${server}`,
     storagePersistedTab: "Happier",
+    homeWorkspaceTitle: "主目录",
     storageDirectTab: "直连",
     renameWorkspace: '重命名工作区',
     renameWorkspacePromptTitle: '重命名工作区',

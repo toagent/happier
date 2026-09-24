@@ -135,11 +135,14 @@ describe('buildSessionListViewData', () => {
 
         expect(summary).toEqual([
             'header:active:Active',
+            'header:machine:m1',
             'header:project:repoA',
             'session:active:active:no-path',
             'header:inactive:Inactive',
+            'header:machine:m2',
             'header:project:repoB',
             'session:b1:inactive:no-path',
+            'header:machine:m1',
             'header:project:repoA',
             'session:a2:inactive:no-path',
             'session:a1:inactive:no-path',
@@ -191,6 +194,7 @@ describe('buildSessionListViewData', () => {
 
         expect(summary).toEqual([
             'header:sessions:Sessions',
+            'header:machine:m1',
             'header:project:repoA',
             'session:active:active:project:no-path',
             'session:inactive:inactive:project:no-path',
@@ -296,6 +300,7 @@ describe('buildSessionListViewData', () => {
 
         expect(summary).toEqual([
             'header:active:Active:root:0',
+            'header:machine:m1:root:0',
             'header:project:repoA:root:0',
             'header:folder:Planning:folder-a:0',
             'session:assigned:folder:folder-a:1',
@@ -378,6 +383,7 @@ describe('buildSessionListViewData', () => {
             : `session:${item.session.id}:${item.folderId ?? 'root'}:${item.folderDepth ?? 0}`
         )).toEqual([
             'header:active:Active:root:0',
+            'header:machine:m1:root:0',
             'header:project:repoA:root:0',
             'header:folder:Parent:parent-folder:0',
             'header:folder:Child:child-folder:1',
@@ -578,7 +584,13 @@ describe('buildSessionListViewData', () => {
         );
 
         expect(projectHeaders).toHaveLength(1);
-        expect(projectHeaders[0]?.subtitle).toBe('target.local');
+
+        // The resolved machine is now its own header row instead of a project-header subtitle.
+        const machineHeaders = data.filter((item): item is Extract<typeof item, { type: 'header' }> =>
+            item.type === 'header' && item.headerKind === 'machine',
+        );
+        expect(machineHeaders).toHaveLength(1);
+        expect(machineHeaders[0]?.title).toBe('target.local');
     });
 
     it('does not treat /home/userfoo as inside /home/user', () => {
@@ -686,6 +698,7 @@ describe('buildSessionListViewData', () => {
 
             expect(summary).toEqual([
                 'header:active:Active',
+                'header:machine:m1',
                 'header:project:repoB',
                 'session:act2:active:no-path',
                 'header:project:repoA',
@@ -755,6 +768,7 @@ describe('buildSessionListViewData', () => {
                 'header:active:Active',
                 'header:shared:Shared sessions',
                 'session:sharedActive:active:shared',
+                'header:machine:m1',
                 'header:project:own-active',
                 'session:ownActive:active:project',
                 'header:inactive:Inactive',

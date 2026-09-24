@@ -51,24 +51,19 @@ describe('useSidebarHeaderActions', () => {
 
         expect(hook.getCurrent().headerActions.map((action) => action.id)).toEqual([
             'settings',
-            'newSession',
         ]);
     });
 
-    it('opens the canonical ordinary draft route and forwards pointer modifiers', async () => {
+    it('leaves starting a session to the labelled sidebar button instead of a second header icon', async () => {
+        // The sidebar body already ends with the labelled "start new session" button
+        // (covered by MainView.sidebarActions.test.tsx), so a bare `+` here would be a
+        // second, unlabelled entry point for the same action.
         const { useSidebarHeaderActions } = await import('./useSidebarHeaderActions');
         const hook = await renderHook(() => useSidebarHeaderActions());
 
-        hook.getCurrent().headerActions.find((action) => action.id === 'newSession')?.onPress?.({
-            nativeEvent: { ctrlKey: true },
-        } as never);
-
-        expect(routerPushSpy).toHaveBeenCalledWith({
-            pathname: '/new',
-            params: {
-                draftId: expect.any(String),
-                draftOrigin: 'ordinary',
-            },
-        });
+        const current = hook.getCurrent();
+        expect(current.headerActions.some((action) => action.id === 'newSession')).toBe(false);
+        expect(current.topUtilityActions.some((action) => action.id === 'newSession')).toBe(false);
+        expect(routerPushSpy).not.toHaveBeenCalled();
     });
 });

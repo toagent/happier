@@ -11,10 +11,6 @@ import { runGuardedNavigation } from '@/utils/navigation/runGuardedNavigation';
 import { fireAndForget } from '@/utils/system/fireAndForget';
 import { desktopSidebarChromeStyles } from './desktopSidebarChromeStyles';
 import { Icon, ICON_SIZE } from '@/components/ui/icons/Icon';
-import {
-    shouldForceFreshNewSessionEntryFromPressEvent,
-    useResolveNewSessionOrdinaryEntryRoute,
-} from '@/components/sessions/new/navigation/newSessionOrdinaryEntryRoute';
 
 type SidebarHeaderActionsResult = Readonly<{
     headerActions: ItemAction[];
@@ -26,7 +22,6 @@ export function useSidebarHeaderActions(): SidebarHeaderActionsResult {
     const styles = desktopSidebarChromeStyles;
     const { theme } = useUnistyles();
     const router = useRouter();
-    const resolveNewSessionOrdinaryEntryRoute = useResolveNewSessionOrdinaryEntryRoute();
     const friendRequests = useFriendRequests();
     const friendsEnabled = useFriendsEnabled();
     const friendRequestCount = friendRequests.length;
@@ -37,18 +32,6 @@ export function useSidebarHeaderActions(): SidebarHeaderActionsResult {
             fireAndForget(result, { tag });
         }
     }, [router]);
-    const navigateToNewSession = React.useCallback((event?: unknown) => {
-        const { draftId, draftOrigin } = resolveNewSessionOrdinaryEntryRoute({
-            forceFresh: shouldForceFreshNewSessionEntryFromPressEvent(event),
-        });
-        const result = runGuardedNavigation(() => router.push({
-            pathname: '/new',
-            params: { draftId, draftOrigin },
-        }));
-        if (result !== true) {
-            fireAndForget(result, { tag: 'SidebarView.nav.newSession' });
-        }
-    }, [resolveNewSessionOrdinaryEntryRoute, router]);
 
     const headerActions = React.useMemo((): ItemAction[] => {
         const out: ItemAction[] = [];
@@ -85,30 +68,20 @@ export function useSidebarHeaderActions(): SidebarHeaderActionsResult {
             onPress: () => navigate('/settings', 'SidebarView.nav.settings'),
         });
 
-        out.push({
-            id: 'newSession',
-            title: t('newSession.title'),
-            inlineTestID: 'nav-new-session',
-            icon: (
-                <View style={styles.trailingIconButton}>
-                    <Icon name="plus" size={ICON_SIZE.md} color={theme.colors.chrome.header.foreground} />
-                </View>
-            ),
-            onPress: navigateToNewSession,
-        });
+        // Deliberately no `newSession` action here: the sidebar body already ends with the labelled
+        // "start new session" button, and an unlabelled `+` beside it read as a second, different
+        // action. One entry point, and it is the one that says what it does.
 
         return out;
     }, [
         friendRequestCount,
         friendsEnabled,
         navigate,
-        navigateToNewSession,
         styles.badge,
         styles.badgeText,
         styles.iconButton,
         styles.indicatorDot,
         styles.notificationButton,
-        styles.trailingIconButton,
         theme.colors.chrome.header.foreground,
     ]);
 

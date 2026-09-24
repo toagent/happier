@@ -390,7 +390,6 @@ describe('SidebarView header automations button', () => {
 
         expect(screen.findAllByTestId('sidebar-header-actions-overflow')).toHaveLength(0);
         expect(screen.findAllByTestId('nav-settings').length).toBeGreaterThan(0);
-        expect(screen.findAllByTestId('nav-new-session').length).toBeGreaterThan(0);
     });
 
     it('folds header icons into an overflow menu when the sidebar is narrow', async () => {
@@ -401,7 +400,7 @@ describe('SidebarView header automations button', () => {
         expect(screen.findAllByTestId('sidebar-header-actions-overflow').length).toBeGreaterThan(0);
         // Compact layout hides inbox/friends into the overflow menu.
         expect(screen.findAllByTestId('sidebar-inbox-button')).toHaveLength(0);
-        expect(screen.findAllByTestId('nav-new-session').length).toBeGreaterThan(0);
+        expect(screen.findAllByTestId('nav-settings').length).toBeGreaterThan(0);
     });
 
     it('keeps the overflow trigger left of real header icons in compact mode', async () => {
@@ -417,13 +416,8 @@ describe('SidebarView header automations button', () => {
             screen.findByTestId('nav-settings'),
             'settings button',
         );
-        const newSession = requireTestInstance(
-            screen.findByTestId('nav-new-session'),
-            'new session button',
-        );
 
         expect(overflow.parent).toBe(settings.parent);
-        expect(overflow.parent).toBe(newSession.parent);
 
         const parent = requireTestInstance(overflow.parent, 'header action parent');
         const order = parent.children
@@ -432,6 +426,5 @@ describe('SidebarView header automations button', () => {
             .filter(Boolean) as string[];
 
         expect(order.indexOf('sidebar-header-actions-overflow')).toBeLessThan(order.indexOf('nav-settings'));
-        expect(order.indexOf('sidebar-header-actions-overflow')).toBeLessThan(order.indexOf('nav-new-session'));
     });
 });

@@ -5847,6 +5847,7 @@ export const de: TranslationStructure = {
     sessionsList: {
         serverHeader: ({ server }: { server: string }) => `Server: ${server}`,
         storagePersistedTab: 'Happier',
+        homeWorkspaceTitle: 'Persönlicher Ordner',
         storageDirectTab: 'Direkt',
         renameWorkspace: 'Workspace umbenennen',
         renameWorkspacePromptTitle: 'Workspace umbenennen',

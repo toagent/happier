@@ -6551,6 +6551,7 @@ export const it: TranslationStructure = {
   sessionsList: {
     serverHeader: ({ server }: { server: string }) => `Server: ${server}`,
     storagePersistedTab: "Happier",
+    homeWorkspaceTitle: "Home",
     storageDirectTab: "Dirette",
     renameWorkspace: 'Rinomina area di lavoro',
     renameWorkspacePromptTitle: 'Rinomina area di lavoro',

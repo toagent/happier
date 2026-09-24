@@ -36,6 +36,9 @@ export function filterCollapsedSessionListItems(
 
     let result: SessionListViewItem[] | undefined;
     let skipUntilNextSection = false;
+    // A collapsed machine hides its project headers and their sessions until the next machine
+    // header; the enclosing section header still ends the run, so a later section stays visible.
+    let skipUntilNextMachine = false;
     const collapsedFolderIds = new Set<string>();
 
     const ensureResult = (index: number): SessionListViewItem[] => {
@@ -52,6 +55,7 @@ export function filterCollapsedSessionListItems(
 
             if (isSection) {
                 skipUntilNextSection = false;
+                skipUntilNextMachine = false;
                 collapsedFolderIds.clear();
                 const collapseKey = item.groupKey || `${kind}:${item.serverId ?? 'local'}`;
                 if (keys[collapseKey]) {
@@ -64,6 +68,24 @@ export function filterCollapsedSessionListItems(
             }
 
             if (skipUntilNextSection) {
+                ensureResult(index);
+                continue;
+            }
+
+            if (kind === 'machine') {
+                skipUntilNextMachine = false;
+                collapsedFolderIds.clear();
+                const collapseKey = item.groupKey || `${kind}:${item.serverId ?? 'local'}`;
+                if (keys[collapseKey]) {
+                    ensureResult(index).push(item);
+                    skipUntilNextMachine = true;
+                } else if (result !== undefined) {
+                    result.push(item);
+                }
+                continue;
+            }
+
+            if (skipUntilNextMachine) {
                 ensureResult(index);
                 continue;
             }
@@ -86,7 +108,7 @@ export function filterCollapsedSessionListItems(
             continue;
         }
 
-        if (skipUntilNextSection) {
+        if (skipUntilNextSection || skipUntilNextMachine) {
             ensureResult(index);
             continue;
         }

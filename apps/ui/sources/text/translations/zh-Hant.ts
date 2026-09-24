@@ -5224,6 +5224,7 @@ const zhHantOverrides: DeepPartial<TranslationStructure> = {
     sessionsList: {
         serverHeader: ({ server }: { server: string }) => `伺服器：${server}`,
         storagePersistedTab: 'Happier',
+        homeWorkspaceTitle: '主目錄',
         storageDirectTab: '直接',
         renameWorkspace: '重新命名工作區',
         renameWorkspacePromptTitle: '重新命名工作區',

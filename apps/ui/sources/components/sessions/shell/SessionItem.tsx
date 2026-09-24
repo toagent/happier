@@ -30,6 +30,7 @@ import { ContextMenu } from '@/components/ui/forms/dropdown/ContextMenu';
 import { CopiedPill } from '@/components/ui/copy/CopiedPill';
 import { useTemporaryCopyFeedback } from '@/components/ui/copy/useTemporaryCopyFeedback';
 import { SessionRowAttentionIndicator } from './row/SessionRowAttentionIndicator';
+import { SessionRowScmBadge } from './row/SessionRowScmBadge';
 import type { SessionRowAttentionState, SessionRowPresentation } from './row/resolveSessionRowPresentation';
 import type { SessionListRowModel } from './row/sessionListRowModelTypes';
 import {
@@ -41,7 +42,7 @@ import {
     SESSION_LIST_ROW_HEIGHT_COMPACT,
     SESSION_LIST_ROW_HEIGHT_DEFAULT,
     SESSION_LIST_ROW_HEIGHT_MINIMAL,
-    SESSION_LIST_ROW_HEIGHT_MINIMAL_NATIVE_PHONE,
+    SESSION_LIST_ROW_HEIGHT_MINIMAL_NATIVE_TOUCH,
 } from './sessionListRowHeights';
 import {
     SESSION_LIST_ROW_CORNER_RADIUS,
@@ -49,10 +50,9 @@ import {
     SESSION_LIST_ROW_IDENTITY_METRICS,
     SESSION_LIST_ROW_STATUS_TEXT_METRICS,
     SESSION_LIST_ROW_TITLE_TEXT_METRICS,
-    shouldUseReadableNativePhoneMinimalSessionRow,
+    shouldUseReadableNativeTouchMinimalSessionRow,
 } from './sessionListRowDensity';
 import { planSessionTagDisplay } from './sessionTagPlacement';
-import { useIsTablet } from '@/utils/platform/responsive';
 import type { SessionStatus } from '@/utils/sessions/sessionUtils';
 import { useSessionRowActionMenu } from './row/actionMenu/useSessionRowActionMenu';
 import { formatSessionAttentionReminderDateTime } from './row/actionMenu/sessionAttentionReminderAction';
@@ -268,8 +268,8 @@ const stylesheet = StyleSheet.create((theme) => ({
         height: SESSION_LIST_ROW_HEIGHT_MINIMAL,
         paddingHorizontal: 8,
     },
-    sessionItemMinimalNativePhone: {
-        height: SESSION_LIST_ROW_HEIGHT_MINIMAL_NATIVE_PHONE,
+    sessionItemMinimalNativeTouch: {
+        height: SESSION_LIST_ROW_HEIGHT_MINIMAL_NATIVE_TOUCH,
     },
     sessionItemSelected: {
         backgroundColor: theme.colors.surface.selected,
@@ -294,9 +294,9 @@ const stylesheet = StyleSheet.create((theme) => ({
         width: SESSION_LIST_ROW_IDENTITY_METRICS.minimal.slotSize,
         height: SESSION_LIST_ROW_IDENTITY_METRICS.minimal.slotSize,
     },
-    avatarContainerMinimalNativePhone: {
-        width: SESSION_LIST_ROW_IDENTITY_METRICS.minimalNativePhone.slotSize,
-        height: SESSION_LIST_ROW_IDENTITY_METRICS.minimalNativePhone.slotSize,
+    avatarContainerMinimalNativeTouch: {
+        width: SESSION_LIST_ROW_IDENTITY_METRICS.minimalNativeTouch.slotSize,
+        height: SESSION_LIST_ROW_IDENTITY_METRICS.minimalNativeTouch.slotSize,
     },
     avatarLoading: {
         width: SESSION_LIST_ROW_IDENTITY_METRICS.default.slotSize,
@@ -310,9 +310,9 @@ const stylesheet = StyleSheet.create((theme) => ({
         borderRadius: 999,
         backgroundColor: theme.colors.surface.elevated,
     },
-    avatarLoadingMinimalNativePhone: {
-        width: SESSION_LIST_ROW_IDENTITY_METRICS.minimalNativePhone.slotSize,
-        height: SESSION_LIST_ROW_IDENTITY_METRICS.minimalNativePhone.slotSize,
+    avatarLoadingMinimalNativeTouch: {
+        width: SESSION_LIST_ROW_IDENTITY_METRICS.minimalNativeTouch.slotSize,
+        height: SESSION_LIST_ROW_IDENTITY_METRICS.minimalNativeTouch.slotSize,
         borderRadius: 999,
         backgroundColor: theme.colors.surface.elevated,
     },
@@ -435,8 +435,8 @@ const stylesheet = StyleSheet.create((theme) => ({
     sessionTitleMinimal: {
         ...SESSION_LIST_ROW_TITLE_TEXT_METRICS.minimal,
     },
-    sessionTitleMinimalNativePhone: {
-        ...SESSION_LIST_ROW_TITLE_TEXT_METRICS.minimalNativePhone,
+    sessionTitleMinimalNativeTouch: {
+        ...SESSION_LIST_ROW_TITLE_TEXT_METRICS.minimalNativeTouch,
     },
     sessionTitleEmphasized: {
         ...Typography.default('semiBold'),
@@ -803,11 +803,9 @@ const SessionItemContent = React.memo(
         const [rowWidth, setRowWidth] = React.useState<number | null>(null);
         const isWeb = Platform.OS === 'web';
         const isNativeMobile = Platform.OS === 'ios' || Platform.OS === 'android';
-        const isTablet = useIsTablet();
-        const useReadableNativePhoneMinimalRow = shouldUseReadableNativePhoneMinimalSessionRow({
+        const useReadableNativeTouchMinimalRow = shouldUseReadableNativeTouchMinimalSessionRow({
             compact: Boolean(compact),
             compactMinimal: Boolean(compactMinimal),
-            isTablet,
             platform: Platform.OS,
         });
         const showRowActions = isWeb && (isRowHovered || isActionsHovered || tagMenuOpen || moreMenuOpen || isBeingDragged === true);
@@ -1246,7 +1244,7 @@ const SessionItemContent = React.memo(
         const shouldRenderAvatarMonochrome = resolvedSession.active !== true || !sessionStatus.isConnected;
         const identityMetrics = resolveSessionListRowIdentityMetrics({
             density: isMinimal ? 'minimal' : compact ? 'compact' : 'default',
-            readableNativePhoneMinimal: useReadableNativePhoneMinimalRow,
+            readableNativeTouchMinimal: useReadableNativeTouchMinimalRow,
         });
         const avatarSize = identityMetrics.slotSize;
         const agentLogoSize = identityMetrics.agentLogoSize;
@@ -1273,7 +1271,7 @@ const SessionItemContent = React.memo(
             styles.sessionTitle,
             compact ? styles.sessionTitleCompact : null,
             isMinimal ? styles.sessionTitleMinimal : null,
-            useReadableNativePhoneMinimalRow ? styles.sessionTitleMinimalNativePhone : null,
+            useReadableNativeTouchMinimalRow ? styles.sessionTitleMinimalNativeTouch : null,
             shouldEmphasizeTitle ? styles.sessionTitleEmphasized : null,
             shouldMuteTitle ? null : sessionStatus.isConnected ? styles.sessionTitleConnected : styles.sessionTitleDisconnected,
             selected || rowSelection.isSelected ? styles.sessionTitleSelected : null,
@@ -1327,7 +1325,7 @@ const SessionItemContent = React.memo(
                     isLast ? styles.sessionItemLast : null,
                     compact ? styles.sessionItemCompact : null,
                     isMinimal ? styles.sessionItemMinimal : null,
-                    useReadableNativePhoneMinimalRow ? styles.sessionItemMinimalNativePhone : null,
+                    useReadableNativeTouchMinimalRow ? styles.sessionItemMinimalNativeTouch : null,
                     selected || rowSelection.isSelected ? styles.sessionItemSelected : null,
                     embedded && !embeddedIsLast ? styles.embeddedSeparator : null,
                 ]}
@@ -1348,7 +1346,7 @@ const SessionItemContent = React.memo(
                             styles.avatarContainer,
                             compact ? styles.avatarContainerCompact : null,
                             isMinimal ? styles.avatarContainerMinimal : null,
-                            useReadableNativePhoneMinimalRow ? styles.avatarContainerMinimalNativePhone : null,
+                            useReadableNativeTouchMinimalRow ? styles.avatarContainerMinimalNativeTouch : null,
                         ]}
                     >
                         {shouldRenderSelectionCheckbox ? (
@@ -1360,7 +1358,7 @@ const SessionItemContent = React.memo(
                                 style={[
                                     compact ? styles.avatarContainerCompact : null,
                                     isMinimal ? styles.avatarContainerMinimal : null,
-                                    useReadableNativePhoneMinimalRow ? styles.avatarContainerMinimalNativePhone : null,
+                                    useReadableNativeTouchMinimalRow ? styles.avatarContainerMinimalNativeTouch : null,
                                 ]}
                             />
                         ) : isSessionIdentityLoading ? (
@@ -1368,8 +1366,8 @@ const SessionItemContent = React.memo(
                                 testID={`session-list-avatar-loading-${resolvedSession.id}`}
                                 style={[
                                     isMinimal
-                                        ? useReadableNativePhoneMinimalRow
-                                            ? styles.avatarLoadingMinimalNativePhone
+                                        ? useReadableNativeTouchMinimalRow
+                                            ? styles.avatarLoadingMinimalNativeTouch
                                             : styles.avatarLoadingMinimal
                                         : compact
                                             ? styles.avatarLoadingCompact
@@ -1704,6 +1702,7 @@ const SessionItemContent = React.memo(
                         </View>
                     ) : showTrailingAttentionIndicator || showTrailingActivityTime ? (
                         <View style={styles.trailingMetaRow}>
+                            <SessionRowScmBadge sessionId={resolvedSession.id} />
                             {showTrailingAttentionIndicator ? (
                                 <SessionRowAttentionIndicator
                                     indicator={trailingAttentionIndicator}

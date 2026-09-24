@@ -58,4 +58,75 @@ describe('filterSessionListViewDataByStorageKind', () => {
             's:persisted-1',
         ]);
     });
+
+    it('keeps the machine header above the project header that still owns a visible row', () => {
+        // Machine and project are two distinct grouping levels; keeping only the innermost one
+        // silently drops the machine row the sidebar needs to say where the work runs.
+        const source: SessionListViewItem[] = [
+            { type: 'header', title: 'Active', headerKind: 'active', groupKey: 'active', serverId: 'server-a' },
+            { type: 'header', title: 'Yong-2', headerKind: 'machine', groupKey: 'server:server-a:machine:m1', serverId: 'server-a' },
+            { type: 'header', title: 'happier', headerKind: 'project', groupKey: 'project-a', serverId: 'server-a' },
+            makeSession('persisted-1', false),
+        ];
+
+        const result = filterSessionListViewDataByStorageKind(source, 'persisted');
+
+        expect(result.map((item) => (item.type === 'header' ? `h:${item.title}` : `s:${item.session.id}`))).toEqual([
+            'h:Active',
+            'h:Yong-2',
+            'h:happier',
+            's:persisted-1',
+        ]);
+    });
+
+    it('emits each surviving ancestor once across sibling projects and machines', () => {
+        const source: SessionListViewItem[] = [
+            { type: 'header', title: 'Active', headerKind: 'active', groupKey: 'active', serverId: 'server-a' },
+            { type: 'header', title: 'Yong-2', headerKind: 'machine', groupKey: 'server:server-a:machine:m1', serverId: 'server-a' },
+            { type: 'header', title: 'happier', headerKind: 'project', groupKey: 'project-a1', serverId: 'server-a' },
+            makeSession('a1', false),
+            makeSession('a2', false),
+            { type: 'header', title: 'Home', headerKind: 'project', groupKey: 'project-a2', serverId: 'server-a' },
+            makeSession('a3', false),
+            { type: 'header', title: 'YongMac', headerKind: 'machine', groupKey: 'server:server-a:machine:m2', serverId: 'server-a' },
+            { type: 'header', title: 'happier', headerKind: 'project', groupKey: 'project-b1', serverId: 'server-a' },
+            makeSession('b1', false),
+        ];
+
+        const result = filterSessionListViewDataByStorageKind(source, 'persisted');
+
+        expect(result.map((item) => (item.type === 'header' ? `h:${item.title}` : `s:${item.session.id}`))).toEqual([
+            'h:Active',
+            'h:Yong-2',
+            'h:happier',
+            's:a1',
+            's:a2',
+            'h:Home',
+            's:a3',
+            'h:YongMac',
+            'h:happier',
+            's:b1',
+        ]);
+    });
+
+    it('drops a machine whose every project loses its rows to the storage filter', () => {
+        const source: SessionListViewItem[] = [
+            { type: 'header', title: 'Active', headerKind: 'active', groupKey: 'active', serverId: 'server-a' },
+            { type: 'header', title: 'Yong-2', headerKind: 'machine', groupKey: 'server:server-a:machine:m1', serverId: 'server-a' },
+            { type: 'header', title: 'happier', headerKind: 'project', groupKey: 'project-a1', serverId: 'server-a' },
+            makeSession('direct-only', true),
+            { type: 'header', title: 'YongMac', headerKind: 'machine', groupKey: 'server:server-a:machine:m2', serverId: 'server-a' },
+            { type: 'header', title: 'happier', headerKind: 'project', groupKey: 'project-b1', serverId: 'server-a' },
+            makeSession('persisted-1', false),
+        ];
+
+        const result = filterSessionListViewDataByStorageKind(source, 'persisted');
+
+        expect(result.map((item) => (item.type === 'header' ? `h:${item.title}` : `s:${item.session.id}`))).toEqual([
+            'h:Active',
+            'h:YongMac',
+            'h:happier',
+            's:persisted-1',
+        ]);
+    });
 });

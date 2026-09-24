@@ -1,5 +1,6 @@
 import { type MachineDisplayRenderable } from '@/sync/domains/machines/machineDisplayRenderable';
 import { resolveCanonicalMachineId } from '@/sync/domains/machines/identity/resolveCanonicalMachineId';
+import { t } from '@/text';
 import { formatPathRelativeToHome } from '@/utils/sessions/formatPathRelativeToHome';
 import { normalizeNonEmptyString } from '@/utils/strings/normalizeNonEmptyString';
 
@@ -104,9 +105,11 @@ export function resolveSessionWorkspacePresentation(params: Readonly<{
     const workspaceKey = `wl_${workspaceHash}`;
     const displayPath = pathKey ? formatPathRelativeToHome(pathKey, homeDir ?? undefined) : '';
     const customLabel = readWorkspaceLabel(params.workspaceLabelsV1, workspaceKey);
+    const basename = resolveWorkspaceBasename(displayPath || pathKey);
     const defaultDisplayTitle = params.workspacePathDisplayModeV1 === 'path'
         ? displayPath
-        : resolveWorkspaceBasename(displayPath || pathKey);
+        // A bare `~` is a correct path but an unreadable group title, so name the home workspace.
+        : (basename === '~' ? t('sessionsList.homeWorkspaceTitle') : basename);
     const displayMachine = (() => {
         if (displayMachineId) {
             return params.machines[displayMachineId] ?? makeUnknownMachine(displayMachineId);

@@ -1,4 +1,4 @@
-import type { MachineDisplayRenderable } from '@/sync/domains/machines/machineDisplayRenderable';
+import { getMachineDisplaySubtitle, type MachineDisplayRenderable } from '@/sync/domains/machines/machineDisplayRenderable';
 import type { SessionListRenderableSession } from './sessionListRenderable';
 import type { SessionListAttentionPromotionReason } from './attentionPromotion/sessionListAttentionPromotionTypes';
 import type { SessionListWorkingPlacementReason } from './placement/sessionListPlacementProjection';
@@ -23,7 +23,7 @@ export type SessionListViewItem =
     | {
         type: 'header';
         title: string;
-        headerKind?: 'date' | 'server' | 'active' | 'inactive' | 'sessions' | 'project' | 'pinned' | 'attention' | 'working' | 'shared' | 'folder';
+        headerKind?: 'date' | 'server' | 'machine' | 'active' | 'inactive' | 'sessions' | 'project' | 'pinned' | 'attention' | 'working' | 'shared' | 'folder';
         groupKey?: string;
         workspaceKey?: string;
         workspace?: SessionFolderWorkspaceRefV1;
@@ -252,6 +252,26 @@ function groupSessionsByProject(params: Readonly<{
     return sortedGroups;
 }
 
+/**
+ * Machine-first ordering: every project group of one machine stays contiguous so a single machine
+ * header can own them. Machines keep the recency order the caller already established (the machine
+ * whose newest project group is newest comes first), which preserves "most recently used first"
+ * while making the machine — not the repeatable project basename — the primary axis.
+ */
+function orderProjectGroupsByMachine(groups: ReadonlyArray<ProjectGroup>): ProjectGroup[] {
+    const byMachine = new Map<string, ProjectGroup[]>();
+    for (const group of groups) {
+        const machineKey = group.workspaceMachineId ?? group.machine.id;
+        const bucket = byMachine.get(machineKey);
+        if (bucket) {
+            bucket.push(group);
+            continue;
+        }
+        byMachine.set(machineKey, [group]);
+    }
+    return Array.from(byMachine.values()).flat();
+}
+
 function pushProjectGroupsToList(params: Readonly<{
     listData: SessionListViewItem[];
     groups: ReadonlyArray<ProjectGroup>;
@@ -260,7 +280,20 @@ function pushProjectGroupsToList(params: Readonly<{
     serverScopeMeta: ServerScopeMeta;
     sessionFolders?: BuildSessionListViewDataOptions['sessionFolders'];
 }>): void {
-    for (const group of params.groups) {
+    let openMachineKey: string | null = null;
+    for (const group of orderProjectGroupsByMachine(params.groups)) {
+        const machineKey = group.workspaceMachineId ?? group.machine.id;
+        if (machineKey !== openMachineKey) {
+            openMachineKey = machineKey;
+            params.listData.push({
+                type: 'header',
+                title: getMachineDisplaySubtitle(group.machine, machineKey),
+                headerKind: 'machine',
+                groupKey: `server:${params.serverKey}:machine:${machineKey}`,
+                machine: group.machine,
+                ...params.serverScopeMeta,
+            });
+        }
         const hasGroupHeader = Boolean(group.displayPath);
         const groupKey = `server:${params.serverKey}:project:${group.workspaceHash}`;
         const projectHeader: Extract<SessionListViewItem, { type: 'header' }> = {
@@ -278,7 +311,6 @@ function pushProjectGroupsToList(params: Readonly<{
                 : null,
             seedSessionId: group.sessions[0]?.id ?? null,
             machine: group.machine,
-            subtitle: group.machine.metadata?.displayName || group.machine.metadata?.host || group.machine.id,
             ...params.serverScopeMeta,
         };
 
