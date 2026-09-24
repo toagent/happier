@@ -9,6 +9,7 @@ import { Typography } from '@/constants/Typography';
 import type { SessionListViewItem } from '@/sync/domains/state/storage';
 import { t } from '@/text';
 import { useWorkspaceFavicon } from './useWorkspaceFavicon';
+import { SESSION_LIST_NATIVE_TOUCH_TARGET_SIZE } from './sessionListRowHeights';
 import { Icon } from '@/components/ui/icons/Icon';
 
 const WORKSPACE_FAVICON_SIZE = 16;
@@ -25,6 +26,13 @@ const stylesheet = StyleSheet.create((theme) => ({
         paddingHorizontal: 24,
         paddingTop: 10,
         paddingBottom: 5,
+    },
+    // Native rows are tapped, not clicked: the controls below own real touch boxes, so the section
+    // trades its vertical padding for them and pulls in on the right so the glyphs stay aligned.
+    sectionNativeTouch: {
+        paddingTop: 2,
+        paddingBottom: 0,
+        paddingRight: 12,
     },
     row: {
         flexDirection: 'row' as const,
@@ -78,6 +86,10 @@ const stylesheet = StyleSheet.create((theme) => ({
         flex: 1,
         minWidth: 0,
     },
+    contentNativeTouch: {
+        minHeight: SESSION_LIST_NATIVE_TOUCH_TARGET_SIZE,
+        justifyContent: 'center' as const,
+    },
     inlineActions: {
         flexDirection: 'row' as const,
         alignItems: 'center' as const,
@@ -97,6 +109,11 @@ const stylesheet = StyleSheet.create((theme) => ({
         justifyContent: 'center' as const,
         borderRadius: 999,
         marginLeft: 4,
+    },
+    actionButtonNativeTouch: {
+        width: SESSION_LIST_NATIVE_TOUCH_TARGET_SIZE,
+        height: SESSION_LIST_NATIVE_TOUCH_TARGET_SIZE,
+        marginLeft: 0,
     },
     chevron: {
         width: 16,
@@ -154,6 +171,8 @@ export const ProjectGroupHeader = React.memo(function ProjectGroupHeader(props: 
     const isWeb = Platform.OS === 'web';
     const showHoverActions = !isWeb || isRowHovered || isActionsHovered || menuOpen;
     const showChevron = !isWeb || collapsed || showHoverActions;
+    const actionButtonStyle = isWeb ? styles.actionButton : [styles.actionButton, styles.actionButtonNativeTouch];
+    const actionHitSlop = isWeb ? 8 : undefined;
     const workspaceKey = item.workspaceKey ?? '';
     const reorderHandleKey = item.groupKey ?? workspaceKey;
     const customLabel = workspaceKey ? workspaceLabelsV1[workspaceKey] : undefined;
@@ -206,14 +225,14 @@ export const ProjectGroupHeader = React.memo(function ProjectGroupHeader(props: 
 
     const chevronColor = theme.colors.text.secondary;
     return (
-        <View style={styles.section}>
+        <View style={isWeb ? styles.section : [styles.section, styles.sectionNativeTouch]}>
             <View
                 style={styles.row}
                 onPointerEnter={isWeb ? () => setIsRowHovered(true) : undefined}
                 onPointerLeave={isWeb ? () => setIsRowHovered(false) : undefined}
             >
                 <Pressable
-                    style={styles.content}
+                    style={isWeb ? styles.content : [styles.content, styles.contentNativeTouch]}
                     onPress={onToggleCollapse}
                     testID={headerTestId}
                     accessibilityRole="button"
@@ -269,7 +288,8 @@ export const ProjectGroupHeader = React.memo(function ProjectGroupHeader(props: 
                     ) : null}
                 </Pressable>
                 <View style={styles.trailingActions}>
-                    {showHoverActions && reorderHandleKey ? (
+                    {/* Native reordering starts from a long press on the whole header, so this handle is pointer-only. */}
+                    {isWeb && showHoverActions && reorderHandleKey ? (
                         <Pressable
                             style={styles.actionButton}
                             testID={`session-workspace-reorder-handle:${reorderHandleKey}`}
@@ -303,7 +323,7 @@ export const ProjectGroupHeader = React.memo(function ProjectGroupHeader(props: 
                             popoverPortalWebTarget="body"
                             trigger={({ toggle }) => (
                                 <Pressable
-                                    style={styles.actionButton}
+                                    style={actionButtonStyle}
                                     onPress={(event) => {
                                         (event as any)?.stopPropagation?.();
                                         toggle();
@@ -312,7 +332,7 @@ export const ProjectGroupHeader = React.memo(function ProjectGroupHeader(props: 
                                     onHoverOut={isWeb ? () => setIsActionsHovered(false) : undefined}
                                     accessibilityRole="button"
                                     accessibilityLabel={t('common.moreActions')}
-                                    hitSlop={8}
+                                    hitSlop={actionHitSlop}
                                 >
                                     <Icon name="dots-three" size={14} color={actionIconColor} />
                                 </Pressable>
@@ -321,14 +341,14 @@ export const ProjectGroupHeader = React.memo(function ProjectGroupHeader(props: 
                     ) : null}
                     {canCreateSession ? (
                         <Pressable
-                            style={styles.actionButton}
+                            style={actionButtonStyle}
                             onPress={(event) => {
                                 (event as any)?.stopPropagation?.();
                                 onCreateSession();
                             }}
                             accessibilityRole="button"
                             accessibilityLabel={t('machine.launchNewSessionInDirectory')}
-                            hitSlop={8}
+                            hitSlop={actionHitSlop}
                         >
                             <Icon name="plus" size={14} color={actionIconColor} />
                         </Pressable>

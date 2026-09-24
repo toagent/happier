@@ -1,10 +1,11 @@
 import React from 'react';
-import { Pressable } from 'react-native';
+import { Platform, Pressable, type ViewStyle } from 'react-native';
 import { useUnistyles } from 'react-native-unistyles';
 
 import { DropdownMenu, type DropdownMenuItem } from '@/components/ui/forms/dropdown/DropdownMenu';
 import { t } from '@/text';
 import type { SessionFolderViewModeV1 } from './sessionFolderShellTypes';
+import { SESSION_LIST_NATIVE_TOUCH_TARGET_SIZE } from './sessionListRowHeights';
 import type { SessionListFolderSortModeV1 } from '@/sync/domains/session/listing/sessionListFolderSortMode';
 import { Icon, ICON_SIZE } from '@/components/ui/icons/Icon';
 import {
@@ -14,6 +15,15 @@ import {
 } from '@/sync/domains/session/listing/sessionListOrderingRules';
 
 const FOLDER_SORT_MODE_ACTION_PREFIX = 'session-folder-sort-mode:';
+
+const isNativeTouch = Platform.OS !== 'web';
+// On touch the trigger owns a real finger-sized box; hitSlop would overlap the neighbouring search.
+const NATIVE_TOUCH_TRIGGER_STYLE: ViewStyle = {
+    width: SESSION_LIST_NATIVE_TOUCH_TARGET_SIZE,
+    height: SESSION_LIST_NATIVE_TOUCH_TARGET_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+};
 
 function resolveFolderSortModeAction(itemId: string): SessionListFolderSortModeV1 | null {
     if (!itemId.startsWith(FOLDER_SORT_MODE_ACTION_PREFIX)) return null;
@@ -175,7 +185,8 @@ export function SessionListViewMenuButton(props: Readonly<{
                         event?.stopPropagation?.();
                         toggle();
                     }}
-                    hitSlop={8}
+                    hitSlop={isNativeTouch ? undefined : 8}
+                    style={isNativeTouch ? NATIVE_TOUCH_TRIGGER_STYLE : undefined}
                 >
                     <Icon name="funnel-simple" size={ICON_SIZE.sm} color={iconColor} />
                 </Pressable>

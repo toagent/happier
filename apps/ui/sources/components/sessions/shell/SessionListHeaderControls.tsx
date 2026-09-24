@@ -1,15 +1,25 @@
 import React from 'react';
-import { Animated, Easing, Pressable, View, type TextStyle, type ViewStyle } from 'react-native';
+import { Animated, Easing, Platform, Pressable, View, type TextStyle, type ViewStyle } from 'react-native';
 import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 
 import { DropdownMenu, type DropdownMenuItem } from '@/components/ui/forms/dropdown/DropdownMenu';
 import { TextInput } from '@/components/ui/text/Text';
 import { t } from '@/text';
 import { Icon } from '@/components/ui/icons/Icon';
+import { SESSION_LIST_NATIVE_TOUCH_TARGET_SIZE } from './sessionListRowHeights';
 
 const TAG_FILTER_ITEM_PREFIX = 'session-list-tag-filter:';
 const SEARCH_INPUT_EXPANDED_WIDTH = 188;
-const SEARCH_INPUT_COLLAPSED_WIDTH = 16;
+const isNativeTouch = Platform.OS !== 'web';
+// Collapsed, the shell is just the search button: on touch it is as wide as a finger target. The
+// width is animated, so this has to be the animation's start value; a minWidth is not honored there.
+const SEARCH_INPUT_COLLAPSED_WIDTH = isNativeTouch ? SESSION_LIST_NATIVE_TOUCH_TARGET_SIZE : 16;
+const SEARCH_SHELL_HEIGHT = 28;
+const SEARCH_TRIGGER_NATIVE_TOUCH_VERTICAL_SLOP = (SESSION_LIST_NATIVE_TOUCH_TARGET_SIZE - SEARCH_SHELL_HEIGHT) / 2;
+const SEARCH_TRIGGER_NATIVE_TOUCH_HIT_SLOP = {
+    top: SEARCH_TRIGGER_NATIVE_TOUCH_VERTICAL_SLOP,
+    bottom: SEARCH_TRIGGER_NATIVE_TOUCH_VERTICAL_SLOP,
+};
 const SEARCH_INPUT_ANIMATION_MS = 170;
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const WEB_NO_FOCUS_OUTLINE_STYLE = {
@@ -39,15 +49,23 @@ const stylesheet = StyleSheet.create((theme) => ({
         alignItems: 'center' as const,
         gap: 8,
     },
+    // On touch the buttons below carry their own finger-sized boxes, so the row needs no extra gap.
+    controlsNativeTouch: {
+        gap: 0,
+    },
     iconButton: {
         width: 20,
         height: 24,
         alignItems: 'center' as const,
         justifyContent: 'center' as const,
     },
+    iconButtonNativeTouch: {
+        width: SESSION_LIST_NATIVE_TOUCH_TARGET_SIZE,
+        height: SESSION_LIST_NATIVE_TOUCH_TARGET_SIZE,
+    },
     searchShell: {
         position: 'relative' as const,
-        height: 28,
+        height: SEARCH_SHELL_HEIGHT,
         flexDirection: 'row' as const,
         alignItems: 'center' as const,
         justifyContent: 'center' as const,
@@ -269,13 +287,15 @@ export const SessionListHeaderControls = React.memo(function SessionListHeaderCo
     }, [onSelectedTagsChange, selectedTagSet, selectedTags]);
 
     return (
-        <View style={styles.controls}>
+        <View style={isNativeTouch ? [styles.controls, styles.controlsNativeTouch] : styles.controls}>
             <AnimatedPressable
                 testID="session-list-search-trigger"
                 accessibilityRole={searchIsOpen ? undefined : 'button'}
                 accessibilityLabel={searchIsOpen ? undefined : t('sessionsList.searchSessions')}
                 onPress={searchIsOpen ? undefined : handleOpenSearch}
-                hitSlop={searchIsOpen ? undefined : 8}
+                // The shell keeps its compact 28px pill when expanded, so on touch the collapsed
+                // trigger reaches finger height through vertical hitSlop instead of a taller box.
+                hitSlop={searchIsOpen ? undefined : isNativeTouch ? SEARCH_TRIGGER_NATIVE_TOUCH_HIT_SLOP : 8}
                 style={[
                     styles.searchShell,
                     WEB_NO_FOCUS_OUTLINE_STYLE,
@@ -369,8 +389,8 @@ export const SessionListHeaderControls = React.memo(function SessionListHeaderCo
                                 stopPressEventPropagation(event);
                                 toggle();
                             }}
-                            hitSlop={8}
-                            style={styles.iconButton}
+                            hitSlop={isNativeTouch ? undefined : 8}
+                            style={isNativeTouch ? [styles.iconButton, styles.iconButtonNativeTouch] : styles.iconButton}
                         >
                             <Icon
                                 name="tag"
