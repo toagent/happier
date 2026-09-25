@@ -53,6 +53,7 @@ import {
   resolveTwinSessionReleaseOutboxConfig,
   type TwinSessionReleaseResult,
 } from '@/integrations/twin/twinSessionReleaseOutbox';
+import { notifyScheduledSessionIdle } from '@/integrations/twin/twinSessionIdleNotifier';
 import packageJson from '../../package.json';
 import { getEnvironmentInfo } from '@/ui/doctor';
 import {
@@ -7012,6 +7013,18 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
           sessionId: input.sessionId,
           event: input.event,
         });
+        void notifyScheduledSessionIdle({
+          event: input.event,
+          sessionId: input.sessionId,
+          lease: getCurrentChildren().find((child) => child.happySessionId === input.sessionId)?.spawnOptions?.schedulingLease,
+          callIdle: async ({ controllerMachineId, request }) => await callMachineRpc({
+            credentials,
+            machineId: controllerMachineId,
+            method: RPC_METHODS.DAEMON_SCHEDULED_SESSION_IDLE_V1,
+            request,
+          }),
+          logWarning: (message, error) => logger.warn(message, { error: serializeAxiosErrorForLog(error) }),
+        });
         // REV-1: failTurn emits `assistant_message_end` too — a FAILED turn (the
         // usage-limit interruption itself) is not provider-activity proof and must
         // not clear the recovery intents the failure report just armed.
@@ -8457,7 +8470,10 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
                 },
                 resolveScheduledTargetSpawnByNonce: resolveDaemonSpawnSessionByNonce,
                 ...(twinSessionScheduler
-                  ? { releaseScheduledSessionLease: twinSessionScheduler.observeRemoteSessionExit }
+                  ? {
+                      releaseScheduledSessionLease: twinSessionScheduler.observeRemoteSessionExit,
+                      observeScheduledSessionIdle: twinSessionScheduler.observeSessionIdle,
+                    }
                   : {}),
                 abandonSpawnSessionByNonce: async (spawnNonce) => await abandonSpawnedSessionUntilCompleted({
                   spawnNonce,

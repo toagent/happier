@@ -333,6 +333,63 @@ describe('twin session scheduler', () => {
     expect(harness.resolveTargetSpawn).toHaveBeenCalledTimes(1);
   });
 
+  describe('idle slot release', () => {
+    const lease = () => ({ attemptLookupId: 'spawn-1', leaseId: deriveTwinSessionLeaseId('spawn-1', 'twin-dev'), sessionId: 'session-1' });
+
+    it('returns the queue slot when the task goes idle but keeps the session running', async () => {
+      // A finished task whose session stays open for follow-ups is not work; holding its slot let
+      // three idle sessions block every new task behind the shared FIFO.
+      const harness = createHarness();
+      await harness.scheduler.spawn(scheduledOptions());
+
+      await expect(harness.scheduler.observeSessionIdle(lease())).resolves.toEqual({ status: 'released' });
+      await expect(harness.scheduler.observeSessionIdle(lease())).resolves.toEqual({ status: 'released' });
+
+      expect(harness.releaseLease).toHaveBeenCalledTimes(1);
+      expect(harness.finalizeWorkspace).not.toHaveBeenCalled();
+      expect(harness.store.attempts.get('spawn-1')).toMatchObject({ phase: 'running', slotReleased: true });
+    });
+
+    it('does not count an idle session as load when choosing a worker', async () => {
+      const harness = createHarness({
+        spawnTarget: async () => ({ type: 'success' as const, sessionId: 'session-control' }),
+      });
+      await harness.scheduler.spawn(scheduledOptions({ spawnNonce: 'first', schedulingTarget: { v: 1, auto: true } }));
+      await harness.scheduler.observeSessionIdle({
+        attemptLookupId: 'first',
+        leaseId: deriveTwinSessionLeaseId('first', 'twin-control'),
+        sessionId: 'session-control',
+      });
+
+      await harness.scheduler.spawn(scheduledOptions({ spawnNonce: 'second', schedulingTarget: { v: 1, auto: true } }));
+
+      expect(harness.store.attempts.get('second')?.workerId).toBe('twin-control');
+    });
+
+    it('still materializes the review on exit without releasing the slot twice', async () => {
+      const harness = createHarness();
+      await harness.scheduler.spawn(scheduledOptions());
+      await harness.scheduler.observeSessionIdle(lease());
+
+      await harness.scheduler.observeSessionExit({ sessionId: 'session-1', unexpected: false });
+
+      expect(harness.finalizeWorkspace).toHaveBeenCalledTimes(1);
+      expect(harness.releaseLease).toHaveBeenCalledTimes(1);
+      expect(harness.store.attempts.get('spawn-1')?.phase).toBe('released');
+    });
+
+    it('ignores an idle report that does not match the attempt', async () => {
+      const harness = createHarness();
+      await harness.scheduler.spawn(scheduledOptions());
+
+      await expect(harness.scheduler.observeSessionIdle({ ...lease(), sessionId: 'someone-else' }))
+        .resolves.toEqual({ status: 'not_found' });
+      await expect(harness.scheduler.observeSessionIdle({ ...lease(), leaseId: 'forged' }))
+        .resolves.toEqual({ status: 'not_found' });
+      expect(harness.releaseLease).not.toHaveBeenCalled();
+    });
+  });
+
   it('reports why workspace preparation failed instead of a bare failure', async () => {
     // The user only sees this message; the generic text alone left the cause unrecoverable.
     const harness = createHarness({

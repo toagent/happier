@@ -51,6 +51,11 @@ export type TwinSessionSchedulerAttempt = Readonly<{
   runnerAcceptanceRequired?: boolean;
   runnerAcceptanceRecorded?: boolean;
   leaseForgotten?: boolean;
+  /**
+   * The queue slot was returned when the task went idle; the session keeps running for follow-ups
+   * and is materialized on exit as usual. Its lease must not be released a second time.
+   */
+  slotReleased?: boolean;
 }>;
 
 export type TwinSessionSchedulerAttemptStore = Readonly<{
@@ -169,7 +174,9 @@ function invalidRequest(message: string): SpawnSessionResult {
 export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
   const release = async (attempt: TwinSessionSchedulerAttempt): Promise<TwinSessionSchedulerAttempt> => {
     if (attempt.phase === 'released') return attempt;
-    await deps.releaseLease({ leaseId: attempt.leaseId, ownerToken: attempt.ownerToken });
+    if (!attempt.slotReleased) {
+      await deps.releaseLease({ leaseId: attempt.leaseId, ownerToken: attempt.ownerToken });
+    }
     return (await deps.store.update(attempt.spawnNonce, (current) => ({
       ...current,
       phase: 'released' as const,
@@ -395,7 +402,7 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
     const load = new Map(order.map((workerId) => [workerId, 0]));
     for (const attempt of await deps.store.listRecoverable()) {
       const current = load.get(attempt.workerId);
-      if (current !== undefined && attempt.phase !== 'failed') load.set(attempt.workerId, current + 1);
+      if (current !== undefined && attempt.phase !== 'failed' && !attempt.slotReleased) load.set(attempt.workerId, current + 1);
     }
     let chosen = order[0] ?? '';
     for (const workerId of order) {
@@ -482,6 +489,28 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
       if (!input.unexpected) await releaseBySessionId(input.sessionId);
     },
     observeRespawnSuccess: async (_input: Readonly<{ sessionId: string }>): Promise<void> => {},
+    // The worker reports a finished turn. Only the queue slot goes back: "at most N at once" limits
+    // tasks doing work, not sessions left open for follow-ups (which then run without a slot).
+    observeSessionIdle: async (input: Readonly<{
+      attemptLookupId: string;
+      leaseId: string;
+      sessionId: string;
+    }>): Promise<Readonly<{ status: 'released' | 'not_found' }>> => {
+      const attempt = await deps.store.load(input.attemptLookupId.trim());
+      const resolution = resolutionFromResult(attempt?.result);
+      if (
+        !attempt
+        || attempt.leaseId !== input.leaseId.trim()
+        || resolution.status !== 'success'
+        || resolution.sessionId !== input.sessionId.trim()
+      ) {
+        return { status: 'not_found' };
+      }
+      if (attempt.phase === 'released' || attempt.slotReleased) return { status: 'released' };
+      await deps.releaseLease({ leaseId: attempt.leaseId, ownerToken: attempt.ownerToken });
+      await deps.store.update(attempt.spawnNonce, (current) => ({ ...current, slotReleased: true }));
+      return { status: 'released' };
+    },
     observeRespawnTerminal: async (input: Readonly<{ sessionId: string }>): Promise<void> => {
       await releaseBySessionId(input.sessionId);
     },

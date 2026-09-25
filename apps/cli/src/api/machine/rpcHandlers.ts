@@ -250,6 +250,12 @@ export type MachineRpcHandlers = {
     sessionId: string;
     receipt?: string;
   }>) => Promise<import('@/integrations/twin/twinSessionReleaseOutbox').TwinSessionReleaseResult>;
+  /** Controller only: a worker reports a scheduled session finished its turn (returns the queue slot). */
+  observeScheduledSessionIdle?: (input: Readonly<{
+    attemptLookupId: string;
+    leaseId: string;
+    sessionId: string;
+  }>) => Promise<Readonly<{ status: 'released' | 'not_found' }>>;
   abandonSpawnSessionByNonce?: (spawnNonce: string) => Promise<
     | { status: 'completed'; sessionId: string }
     | { status: 'pending' | 'not_found' | 'unsupported' | 'failed' }
@@ -417,6 +423,7 @@ export function registerMachineRpcHandlers(params: Readonly<{
     resolveSpawnSessionByNonce,
     resolveScheduledTargetSpawnByNonce,
     releaseScheduledSessionLease,
+    observeScheduledSessionIdle,
     abandonSpawnSessionByNonce,
   } = handlers;
   const spawnSession = async (options: SpawnSessionOptions): Promise<SpawnSessionResult> => {
@@ -475,6 +482,15 @@ export function registerMachineRpcHandlers(params: Readonly<{
     }).strict().safeParse(raw);
     if (!parsed.success || !releaseScheduledSessionLease) return { status: 'not_found' as const };
     return await releaseScheduledSessionLease(parsed.data);
+  });
+  rpcHandlerManager.registerHandler(RPC_METHODS.DAEMON_SCHEDULED_SESSION_IDLE_V1, async (raw: unknown) => {
+    const parsed = z.object({
+      attemptLookupId: z.string().trim().min(1),
+      leaseId: z.string().trim().min(1),
+      sessionId: z.string().trim().min(1),
+    }).strict().safeParse(raw);
+    if (!parsed.success || !observeScheduledSessionIdle) return { status: 'not_found' as const };
+    return await observeScheduledSessionIdle(parsed.data);
   });
   const stopSessionConfirmed = async (sessionId: string): Promise<boolean> => (
     normalizeMachineStopSessionResult(await stopSession(sessionId)).status === 'stopped'

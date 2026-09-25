@@ -244,6 +244,7 @@ const AttemptSchema = z.object({
   runnerAcceptanceRequired: z.boolean().optional(),
   runnerAcceptanceRecorded: z.boolean().optional(),
   leaseForgotten: z.boolean().optional(),
+  slotReleased: z.boolean().optional(),
 }).strict();
 
 const ReleaseReceiptPayloadSchema = z.object({

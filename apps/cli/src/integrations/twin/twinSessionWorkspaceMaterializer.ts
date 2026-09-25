@@ -12,7 +12,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import {
   buildSessionWorkspaceLocationV1,
@@ -155,6 +155,15 @@ function resolveWorkspaceChild(root: string, name: string): string {
     throw new Error('Scheduled session workspace path escaped its configured root');
   }
   return child;
+}
+
+/**
+ * The last path segment of a task copy is the project's own name (`<root>/session-<hash>/<project>`),
+ * because the app derives the session's project label from it. Kept to the remote-path-safe charset.
+ */
+function projectDirectorySegment(sourceRootDirectory: string): string {
+  const segment = basename(sourceRootDirectory).replace(/[^A-Za-z0-9._-]/gu, '-').replace(/^\.+/u, '');
+  return segment || 'workspace';
 }
 
 function resolveSourceRelativeDirectory(sourceRoot: string, sourceDirectory: string): string {
@@ -482,7 +491,7 @@ export function createTwinSessionWorkspaceMaterializer(params: Readonly<{
       })));
       const sourceRelativeDirectory = resolveSourceRelativeDirectory(sourceRootDirectory, sourceDirectory);
       const sourceHead = await runGitText({ cwd: sourceRootDirectory, args: ['rev-parse', 'HEAD'] });
-      const name = workspaceDirectoryName(input.attempt);
+      const name = join(workspaceDirectoryName(input.attempt), projectDirectorySegment(sourceRootDirectory));
       const reviewRootDirectory = resolveWorkspaceChild(reviewBase, name);
       const targetBase = assertAbsoluteWorkspaceRoot(worker.workspace.root, `Workspace root for ${input.attempt.workerId}`);
       const targetRootDirectory = resolveWorkspaceChild(targetBase, name);

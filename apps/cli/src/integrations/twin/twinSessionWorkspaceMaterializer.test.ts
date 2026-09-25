@@ -180,6 +180,33 @@ describe('twin session workspace materializer', () => {
     }
   });
 
+  it('names each task copy after its project so the app shows the project, not an internal id', async () => {
+    // Session titles and paths are derived from the directory name; a bare `session-<hash>` hid which
+    // project a task belonged to.
+    const root = await mkdtemp(join(tmpdir(), 'happier-twin-workspace-name-'));
+    temporaryDirectories.push(root);
+    const sourceRoot = join(root, 'dispatch-demo');
+    await mkdir(sourceRoot, { recursive: true });
+    await runGit(sourceRoot, ['init', '--initial-branch=main']);
+    await runGit(sourceRoot, ['config', 'user.name', 'Test User']);
+    await runGit(sourceRoot, ['config', 'user.email', 'test@example.com']);
+    await writeFile(join(sourceRoot, 'tracked.txt'), 'base\n', 'utf8');
+    await runGit(sourceRoot, ['add', 'tracked.txt']);
+    await runGit(sourceRoot, ['commit', '-m', 'base']);
+    const materializer = createTwinSessionWorkspaceMaterializer({
+      reviewRoot: join(root, 'reviews'),
+      controllerMachineId: 'machine-controller',
+      workers: { 'twin-dev': { machineId: 'machine-dev', workspace: { kind: 'local', root: join(root, 'targets') } } },
+      updateSessionMetadata: async () => {},
+    });
+
+    const { workspace } = await materializer.prepare({ attempt: attempt(sourceRoot) });
+
+    expect(workspace.targetRootDirectory.split('/').at(-1)).toBe('dispatch-demo');
+    expect(workspace.reviewRootDirectory.split('/').at(-1)).toBe('dispatch-demo');
+    expect(await readFile(join(workspace.targetDirectory, 'tracked.txt'), 'utf8')).toBe('base\n');
+  });
+
   it('marks the review stale when the source worktree changes without moving HEAD', async () => {
     const root = await mkdtemp(join(tmpdir(), 'happier-twin-workspace-stale-'));
     temporaryDirectories.push(root);

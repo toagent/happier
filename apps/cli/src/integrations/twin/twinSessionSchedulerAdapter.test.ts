@@ -209,6 +209,10 @@ describe('twin session scheduler adapter', () => {
     await expect(store.load('spawn-1')).resolves.toEqual(created);
     await expect(store.listRecoverable()).resolves.toEqual([created]);
 
+    // An idle task keeps running with its slot returned; that state must survive a daemon restart.
+    await store.save(attempt({ phase: 'running', slotReleased: true }));
+    await expect(store.load('spawn-1')).resolves.toMatchObject({ phase: 'running', slotReleased: true });
+
     await store.save(attempt({ phase: 'released', leaseForgotten: true }));
     await expect(store.load('spawn-1')).resolves.toMatchObject({ phase: 'released', leaseForgotten: true });
     await expect(store.listRecoverable()).resolves.toEqual([]);
