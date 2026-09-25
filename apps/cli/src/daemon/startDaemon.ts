@@ -8471,8 +8471,20 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
                 resolveScheduledTargetSpawnByNonce: resolveDaemonSpawnSessionByNonce,
                 ...(twinSessionScheduler
                   ? {
-                      releaseScheduledSessionLease: twinSessionScheduler.observeRemoteSessionExit,
-                      observeScheduledSessionIdle: twinSessionScheduler.observeSessionIdle,
+                      releaseScheduledSessionLease: async (input) => {
+                        const outcome = await twinSessionScheduler.observeRemoteSessionExit(input);
+                        if (outcome.status !== 'released' && outcome.status !== 'acknowledged') {
+                          logger.debug('[TWIN SCHEDULER] Exit release not completed', { sessionId: input.sessionId, status: outcome.status });
+                        }
+                        return outcome;
+                      },
+                      // An idle report that does not return the slot leaves the queue full, so its
+                      // outcome (and why it did not match) is always logged.
+                      observeScheduledSessionIdle: async (input) => {
+                        const outcome = await twinSessionScheduler.observeSessionIdle(input);
+                        logger.debug('[TWIN SCHEDULER] Idle report', { sessionId: input.sessionId, ...outcome });
+                        return outcome;
+                      },
                     }
                   : {}),
                 abandonSpawnSessionByNonce: async (spawnNonce) => await abandonSpawnedSessionUntilCompleted({

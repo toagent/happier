@@ -398,9 +398,9 @@ describe('twin session scheduler', () => {
       await harness.scheduler.spawn(scheduledOptions());
 
       await expect(harness.scheduler.observeSessionIdle({ ...lease(), sessionId: 'someone-else' }))
-        .resolves.toEqual({ status: 'not_found' });
+        .resolves.toMatchObject({ status: 'not_found', reason: 'session_mismatch' });
       await expect(harness.scheduler.observeSessionIdle({ ...lease(), leaseId: 'forged' }))
-        .resolves.toEqual({ status: 'not_found' });
+        .resolves.toMatchObject({ status: 'not_found', reason: 'lease_mismatch' });
       expect(harness.releaseLease).not.toHaveBeenCalled();
     });
   });

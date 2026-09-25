@@ -255,7 +255,7 @@ export type MachineRpcHandlers = {
     attemptLookupId: string;
     leaseId: string;
     sessionId: string;
-  }>) => Promise<Readonly<{ status: 'released' | 'not_found' }>>;
+  }>) => Promise<Readonly<{ status: 'released' | 'not_found'; reason?: string }>>;
   abandonSpawnSessionByNonce?: (spawnNonce: string) => Promise<
     | { status: 'completed'; sessionId: string }
     | { status: 'pending' | 'not_found' | 'unsupported' | 'failed' }

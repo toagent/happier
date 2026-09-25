@@ -495,21 +495,24 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
       attemptLookupId: string;
       leaseId: string;
       sessionId: string;
-    }>): Promise<Readonly<{ status: 'released' | 'not_found' }>> => {
+    }>): Promise<Readonly<
+      | { status: 'released' }
+      | { status: 'not_found'; reason: 'no_attempt' | 'lease_mismatch' | 'session_unresolved' | 'session_mismatch'; phase?: TwinSessionSchedulerAttempt['phase'] }
+    >> => {
       let attempt = await deps.store.load(input.attemptLookupId.trim());
+      if (!attempt) return { status: 'not_found', reason: 'no_attempt' };
+      if (attempt.leaseId !== input.leaseId.trim()) return { status: 'not_found', reason: 'lease_mismatch' };
       // A quick task can report idle before anyone resolved its pending session id; settle it from
       // the target through the normal progress path so the report can be matched.
-      if (attempt && attempt.leaseId === input.leaseId.trim() && attempt.phase === 'dispatching') {
+      if (attempt.phase === 'dispatching') {
         attempt = await progress(attempt, { acquire: false });
       }
-      const resolution = resolutionFromResult(attempt?.result);
-      if (
-        !attempt
-        || attempt.leaseId !== input.leaseId.trim()
-        || resolution.status !== 'success'
-        || resolution.sessionId !== input.sessionId.trim()
-      ) {
-        return { status: 'not_found' };
+      const resolution = resolutionFromResult(attempt.result);
+      if (resolution.status !== 'success') {
+        return { status: 'not_found', reason: 'session_unresolved', phase: attempt.phase };
+      }
+      if (resolution.sessionId !== input.sessionId.trim()) {
+        return { status: 'not_found', reason: 'session_mismatch', phase: attempt.phase };
       }
       if (attempt.phase === 'released' || attempt.slotReleased) return { status: 'released' };
       await deps.releaseLease({ leaseId: attempt.leaseId, ownerToken: attempt.ownerToken });
