@@ -117,6 +117,8 @@ test('deployment uses one immutable payload, official service lifecycle, and con
   assert.match(script, /run_controller_service_command restart --takeover --json/);
   assert.match(script, /run_worker_service_command restart --takeover --json/);
   assert.match(script, /scheduler_config=""/);
+  // Workers carry release custody, or every scheduled task routed to them is rejected.
+  assert.match(script, /HAPPIER_TWIN_SESSION_RELEASE_OUTBOX_CONFIG_JSON="\{\\"v\\":1,\\"pollIntervalMs\\":\$release_poll_interval_ms\}"/);
   assert.match(script, /twin-agent-remote queue/);
   assert.match(script, /twin-agent-queue-client/);
   assert.match(script, /twin-agent-workspace-diff/);

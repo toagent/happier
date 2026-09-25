@@ -21,6 +21,7 @@ import {
   installDaemonService,
   previewDaemonServiceInstall,
   resolveDaemonServiceTwinSchedulerConfigJson,
+  resolveDaemonServiceTwinReleaseOutboxConfigJson,
   uninstallDaemonService,
 } from './installer';
 import {
@@ -1501,6 +1502,11 @@ export async function runDaemonServiceCliCommand(params: Readonly<{
       installedPath: paths.installedPath,
       processEnv: process.env,
     });
+    const twinSessionReleaseOutboxConfigJson = resolveDaemonServiceTwinReleaseOutboxConfigJson({
+      platform: installRuntime.platform,
+      installedPath: paths.installedPath,
+      processEnv: process.env,
+    });
     const plan = planDaemonServiceInstall({
       platform: installRuntime.platform,
       mode,
@@ -1519,6 +1525,7 @@ export async function runDaemonServiceCliCommand(params: Readonly<{
       nodePath: installRuntime.nodePath,
       entryPath: installRuntime.entryPath,
       twinSessionSchedulerConfigJson,
+      twinSessionReleaseOutboxConfigJson,
     });
     const shouldKickstartCurrentDarwinInstall = installRuntime.platform === 'darwin'
       && ownership.kind !== 'none'
@@ -1557,6 +1564,7 @@ export async function runDaemonServiceCliCommand(params: Readonly<{
         nodePath: installRuntime.nodePath,
         entryPath: installRuntime.entryPath,
         twinSessionSchedulerConfigJson,
+        twinSessionReleaseOutboxConfigJson,
       });
       const installConflict = describeDaemonServiceInstallConflict({
         exactTargetExists: preview.exactTargetExists,
@@ -1629,6 +1637,7 @@ export async function runDaemonServiceCliCommand(params: Readonly<{
             nodePath: installRuntime.nodePath,
             entryPath: installRuntime.entryPath,
             twinSessionSchedulerConfigJson,
+            twinSessionReleaseOutboxConfigJson,
             strategy,
             runCommands: true,
             commandFailureMode: 'strict',
@@ -1897,6 +1906,11 @@ export async function runDaemonServiceCliCommand(params: Readonly<{
           nodePath: runtime.nodePath,
           entryPath: runtime.entryPath,
           twinSessionSchedulerConfigJson: resolveDaemonServiceTwinSchedulerConfigJson({
+            platform: runtime.platform,
+            installedPath: paths.installedPath,
+            processEnv: process.env,
+          }),
+          twinSessionReleaseOutboxConfigJson: resolveDaemonServiceTwinReleaseOutboxConfigJson({
             platform: runtime.platform,
             installedPath: paths.installedPath,
             processEnv: process.env,

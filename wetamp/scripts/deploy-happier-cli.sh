@@ -405,11 +405,12 @@ install_controller_service() {
 install_worker_service() {
   local host="$1" node_path="$2" payload="$3"
   "$SSH_BIN" -o BatchMode=yes -o ConnectTimeout=10 "$host" \
-    bash -s -- "$node_path" "$payload" "$DEPLOY_TIMESTAMP" <<'REMOTE'
+    bash -s -- "$node_path" "$payload" "$DEPLOY_TIMESTAMP" "$SCHEDULER_POLL_INTERVAL_MS" <<'REMOTE'
 set -euo pipefail
 node_path="$1"
 payload="$2"
 timestamp="$3"
+release_poll_interval_ms="$4"
 entry="$payload/package-dist/index.mjs"
 scheduler_config=""
 backup_root="$HOME/.happier/wetamp-cli/backups/$timestamp"
@@ -424,6 +425,7 @@ run_worker_service_command() {
   HAPPIER_DAEMON_SERVICE_CHANNEL=stable \
   HAPPIER_PUBLIC_RELEASE_CHANNEL=stable \
   HAPPIER_TWIN_SESSION_SCHEDULER_CONFIG_JSON="$scheduler_config" \
+  HAPPIER_TWIN_SESSION_RELEASE_OUTBOX_CONFIG_JSON="{\"v\":1,\"pollIntervalMs\":$release_poll_interval_ms}" \
     "$node_path" "$entry" service "$@"
 }
 run_worker_service_command install --takeover --replace-existing=all --yes --json

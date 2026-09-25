@@ -47,6 +47,20 @@ describe('daemon service install plan - twin scheduler environment', () => {
     expect(definition).toContain('mini-machine');
   });
 
+  it('persists the worker release custody config so scheduled tasks can land on this machine', () => {
+    // Without it a worker daemon rejects every scheduled target spawn ("release custody is
+    // unavailable"), so overflow to the developer machine and Mac mini never worked.
+    const plan = planDaemonServiceInstall({
+      ...BASE,
+      platform: 'darwin',
+      twinSessionReleaseOutboxConfigJson: JSON.stringify({ v: 1, pollIntervalMs: 1_000 }),
+    });
+    const definition = plan.files[0]?.content ?? '';
+
+    expect(definition).toContain('HAPPIER_TWIN_SESSION_RELEASE_OUTBOX_CONFIG_JSON');
+    expect(definition).not.toContain(TWIN_SCHEDULER_ENV_KEY);
+  });
+
   it('omits scheduler authority from worker-only services', () => {
     const plan = planDaemonServiceInstall({
       ...BASE,

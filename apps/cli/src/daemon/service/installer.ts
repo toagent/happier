@@ -32,33 +32,49 @@ import {
 import { doesInstalledDaemonServiceDefinitionMatchExpected } from './doesInstalledDaemonServiceDefinitionMatchExpected';
 import { resolveHappierHomeDirComparableKey } from '@/daemon/ownership/happierHomeDirComparableKey';
 import { TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY } from '@/integrations/twin/twinSessionSchedulerConfig';
+import { TWIN_SESSION_RELEASE_OUTBOX_CONFIG_ENV_KEY } from '@/integrations/twin/twinSessionReleaseOutbox';
 
 type SupportedPlatform = 'darwin' | 'linux' | 'win32';
 
-export function resolveDaemonServiceTwinSchedulerConfigJson(params: Readonly<{
+type TwinServiceEnvResolveParams = Readonly<{
   platform: SupportedPlatform;
   installedPath?: string | null;
   explicitConfig?: string | null;
   processEnv?: NodeJS.ProcessEnv;
-}>): string {
+}>;
+
+/**
+ * Twin configuration persisted in the service definition: the install-time environment wins, and a
+ * reinstall without it keeps what the installed definition already carries.
+ */
+function resolveDaemonServiceTwinEnvValue(params: TwinServiceEnvResolveParams & Readonly<{ key: string }>): string {
   const processEnv = params.processEnv ?? process.env;
   const hasProcessConfig = Object.prototype.hasOwnProperty.call(
     processEnv,
-    TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY,
+    params.key,
   );
   const explicitConfig = params.explicitConfig !== undefined
     ? params.explicitConfig
     : hasProcessConfig
-      ? processEnv[TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY]
+      ? processEnv[params.key]
       : undefined;
   const installedConfig = params.installedPath
     ? readInstalledDaemonServiceEnvValue({
         platform: params.platform,
         path: params.installedPath,
-        key: TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY,
+        key: params.key,
       })
     : null;
   return String(explicitConfig !== undefined ? explicitConfig ?? '' : installedConfig ?? '').trim();
+}
+
+export function resolveDaemonServiceTwinSchedulerConfigJson(params: TwinServiceEnvResolveParams): string {
+  return resolveDaemonServiceTwinEnvValue({ ...params, key: TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY });
+}
+
+/** Worker-side release custody; without it a worker rejects every scheduled target spawn. */
+export function resolveDaemonServiceTwinReleaseOutboxConfigJson(params: TwinServiceEnvResolveParams): string {
+  return resolveDaemonServiceTwinEnvValue({ ...params, key: TWIN_SESSION_RELEASE_OUTBOX_CONFIG_ENV_KEY });
 }
 
 function resolveSupportedPlatform(p: string): SupportedPlatform | null {
@@ -169,6 +185,7 @@ export async function previewDaemonServiceInstall(options: Readonly<{
   nodePath?: string;
   entryPath?: string;
   twinSessionSchedulerConfigJson?: string | null;
+  twinSessionReleaseOutboxConfigJson?: string | null;
 }> = {}): Promise<DaemonServiceInstallPreview> {
   const platformInput = options.platform ?? process.platform;
   const platform = resolveSupportedPlatform(platformInput);
@@ -239,6 +256,11 @@ export async function previewDaemonServiceInstall(options: Readonly<{
     installedPath: installedTargetService?.path,
     explicitConfig: options.twinSessionSchedulerConfigJson,
   });
+  const twinSessionReleaseOutboxConfigJson = resolveDaemonServiceTwinReleaseOutboxConfigJson({
+    platform,
+    installedPath: installedTargetService?.path,
+    explicitConfig: options.twinSessionReleaseOutboxConfigJson,
+  });
   const autostart: DaemonServiceAutostartMode = options.autostart ?? installedAutostart ?? 'at-login';
   const buildPlan = (planAutostart: DaemonServiceAutostartMode, autostartTriggerChangeOnly = false) => planDaemonServiceInstall({
     platform,
@@ -260,6 +282,7 @@ export async function previewDaemonServiceInstall(options: Readonly<{
     nodePath: runtimeTarget.nodePath,
     entryPath: runtimeTarget.entryPath,
     twinSessionSchedulerConfigJson,
+    twinSessionReleaseOutboxConfigJson,
   });
   // "Otherwise unchanged" is proved, not assumed: render this same install with the mode the
   // service already declares and compare it against what is on disk. If they match, the mode is
@@ -359,6 +382,7 @@ export async function installDaemonService(options: Readonly<{
   nodePath?: string;
   entryPath?: string;
   twinSessionSchedulerConfigJson?: string | null;
+  twinSessionReleaseOutboxConfigJson?: string | null;
   runCommands?: boolean;
   commandFailureMode?: DaemonServiceCommandFailureMode;
 }> = {}): Promise<void> {

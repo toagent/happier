@@ -3,6 +3,7 @@ import { basename, join, win32 as win32Path } from 'node:path';
 import { getReleaseRingCatalogEntry, type PublicReleaseRingId } from '@happier-dev/release-runtime/releaseRings';
 import { isServerIdFilesystemSafe } from '@/server/serverId';
 import { TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY } from '@/integrations/twin/twinSessionSchedulerConfig';
+import { TWIN_SESSION_RELEASE_OUTBOX_CONFIG_ENV_KEY } from '@/integrations/twin/twinSessionReleaseOutbox';
 
 import { buildLaunchAgentPlistXml, buildLaunchdPath } from './darwin';
 import { buildServicePath, planServiceAction, renderSystemdServiceUnit, renderWindowsScheduledTaskWrapperPs1 } from '@happier-dev/cli-common/service';
@@ -282,6 +283,7 @@ export function planDaemonServiceInstall(params: Readonly<{
   nodePath: string;
   entryPath: string;
   twinSessionSchedulerConfigJson?: string;
+  twinSessionReleaseOutboxConfigJson?: string;
   uid?: number;
 }>): DaemonServiceInstallPlan {
   const instanceId = sanitizeServiceInstanceId(params.instanceId);
@@ -305,6 +307,7 @@ export function planDaemonServiceInstall(params: Readonly<{
   const unitName = resolveDaemonServiceSystemdUnitName(instanceId, channel, targetMode);
   const programArgs = buildDaemonServiceProgramArgs({ nodePath: params.nodePath, entryPath: params.entryPath });
   const twinSessionSchedulerConfigJson = String(params.twinSessionSchedulerConfigJson ?? '').trim();
+  const twinSessionReleaseOutboxConfigJson = String(params.twinSessionReleaseOutboxConfigJson ?? '').trim();
   const baseEnv: Record<string, string> = {
     HAPPIER_HOME_DIR: params.happierHomeDir,
     HAPPIER_PUBLIC_RELEASE_CHANNEL: publicReleaseChannel,
@@ -323,6 +326,9 @@ export function planDaemonServiceInstall(params: Readonly<{
     HAPPIER_DAEMON_WAIT_FOR_AUTH_TIMEOUT_MS: '0',
     ...(twinSessionSchedulerConfigJson
       ? { [TWIN_SESSION_SCHEDULER_CONFIG_ENV_KEY]: twinSessionSchedulerConfigJson }
+      : {}),
+    ...(twinSessionReleaseOutboxConfigJson
+      ? { [TWIN_SESSION_RELEASE_OUTBOX_CONFIG_ENV_KEY]: twinSessionReleaseOutboxConfigJson }
       : {}),
   };
   const pinnedTargetEnv: Record<string, string> = targetMode === 'default-following'

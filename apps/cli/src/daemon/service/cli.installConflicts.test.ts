@@ -17,7 +17,9 @@ const {
   inspectDaemonRunningStateMock: vi.fn<() => Promise<DaemonRunningInspection>>(async () => ({ status: 'not-running' as const })),
 }));
 
-vi.mock('./installer', () => ({
+vi.mock('./installer', async (importOriginal) => ({
+  // Keep the real config resolution; only the side-effecting install/uninstall are replaced.
+  ...(await importOriginal<typeof import('./installer')>()),
   installDaemonService: installDaemonServiceMock,
   uninstallDaemonService: vi.fn(async () => undefined),
 }));
