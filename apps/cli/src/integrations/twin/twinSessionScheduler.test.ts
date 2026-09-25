@@ -248,6 +248,46 @@ describe('twin session scheduler', () => {
     });
   });
 
+  it('prepares and dispatches once while a status poll arrives during a slow workspace preparation', async () => {
+    let finishPreparation: () => void = () => {};
+    const preparationGate = new Promise<void>((resolve) => { finishPreparation = resolve; });
+    const harness = createHarness({
+      prepareWorkspace: async (attempt) => {
+        await preparationGate;
+        return {
+          options: { ...attempt.options, directory: `/target/${attempt.spawnNonce}` },
+          workspace: {
+            v: 1 as const,
+            state: 'prepared' as const,
+            sourceDirectory: attempt.options.directory,
+            sourceRootDirectory: attempt.options.directory,
+            sourceRelativeDirectory: '.',
+            reviewDirectory: `/review/${attempt.spawnNonce}`,
+            reviewRootDirectory: `/review/${attempt.spawnNonce}`,
+            targetDirectory: `/target/${attempt.spawnNonce}`,
+            targetRootDirectory: `/target/${attempt.spawnNonce}`,
+            sourceHead: 'source-head',
+            sourceSnapshot: 'source-snapshot',
+            baselineCommit: 'baseline-commit',
+          },
+        };
+      },
+    });
+    // The target has not seen this nonce yet, exactly as while the controller is still preparing.
+    harness.resolveTargetSpawn.mockResolvedValue({ status: 'not_found' });
+
+    const spawning = harness.scheduler.spawn(scheduledOptions());
+    await vi.waitFor(() => expect(harness.prepareWorkspace).toHaveBeenCalledTimes(1));
+    const polling = harness.scheduler.resolve('spawn-1');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    finishPreparation();
+
+    await expect(spawning).resolves.toMatchObject({ type: 'success', sessionId: 'session-1' });
+    await expect(polling).resolves.toMatchObject({ status: 'success', sessionId: 'session-1' });
+    expect(harness.prepareWorkspace).toHaveBeenCalledTimes(1);
+    expect(harness.spawnTarget).toHaveBeenCalledTimes(1);
+  });
+
   it('creates one durable lease and one target runner for repeated use of the same spawn nonce', async () => {
     const harness = createHarness();
 

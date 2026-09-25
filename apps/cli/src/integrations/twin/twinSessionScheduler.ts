@@ -295,7 +295,28 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
     return null;
   };
 
+  // One attempt advances through one call at a time: a status poll, recovery tick or idle report
+  // arriving while spawn is still preparing the workspace would otherwise see the target answer
+  // not_found and prepare (and dispatch) the same attempt a second time. A later caller waits for
+  // the running advance, then continues from the stored state, which is idempotent by then.
+  const progressInFlight = new Map<string, Promise<TwinSessionSchedulerAttempt>>();
   const progress = async (
+    initial: TwinSessionSchedulerAttempt,
+    options: Readonly<{ acquire: boolean }>,
+  ): Promise<TwinSessionSchedulerAttempt> => {
+    const running = progressInFlight.get(initial.spawnNonce);
+    if (running) {
+      await running.catch(() => undefined);
+      return await progress((await deps.store.load(initial.spawnNonce)) ?? initial, options);
+    }
+    const advance = advanceAttempt(initial, options).finally(() => {
+      progressInFlight.delete(initial.spawnNonce);
+    });
+    progressInFlight.set(initial.spawnNonce, advance);
+    return await advance;
+  };
+
+  const advanceAttempt = async (
     initial: TwinSessionSchedulerAttempt,
     options: Readonly<{ acquire: boolean }>,
   ): Promise<TwinSessionSchedulerAttempt> => {
