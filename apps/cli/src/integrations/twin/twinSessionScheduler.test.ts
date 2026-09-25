@@ -378,6 +378,21 @@ describe('twin session scheduler', () => {
       expect(harness.store.attempts.get('spawn-1')?.phase).toBe('released');
     });
 
+    it('settles a still-pending session identity before matching an idle report', async () => {
+      // The target accepts the spawn before the session id exists; a quick task can finish (and
+      // report idle) before anyone has resolved that id, which left the slot held.
+      const harness = createHarness({
+        spawnTarget: async () => ({ type: 'success' as const, sessionIdStatus: 'pending' as const, spawnNonce: 'spawn-1' }),
+      });
+      harness.resolveTargetSpawn.mockResolvedValue({ status: 'success', sessionId: 'session-1' });
+      await harness.scheduler.spawn(scheduledOptions());
+
+      await expect(harness.scheduler.observeSessionIdle(lease())).resolves.toEqual({ status: 'released' });
+
+      expect(harness.releaseLease).toHaveBeenCalledTimes(1);
+      expect(harness.store.attempts.get('spawn-1')).toMatchObject({ phase: 'running', slotReleased: true });
+    });
+
     it('ignores an idle report that does not match the attempt', async () => {
       const harness = createHarness();
       await harness.scheduler.spawn(scheduledOptions());

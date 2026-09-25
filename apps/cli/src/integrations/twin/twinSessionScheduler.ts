@@ -496,7 +496,12 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
       leaseId: string;
       sessionId: string;
     }>): Promise<Readonly<{ status: 'released' | 'not_found' }>> => {
-      const attempt = await deps.store.load(input.attemptLookupId.trim());
+      let attempt = await deps.store.load(input.attemptLookupId.trim());
+      // A quick task can report idle before anyone resolved its pending session id; settle it from
+      // the target through the normal progress path so the report can be matched.
+      if (attempt && attempt.leaseId === input.leaseId.trim() && attempt.phase === 'dispatching') {
+        attempt = await progress(attempt, { acquire: false });
+      }
       const resolution = resolutionFromResult(attempt?.result);
       if (
         !attempt
