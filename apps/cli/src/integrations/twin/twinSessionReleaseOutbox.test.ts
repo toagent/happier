@@ -137,4 +137,24 @@ describe('twin session release outbox', () => {
     });
     expect((await readdir(directory)).filter((name) => name.endsWith('.json'))).toEqual([]);
   });
+
+  it('drops a notification the controller can never match instead of redelivering it forever', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'happier-twin-release-mismatch-'));
+    temporaryDirectories.push(directory);
+    const warning = vi.fn();
+    const deliver = vi.fn(async () => ({ status: 'mismatch' as const }));
+    const outbox = createTwinSessionReleaseOutbox({ directory, pollIntervalMs: 1_000, deliver, logWarning: warning });
+
+    // A child that crashed before its session webhook reports a placeholder id; the retried attempt
+    // already released under the real session id, so the controller answers mismatch permanently.
+    await outbox.enqueue({
+      lease: { v: 1, attemptLookupId: 'attempt-crashed', leaseId: 'lease-crashed', controllerMachineId: 'machine-controller' },
+      sessionId: 'PID-26326',
+    });
+    await outbox.drain();
+
+    expect(deliver).toHaveBeenCalledTimes(1);
+    expect((await readdir(directory)).filter((name) => name.endsWith('.json'))).toEqual([]);
+    expect(warning).toHaveBeenCalledTimes(1);
+  });
 });

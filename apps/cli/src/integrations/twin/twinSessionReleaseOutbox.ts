@@ -84,6 +84,20 @@ export function createTwinSessionReleaseOutbox(params: Readonly<{
           ...(parsed.receipt ? { receipt: parsed.receipt } : {}),
         };
         const result = await params.deliver(notification);
+        // The controller holds no attempt this notification can ever match (for example a child that
+        // crashed before its webhook reported a placeholder id after a retry already released), so
+        // redelivery can never succeed; drop it loudly instead of retrying every poll forever.
+        if (result.status === 'mismatch' || result.status === 'not_found') {
+          params.logWarning('Twin session release outbox dropped an unmatched notification', {
+            status: result.status,
+            attemptLookupId: notification.lease.attemptLookupId,
+            sessionId: notification.sessionId,
+          });
+          await unlink(path).catch((error: NodeJS.ErrnoException) => {
+            if (error.code !== 'ENOENT') throw error;
+          });
+          continue;
+        }
         if (result.status === 'acknowledged') {
           await unlink(path).catch((error: NodeJS.ErrnoException) => {
             if (error.code !== 'ENOENT') throw error;

@@ -399,44 +399,12 @@ export class ApiMachineClient {
         });
     }
 
-    setRPCHandlers({
-        spawnSession,
-        spawnScheduledSession,
-        spawnScheduledTargetSession,
-        spawnSessionForHandoff,
-        resolveSpawnSessionByNonce,
-        resolveScheduledTargetSpawnByNonce,
-        releaseScheduledSessionLease,
-        abandonSpawnSessionByNonce,
-        stopSession,
-        isSessionActive,
-        loadLocalSessionMetadata,
-        requestShutdown,
-        memory,
-        daemonServerWorkScheduler,
-        machineTransferChannel,
-        directPeerTransfer,
-    }: MachineRpcHandlers, deps?: MachineRpcHandlerDeps) {
+    setRPCHandlers(handlers: MachineRpcHandlers, deps?: MachineRpcHandlerDeps) {
+        // Pass the handler set through whole: a per-field copy here silently dropped any handler
+        // added to MachineRpcHandlers later (the scheduler idle report was lost this way).
         const machineRpcLifecycleRegistration = registerMachineRpcHandlers({
             rpcHandlerManager: this.rpcHandlerManager,
-            handlers: {
-                spawnSession,
-                ...(spawnScheduledSession ? { spawnScheduledSession } : {}),
-                ...(spawnScheduledTargetSession ? { spawnScheduledTargetSession } : {}),
-                ...(spawnSessionForHandoff ? { spawnSessionForHandoff } : {}),
-                ...(resolveSpawnSessionByNonce ? { resolveSpawnSessionByNonce } : {}),
-                ...(resolveScheduledTargetSpawnByNonce ? { resolveScheduledTargetSpawnByNonce } : {}),
-                ...(releaseScheduledSessionLease ? { releaseScheduledSessionLease } : {}),
-                ...(abandonSpawnSessionByNonce ? { abandonSpawnSessionByNonce } : {}),
-                stopSession,
-                ...(isSessionActive ? { isSessionActive } : {}),
-                ...(loadLocalSessionMetadata ? { loadLocalSessionMetadata } : {}),
-                requestShutdown,
-                ...(memory ? { memory } : {}),
-                ...(daemonServerWorkScheduler ? { daemonServerWorkScheduler } : {}),
-                ...(machineTransferChannel ? { machineTransferChannel } : {}),
-                ...(directPeerTransfer ? { directPeerTransfer } : {}),
-            },
+            handlers,
             deps: {
                 ...deps,
                 machineRpcWorkingDirectory: this.machineRpcWorkingDirectory,

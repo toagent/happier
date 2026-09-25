@@ -264,4 +264,32 @@ describe('ApiMachineClient spawn-happy-session handler', () => {
     expect(captured).not.toHaveProperty('workspaceLocationId');
     expect(captured).not.toHaveProperty('workspaceCheckoutId');
   });
+
+  it('routes a scheduled session idle report to the daemon scheduler', async () => {
+    const machine: Machine = {
+      id: 'machine-test',
+      encryptionKey: new Uint8Array(32).fill(7),
+      encryptionVariant: 'legacy',
+      metadata: null,
+      metadataVersion: 0,
+      daemonState: null,
+      daemonStateVersion: 0,
+    };
+    const client = new ApiMachineClient('token', machine);
+    const observeScheduledSessionIdle = vi.fn(async () => ({ status: 'released' as const }));
+    client.setRPCHandlers({
+      spawnSession: async () => ({ type: 'success' as const, sessionId: 'local-session' }),
+      stopSession: async () => true,
+      requestShutdown: () => {},
+      observeScheduledSessionIdle,
+    });
+
+    const request = { attemptLookupId: 'attempt-1', leaseId: 'lease-1', sessionId: 'session-1' };
+    await (client as any).rpcHandlerManager.handleRequest({
+      method: `${machine.id}:daemon.scheduledSession.idle.v1`,
+      params: encodeBase64(encrypt(machine.encryptionKey, machine.encryptionVariant, request)),
+    });
+
+    expect(observeScheduledSessionIdle).toHaveBeenCalledWith(request);
+  });
 });
