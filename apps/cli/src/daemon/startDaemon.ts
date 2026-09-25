@@ -94,7 +94,7 @@ import type { Credentials } from '@/persistence';
 import { abandonSpawnedSessionUntilCompleted } from '@/session/services/awaitSpawnedSessionId';
 import { setSessionArchivedState } from '@/session/services/setSessionArchivedState';
 import { createSessionAttachFile } from './sessionAttachFile';
-import { getDaemonShutdownExitCode, getDaemonShutdownWatchdogTimeoutMs } from './shutdownPolicy';
+import { getDaemonShutdownExitCode, getDaemonShutdownWatchdogTimeoutMs, waitForShutdownWork } from './shutdownPolicy';
 import { shouldRetryMachineRegistrationError } from './machineRegistrationRetryPolicy';
 import { computeRestartDelayMs } from '@/subprocess/supervision/backoff';
 import {
@@ -2248,23 +2248,33 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
             await flushProviderAccountUsagePersistenceForShutdown();
 	            await flushDaemonServerWorkForShutdown();
             const initialInFlightSpawns = pidToAwaiter.size;
+            const initialPendingRunnerRestarts = connectedServicesRestartRequestedPids.size;
             const hasPendingRpcRequests = apiMachineForSessions !== null;
-            if (initialInFlightSpawns === 0 && !hasPendingRpcRequests) return;
+            if (initialInFlightSpawns === 0 && initialPendingRunnerRestarts === 0 && !hasPendingRpcRequests) return;
 
             logger.debug('[DAEMON RUN] Shutdown requested with in-flight work; deferring shutdown', {
               inFlightSpawns: initialInFlightSpawns,
+              pendingRunnerRestarts: initialPendingRunnerRestarts,
               pendingRpcDrainEnabled: hasPendingRpcRequests,
               graceMs: shutdownSpawnDrainGraceMs,
               pollMs: shutdownSpawnDrainPollMs,
             });
 
             const start = Date.now();
-            while (pidToAwaiter.size > 0 && Date.now() - start < shutdownSpawnDrainGraceMs) {
-              // eslint-disable-next-line no-await-in-loop
-              await new Promise((resolve) => setTimeout(resolve, shutdownSpawnDrainPollMs));
+            const drained = await waitForShutdownWork({
+              inFlightSpawns: () => pidToAwaiter.size,
+              pendingRunnerRestarts: () => connectedServicesRestartRequestedPids.size,
+              graceMs: shutdownSpawnDrainGraceMs,
+              pollMs: shutdownSpawnDrainPollMs,
+            });
+            if (drained.pendingRunnerRestarts > 0) {
+              logger.warn('[DAEMON RUN] Planned runner restart(s) did not respawn before shutdown; those sessions end', {
+                pendingRunnerRestarts: drained.pendingRunnerRestarts,
+                graceMs: shutdownSpawnDrainGraceMs,
+              });
             }
 
-            const remaining = pidToAwaiter.size;
+            const remaining = drained.inFlightSpawns;
             if (remaining === 0) {
               logger.debug('[DAEMON RUN] In-flight spawn(s) drained; checking pending RPC requests');
             } else {
