@@ -54,6 +54,7 @@ import {
   type TwinSessionReleaseResult,
 } from '@/integrations/twin/twinSessionReleaseOutbox';
 import { notifyScheduledSessionIdle } from '@/integrations/twin/twinSessionIdleNotifier';
+import { refreshStaleRunner, refreshStaleRunnerAfterTurn } from './plannedRunnerRestart/refreshStaleRunnerAfterTurn';
 import packageJson from '../../package.json';
 import { getEnvironmentInfo } from '@/ui/doctor';
 import {
@@ -6619,6 +6620,15 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
       }
     };
 
+    const restartStaleSessionRunnerIfIdle = async (sessionId: string) => await restartSessionRunnerOnCurrentRuntime({
+      request: { sessionId, mode: 'if_stale', reason: 'daemon_restart_session_runners' },
+      tracked: getCurrentChildren().find((child) => child.happySessionId === sessionId) ?? null,
+      currentIdentity: resolveCurrentSessionRunnerLaunchIdentity(),
+      requestRestart: requestVersionRuntimeRefreshWithDeferral,
+      resolveActivityDisabledReason: resolveSessionRunnerActivityDisabledReason,
+      refreshTrackedSessionRuntimeSnapshot: refreshTrackedSessionRuntimeSnapshotForPlannedRestart,
+    });
+
     // Start control server
     const { port: controlPort, stop: stopControlServer } = await startDaemonControlServer({
       getChildren: getCurrentChildren,
@@ -7025,6 +7035,12 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
           }),
           logWarning: (message, error) => logger.warn(message, { error: serializeAxiosErrorForLog(error) }),
         });
+        void refreshStaleRunnerAfterTurn({
+          event: input.event,
+          sessionId: input.sessionId,
+          restartIfStale: restartStaleSessionRunnerIfIdle,
+          logWarning: (message, detail) => logger.warn(`[DAEMON RUN] ${message}`, { detail }),
+        });
         // REV-1: failTurn emits `assistant_message_end` too — a FAILED turn (the
         // usage-limit interruption itself) is not provider-activity proof and must
         // not clear the recovery intents the failure report just armed.
@@ -7240,6 +7256,17 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
         }
       },
     });
+    // Runners reattached from the previous daemon still run its CLI. Idle ones move to the current
+    // CLI now; busy ones are skipped here and move at their next turn end (refreshStaleRunnerAfterTurn).
+    void Promise.all(getCurrentChildren().map(async (child) => {
+      const sessionId = child.happySessionId?.trim();
+      if (!sessionId) return;
+      await refreshStaleRunner({
+        sessionId,
+        restartIfStale: restartStaleSessionRunnerIfIdle,
+        logWarning: (message, detail) => logger.warn(`[DAEMON RUN] ${message}`, { detail }),
+      });
+    }));
     const directPeerRuntimeConfig = resolveMachineTransferRuntimeConfig();
     const directPeerFeatureEnabled = directPeerRuntimeConfig.directPeer.featureEnabled;
     const directPeerServerEnabled = directPeerRuntimeConfig.directPeer.serverEnabled;

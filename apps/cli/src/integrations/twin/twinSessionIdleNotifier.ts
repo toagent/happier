@@ -1,9 +1,9 @@
 import type { SessionSchedulingLeaseV1 } from '@happier-dev/protocol';
 
-import type { ConnectedServiceTurnLifecycleEvent } from '@/daemon/connectedServices/sessionAuthSwitch/connectedServiceSwitchDeferralQueue';
-
-/** Events after which the runner has no turn in flight (a failed turn also ends with assistant_message_end). */
-const TURN_END_EVENTS: ReadonlySet<ConnectedServiceTurnLifecycleEvent> = new Set(['assistant_message_end', 'turn_cancelled']);
+import {
+  isTurnEndLifecycleEvent,
+  type ConnectedServiceTurnLifecycleEvent,
+} from '@/daemon/connectedServices/sessionAuthSwitch/connectedServiceSwitchDeferralQueue';
 
 /**
  * Worker side of the idle slot release: when a scheduled session finishes a turn, tell the
@@ -23,7 +23,7 @@ export async function notifyScheduledSessionIdle(input: Readonly<{
   logWarning: (message: string, error: unknown) => void;
 }>): Promise<void> {
   const sessionId = input.sessionId.trim();
-  if (!input.lease || !sessionId || !TURN_END_EVENTS.has(input.event)) return;
+  if (!input.lease || !sessionId || !isTurnEndLifecycleEvent(input.event)) return;
   try {
     await input.callIdle({
       controllerMachineId: input.lease.controllerMachineId,

@@ -24,6 +24,11 @@ export type ConnectedServiceTurnLifecycleEvent =
   | 'assistant_message_end'
   | 'turn_cancelled';
 
+/** The runner has no turn in flight after these (a failed turn also ends with assistant_message_end). */
+export function isTurnEndLifecycleEvent(event: ConnectedServiceTurnLifecycleEvent): boolean {
+  return event === 'assistant_message_end' || event === 'turn_cancelled';
+}
+
 type ConnectedServiceSwitchRequest = Readonly<{
   sessionId: string;
   policy: ConnectedServiceSwitchDeferralPolicy;
