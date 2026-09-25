@@ -233,7 +233,9 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
         dispatchOptions: prepared.options,
         workspace: prepared.workspace,
       };
-    } catch {
+    } catch (error) {
+      // The cause is the only diagnostic the user sees for this attempt, so it travels with it.
+      const cause = error instanceof Error ? error.message : String(error);
       const failed = (await deps.store.update(attempt.spawnNonce, (current) => ({
         ...current,
         phase: current.phase === 'released' ? current.phase : 'failed' as const,
@@ -242,7 +244,7 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
           : {
               type: 'error' as const,
               errorCode: SPAWN_SESSION_ERROR_CODES.SPAWN_FAILED,
-              errorMessage: 'Failed to prepare the scheduled session workspace',
+              errorMessage: `Failed to prepare the scheduled session workspace: ${cause}`,
             },
       }))) ?? attempt;
       return await release(failed);

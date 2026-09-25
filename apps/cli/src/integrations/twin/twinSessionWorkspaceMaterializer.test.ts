@@ -140,6 +140,46 @@ describe('twin session workspace materializer', () => {
     ]);
   });
 
+  it('builds the review baseline without running the user\'s git hooks', async () => {
+    // The baseline commit is an internal snapshot, not the user's commit. On the controller a global
+    // core.hooksPath (secret scan + large-file gate) ran over the whole repository copy and the
+    // prepared workspace never came up, so every scheduled task failed before it started.
+    const root = await mkdtemp(join(tmpdir(), 'happier-twin-workspace-hooks-'));
+    temporaryDirectories.push(root);
+    const sourceRoot = join(root, 'source');
+    await mkdir(sourceRoot, { recursive: true });
+    await runGit(sourceRoot, ['init', '--initial-branch=main']);
+    await runGit(sourceRoot, ['config', 'user.name', 'Test User']);
+    await runGit(sourceRoot, ['config', 'user.email', 'test@example.com']);
+    await writeFile(join(sourceRoot, 'tracked.txt'), 'base\n', 'utf8');
+    await runGit(sourceRoot, ['add', 'tracked.txt']);
+    await runGit(sourceRoot, ['commit', '-m', 'base']);
+
+    const hooksDir = join(root, 'hooks');
+    await mkdir(hooksDir, { recursive: true });
+    await writeFile(join(hooksDir, 'pre-commit'), '#!/bin/sh\necho blocked-by-user-hook >&2\nexit 1\n', { mode: 0o755 });
+    const globalConfig = join(root, 'global.gitconfig');
+    await writeFile(globalConfig, `[core]\n\thooksPath = ${hooksDir}\n`, 'utf8');
+
+    const materializer = createTwinSessionWorkspaceMaterializer({
+      reviewRoot: join(root, 'reviews'),
+      controllerMachineId: 'machine-controller',
+      workers: { 'twin-dev': { machineId: 'machine-dev', workspace: { kind: 'local', root: join(root, 'targets') } } },
+      updateSessionMetadata: async () => {},
+    });
+
+    const previous = process.env.GIT_CONFIG_GLOBAL;
+    process.env.GIT_CONFIG_GLOBAL = globalConfig;
+    try {
+      const prepared = await materializer.prepare({ attempt: attempt(sourceRoot) });
+      expect(prepared.workspace.state).toBe('prepared');
+      expect(await readFile(join(prepared.workspace.targetDirectory, 'tracked.txt'), 'utf8')).toBe('base\n');
+    } finally {
+      if (previous === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+      else process.env.GIT_CONFIG_GLOBAL = previous;
+    }
+  });
+
   it('marks the review stale when the source worktree changes without moving HEAD', async () => {
     const root = await mkdtemp(join(tmpdir(), 'happier-twin-workspace-stale-'));
     temporaryDirectories.push(root);

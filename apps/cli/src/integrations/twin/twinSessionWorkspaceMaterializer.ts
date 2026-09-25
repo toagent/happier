@@ -104,6 +104,12 @@ const runWorkspaceProcess: WorkspaceProcessRunner = async (input) => await new P
   });
 });
 
+/**
+ * Git plumbing for workspace snapshots. These are internal bulk operations over a whole repository
+ * copy, so they neither inherit the 15s interactive SCM timeout (a large repository legitimately
+ * takes longer; the ssh/rsync transfers beside them are unbounded too) nor run the user's git hooks
+ * (the baseline commit is a synthetic snapshot, not the user's commit).
+ */
 async function runGitText(input: Readonly<{
   cwd: string;
   args: readonly string[];
@@ -112,11 +118,14 @@ async function runGitText(input: Readonly<{
   const result = await runScmCommand({
     bin: 'git',
     cwd: input.cwd,
-    args: [...input.args],
+    args: ['-c', 'core.hooksPath=/dev/null', ...input.args],
+    timeoutMs: null,
     ...(input.env ? { env: input.env } : {}),
   });
   if (!result.success) {
-    throw new Error((result.stderr || result.stdout || 'Git command failed').trim());
+    const detail = (result.stderr || result.stdout).trim();
+    const reason = result.outputLimitExceeded ? 'output limit exceeded' : `exit ${result.exitCode}`;
+    throw new Error(`git ${input.args[0] ?? ''} failed (${reason})${detail ? `: ${detail}` : ''}`);
   }
   return result.stdout.trim();
 }

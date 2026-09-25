@@ -333,6 +333,21 @@ describe('twin session scheduler', () => {
     expect(harness.resolveTargetSpawn).toHaveBeenCalledTimes(1);
   });
 
+  it('reports why workspace preparation failed instead of a bare failure', async () => {
+    // The user only sees this message; the generic text alone left the cause unrecoverable.
+    const harness = createHarness({
+      prepareWorkspace: async () => {
+        throw new Error('git commit failed (exit 1): blocked-by-user-hook');
+      },
+    });
+
+    const result = await harness.scheduler.spawn(scheduledOptions());
+
+    expect(result).toMatchObject({ type: 'error' });
+    expect(result.type === 'error' ? result.errorMessage : '').toContain('blocked-by-user-hook');
+    expect(harness.releaseLease).toHaveBeenCalledTimes(1);
+  });
+
   it('releases the lease after a target spawn failure', async () => {
     const harness = createHarness({
       spawnTarget: async () => ({

@@ -90,7 +90,11 @@ export function runScmCommand(input: {
     bin: 'git' | 'sl';
     cwd: string;
     args: string[];
-    timeoutMs?: number;
+    /**
+     * Defaults to the 15s interactive budget. `null` means no timeout, for a bulk operation (such
+     * as a whole-repository snapshot) whose containing operation owns its own lifecycle.
+     */
+    timeoutMs?: number | null;
     stdin?: string;
     maxOutputBytes?: number;
     env?: Record<string, string | undefined>;
@@ -109,7 +113,7 @@ export function runScmCommand(input: {
         let timedOut = false;
         let outputLimitExceeded = false;
         let outputBytes = 0;
-        const timeoutMs = input.timeoutMs ?? 15_000;
+        const timeoutMs = input.timeoutMs === undefined ? 15_000 : input.timeoutMs;
         const maxOutputBytes = resolveScmMaxOutputBytes(input.maxOutputBytes);
 
         const done = (result: ScmExecResult) => {
@@ -151,7 +155,7 @@ export function runScmCommand(input: {
             outputBytes += chunk.length;
         };
 
-        const timer = setTimeout(() => {
+        const timer = timeoutMs === null ? undefined : setTimeout(() => {
             timedOut = true;
             child.kill('SIGKILL');
         }, timeoutMs);
