@@ -252,6 +252,8 @@ import { shouldRenderChatTimelineForSession, shouldRequestRemoteControl, shouldR
 import { supportsEffectiveLocalControlForSession } from '@/sync/domains/session/control/effectiveRuntimeControlSurface';
 import { readControlSwitchUiTimeoutMsFromEnv } from '@/sync/domains/session/control/controlSwitchUiTimeout';
 import { getActiveServerSnapshot } from '@/sync/domains/server/serverRuntime';
+import { useServerLinkHealth } from '@/components/navigation/connectionStatus/useConnectionHealth';
+import type { ServerLinkHealthKind } from '@/components/navigation/connectionStatus/connectionHealthTypes';
 import { useVoiceSessionSnapshot, voiceSessionManager } from '@/voice/session/voiceSession';
 import { getVoiceAdapterRegistry } from '@/voice/session/voiceAdapterRegistry';
 import { isVoiceConversationSystemSessionMetadata } from '@/voice/sessionBinding/voiceConversationSession';
@@ -1365,21 +1367,32 @@ type SessionAgentInputRuntimeStatusBoundaryProps = Omit<
     'connectionStatus' | 'showAbortButton'
 > & {
     inactiveStatusText: string | null;
+    /** This client's link to the session's server when it is not connected; drives dot color/pulse. */
+    serverLink: ServerLinkHealthKind | null;
     connectedServicesRestartState: SessionConnectedServicesAuthSwitchRestartState;
 };
 
 const SessionAgentInputRuntimeStatusBoundary = React.memo(function SessionAgentInputRuntimeStatusBoundary({
     inactiveStatusText,
+    serverLink,
     connectedServicesRestartState,
     session,
     ...props
 }: SessionAgentInputRuntimeStatusBoundaryProps) {
+    const { theme } = useUnistyles();
     const sessionRuntimeStatusSource = useSessionRuntimeStatusSource(session);
     const sessionStatus = useSessionStatus(sessionRuntimeStatusSource, {
         subscribeToSession: false,
         subscribeToTranscript: false,
     });
-    const connectionStatus = React.useMemo(() => ({
+    const serverLinkReconnecting = serverLink === 'connecting' || serverLink === 'server_restarting';
+    const connectionStatus = React.useMemo(() => serverLink ? {
+        // Everything else below is the last state this client heard; the link comes first.
+        text: inactiveStatusText ?? '',
+        color: serverLinkReconnecting ? theme.colors.status.connecting : theme.colors.status.disconnected,
+        dotColor: serverLinkReconnecting ? theme.colors.status.connecting : theme.colors.status.disconnected,
+        isPulsing: serverLinkReconnecting,
+    } : ({
         text: connectedServicesRestartState?.status === 'restarting'
             || connectedServicesRestartState?.status === 'pending_confirmation'
             ? t('connectedServices.authSwitch.status.restarting')
@@ -1396,6 +1409,10 @@ const SessionAgentInputRuntimeStatusBoundary = React.memo(function SessionAgentI
     }), [
         connectedServicesRestartState?.status,
         inactiveStatusText,
+        serverLink,
+        serverLinkReconnecting,
+        theme.colors.status.connecting,
+        theme.colors.status.disconnected,
         sessionStatus.isPulsing,
         sessionStatus.state,
         sessionStatus.statusColor,
@@ -4308,14 +4325,22 @@ function SessionViewLoaded({
         machineOnline,
     });
 
+    // The link health tracks the active server only: a session on another server keeps its own
+    // state, and a direct session does not go through the server at all.
+    const activeServerLink = useServerLinkHealth();
+    const serverLink = !directSessionLink
+        && (!session.serverId || session.serverId === getActiveServerSnapshot().serverId)
+        ? activeServerLink
+        : null;
     const inactiveUi = React.useMemo(() => {
         return getInactiveSessionUiState({
             isSessionActive,
             isResumable,
             isMachineOnline: isMachineReachable,
             allowInputWhileInactive: persistedVoiceComposerRouting?.kind === 'adapter_text',
+            serverLink,
         });
-    }, [isMachineReachable, isResumable, isSessionActive, persistedVoiceComposerRouting]);
+    }, [isMachineReachable, isResumable, isSessionActive, persistedVoiceComposerRouting, serverLink]);
 
     // Use draft hook for auto-saving message drafts
     const {
@@ -4899,6 +4924,7 @@ function SessionViewLoaded({
 
     const showInactiveNotResumableNotice = inactiveUi.noticeKind === 'not-resumable';
     const showMachineOfflineNotice = inactiveUi.noticeKind === 'machine-offline';
+    const showServerLinkDownNotice = inactiveUi.noticeKind === 'server-link-down';
     const providerName = getAgentCore(agentId).uiConnectedService.label ?? t('status.unknown');
     const machineName = session.metadata?.host ?? t('status.unknown');
 
@@ -4909,6 +4935,12 @@ function SessionViewLoaded({
                 body: t('session.inactiveNotResumableNoticeBody', { provider: providerName }),
             };
         }
+        if (showServerLinkDownNotice) {
+            return {
+                title: t('session.serverLink.noticeTitle'),
+                body: t('session.serverLink.noticeBody'),
+            };
+        }
         if (showMachineOfflineNotice) {
             return {
                 title: t('session.machineOfflineNoticeTitle'),
@@ -4916,7 +4948,7 @@ function SessionViewLoaded({
             };
         }
         return null;
-    }, [machineName, providerName, showInactiveNotResumableNotice, showMachineOfflineNotice]);
+    }, [machineName, providerName, showInactiveNotResumableNotice, showMachineOfflineNotice, showServerLinkDownNotice]);
 
     const isReadOnly = session.accessLevel === 'view';
     const transcriptInteraction = React.useMemo(() => {
@@ -6390,6 +6422,7 @@ function SessionViewLoaded({
                 isMicActive={micButtonState.isMicActive}
                 onAbort={handleAgentInputAbort}
                 inactiveStatusText={inactiveStatusText}
+                serverLink={inactiveUi.serverLink ?? null}
                 onFileViewerPress={handleAgentInputFileViewerPress}
                 // Autocomplete configuration
                 autocompleteKinds={SESSION_COMPOSER_SUGGESTION_KINDS}

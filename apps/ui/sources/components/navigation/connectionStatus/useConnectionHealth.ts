@@ -18,7 +18,8 @@ import { isAccountSettingsSyncAttentionStatus } from '@/sync/domains/settings/ac
 import { isMachineOnline } from '@/utils/sessions/machineUtils';
 
 import { resolveConnectionHealthPresentation } from './connectionHealthPresentation';
-import { resolveConnectionHealth } from './resolveConnectionHealth';
+import type { ServerLinkHealthKind } from './connectionHealthTypes';
+import { resolveConnectionHealth, resolveServerLinkHealth, type ServerLinkHealthInput } from './resolveConnectionHealth';
 
 function isMachineReadyForConnectionHealth(machine: Readonly<{ daemonState?: unknown }>): boolean {
     const daemonState = machine.daemonState;
@@ -32,12 +33,45 @@ function isMachineReadyForConnectionHealth(machine: Readonly<{ daemonState?: unk
     return status === 'running';
 }
 
-export function useConnectionHealth() {
-    const { theme } = useUnistyles();
+/** The inputs of this client's link to the active server, shared by every link-health consumer. */
+function useServerLinkHealthInput(): ServerLinkHealthInput {
     const socketStatus = useSocketStatus();
     const endpointConnectivity = useEndpointConnectivity();
     const syncError = useSyncError();
     const accountSettingsSyncStatus = useAccountSettingsSyncStatus();
+    const activeServerId = getActiveServerSnapshot().serverId;
+    const activeSyncError = React.useMemo(() => {
+        return selectSyncErrorForServer(syncError, activeServerId);
+    }, [activeServerId, syncError]);
+    const activeAccountSettingsSyncIssue = isAccountSettingsSyncAttentionStatus(accountSettingsSyncStatus)
+        ? accountSettingsSyncStatus
+        : null;
+    return React.useMemo(() => ({
+        socketStatus: socketStatus.status,
+        endpointStatus: endpointConnectivity.status,
+        endpointReason: endpointConnectivity.reason,
+        hasSyncError: Boolean(activeSyncError),
+        syncErrorKind: activeSyncError?.kind,
+        hasAccountSettingsSyncIssue: Boolean(activeAccountSettingsSyncIssue),
+        accountSettingsSyncKind: activeAccountSettingsSyncIssue?.kind,
+    }), [
+        activeAccountSettingsSyncIssue,
+        activeSyncError,
+        endpointConnectivity.reason,
+        endpointConnectivity.status,
+        socketStatus.status,
+    ]);
+}
+
+/** This client's link to the active server; null while connected and in sync. */
+export function useServerLinkHealth(): ServerLinkHealthKind | null {
+    const input = useServerLinkHealthInput();
+    return React.useMemo(() => resolveServerLinkHealth(input), [input]);
+}
+
+export function useConnectionHealth() {
+    const { theme } = useUnistyles();
+    const serverLinkInput = useServerLinkHealthInput();
     const allMachines = useAllMachines();
     const machineListByServerId = useMachineListByServerId();
     const machineListStatusByServerId = useMachineListStatusByServerId();
@@ -66,22 +100,9 @@ export function useConnectionHealth() {
             serverSelectionActiveTargetId,
         },
     });
-    const activeSyncError = React.useMemo(() => {
-        return selectSyncErrorForServer(syncError, activeServerSnapshot.serverId);
-    }, [activeServerSnapshot.serverId, syncError]);
-    const activeAccountSettingsSyncIssue = isAccountSettingsSyncAttentionStatus(accountSettingsSyncStatus)
-        ? accountSettingsSyncStatus
-        : null;
-
     const health = React.useMemo(() => {
         return resolveConnectionHealth({
-            socketStatus: socketStatus.status,
-            endpointStatus: endpointConnectivity.status,
-            endpointReason: endpointConnectivity.reason,
-            hasSyncError: Boolean(activeSyncError),
-            syncErrorKind: activeSyncError?.kind,
-            hasAccountSettingsSyncIssue: Boolean(activeAccountSettingsSyncIssue),
-            accountSettingsSyncKind: activeAccountSettingsSyncIssue?.kind,
+            ...serverLinkInput,
             machineGroups: activeSelectionMachineGroups.visibleMachineGroups.map((group) => {
                 if (group.status === 'loading' || group.status === 'signedOut') {
                     return {
@@ -101,14 +122,7 @@ export function useConnectionHealth() {
                 };
             }),
         });
-    }, [
-        activeAccountSettingsSyncIssue,
-        activeSelectionMachineGroups.visibleMachineGroups,
-        activeSyncError,
-        endpointConnectivity.reason,
-        endpointConnectivity.status,
-        socketStatus.status,
-    ]);
+    }, [activeSelectionMachineGroups.visibleMachineGroups, serverLinkInput]);
 
     const presentation = React.useMemo(() => {
         return resolveConnectionHealthPresentation(health, {

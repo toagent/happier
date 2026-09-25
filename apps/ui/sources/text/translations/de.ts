@@ -5091,6 +5091,15 @@ export const de: TranslationStructure = {
         },
         inactiveResumable: 'Inaktiv (fortsetzbar)',
         inactiveMachineOffline: 'Inaktiv (Rechner offline)',
+        serverLink: {
+            connecting: 'Verbindung zum Server…',
+            restarting: 'Server startet neu, verbinde erneut…',
+            unreachable: 'Nicht mit dem Server verbunden · verbinde erneut',
+            authRequired: 'Erneut anmelden, um die Verbindung herzustellen',
+            error: 'Serverfehler',
+            noticeTitle: 'Dieses Gerät ist nicht verbunden',
+            noticeBody: 'Dieses Gerät erreicht den Server gerade nicht und verbindet sich automatisch neu. Der Rechner und diese Sitzung laufen weiter; die Ansicht holt auf, sobald die Verbindung zurück ist.',
+        },
         inactiveNotResumable: 'Inaktiv',
         inactiveNotResumableNoticeTitle: 'Diese Session lässt sich nicht fortsetzen',
         inactiveNotResumableNoticeBody: ({ provider }: { provider: string }) =>

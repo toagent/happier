@@ -5773,6 +5773,15 @@ export const it: TranslationStructure = {
     },
     inactiveResumable: "Inattiva (riprendibile)",
     inactiveMachineOffline: "Inattiva (macchina offline)",
+    serverLink: {
+        connecting: "Connessione al server…",
+        restarting: "Il server si sta riavviando, riconnessione…",
+        unreachable: "Non connesso al server · riconnessione",
+        authRequired: "Accedi di nuovo per riconnetterti",
+        error: "Errore del server",
+        noticeTitle: "Questo dispositivo non è connesso",
+        noticeBody: "Questo dispositivo al momento non raggiunge il server e continua a riconnettersi da solo. La macchina e questa sessione continuano a funzionare; questa vista si aggiornerà al ritorno della connessione.",
+    },
     inactiveNotResumable: "Inattiva",
     inactiveNotResumableNoticeTitle: "Questa sessione non può essere ripresa",
     inactiveNotResumableNoticeBody: ({ provider }: { provider: string }) =>

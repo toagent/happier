@@ -5078,6 +5078,15 @@ export const fr: TranslationStructure = {
         },
         inactiveResumable: 'Inactive (reprenable)',
         inactiveMachineOffline: 'Inactive (machine hors ligne)',
+        serverLink: {
+            connecting: 'Connexion au serveur…',
+            restarting: 'Le serveur redémarre, reconnexion…',
+            unreachable: 'Non connecté au serveur · reconnexion',
+            authRequired: 'Reconnectez-vous pour rétablir la connexion',
+            error: 'Erreur du serveur',
+            noticeTitle: 'Cet appareil n\'est pas connecté',
+            noticeBody: 'Cet appareil ne joint pas le serveur pour le moment et se reconnecte automatiquement. La machine et cette session continuent de tourner ; cette vue se mettra à jour au retour de la connexion.',
+        },
         inactiveNotResumable: 'Inactive',
         inactiveNotResumableNoticeTitle: 'Cette session ne peut pas être reprise',
         inactiveNotResumableNoticeBody: ({ provider }: { provider: string }) =>

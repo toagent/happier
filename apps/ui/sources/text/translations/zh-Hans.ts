@@ -5244,6 +5244,15 @@ export const zhHans: TranslationStructure = {
     },
     inactiveResumable: "未激活（可恢复）",
     inactiveMachineOffline: "未激活（机器离线）",
+    serverLink: {
+        connecting: "正在连接服务器…",
+        restarting: "服务器重启中，正在重连…",
+        unreachable: "未连接服务器 · 正在重连",
+        authRequired: "需要重新登录才能连接",
+        error: "服务器出错",
+        noticeTitle: "这台设备没有连上服务器",
+        noticeBody: "这台设备暂时连不上服务器，正在自动重连。机器和会话照常运行，连接恢复后这里会自动更新。",
+    },
     inactiveNotResumable: "未激活",
     inactiveNotResumableNoticeTitle: "此会话无法恢复",
     inactiveNotResumableNoticeBody: ({ provider }: { provider: string }) =>

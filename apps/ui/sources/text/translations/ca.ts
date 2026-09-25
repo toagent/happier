@@ -5094,6 +5094,15 @@ deps: {
         },
         inactiveResumable: 'Inactiva (es pot reprendre)',
         inactiveMachineOffline: 'Inactiva (màquina fora de línia)',
+        serverLink: {
+            connecting: 'Connectant al servidor…',
+            restarting: 'El servidor s\'està reiniciant, reconnectant…',
+            unreachable: 'Sense connexió al servidor · reconnectant',
+            authRequired: 'Torna a iniciar sessió per reconnectar',
+            error: 'Error del servidor',
+            noticeTitle: 'Aquest dispositiu no està connectat',
+            noticeBody: 'Aquest dispositiu no pot arribar al servidor ara mateix i es continua reconnectant sol. La màquina i aquesta sessió segueixen funcionant; aquesta vista s\'actualitzarà quan torni la connexió.',
+        },
         inactiveNotResumable: 'Inactiva',
         inactiveNotResumableNoticeTitle: 'Aquesta sessió no es pot reprendre',
         inactiveNotResumableNoticeBody: ({ provider }: { provider: string }) =>

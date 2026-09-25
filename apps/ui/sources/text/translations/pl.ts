@@ -5448,6 +5448,15 @@ export const pl: TranslationStructure = {
     },
     inactiveResumable: "Nieaktywna (można wznowić)",
     inactiveMachineOffline: "Nieaktywna (maszyna offline)",
+    serverLink: {
+        connecting: "Łączenie z serwerem…",
+        restarting: "Serwer uruchamia się ponownie, ponowne łączenie…",
+        unreachable: "Brak połączenia z serwerem · ponowne łączenie",
+        authRequired: "Zaloguj się ponownie, aby się połączyć",
+        error: "Błąd serwera",
+        noticeTitle: "To urządzenie nie jest połączone",
+        noticeBody: "To urządzenie nie może teraz połączyć się z serwerem i samo ponawia próby. Maszyna i ta sesja działają dalej; widok zaktualizuje się po przywróceniu połączenia.",
+    },
     inactiveNotResumable: "Nieaktywna",
     inactiveNotResumableNoticeTitle: "Nie można wznowić tej sesji",
     inactiveNotResumableNoticeBody: ({ provider }: { provider: string }) =>

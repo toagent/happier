@@ -5101,6 +5101,15 @@ export const en = {
         },
         inactiveResumable: 'Inactive (resumable)',
         inactiveMachineOffline: 'Inactive (machine offline)',
+        serverLink: {
+            connecting: 'Connecting to server…',
+            restarting: 'Server restarting, reconnecting…',
+            unreachable: 'Not connected to server · reconnecting',
+            authRequired: 'Sign in again to reconnect',
+            error: 'Server error',
+            noticeTitle: 'This device is not connected',
+            noticeBody: 'This device can\'t reach the server right now and keeps reconnecting on its own. The machine and this session keep running; this view catches up once the connection is back.',
+        },
         inactiveNotResumable: 'Inactive',
         inactiveNotResumableNoticeTitle: 'This session can’t be resumed',
         inactiveNotResumableNoticeBody: ({ provider }: { provider: string }) =>

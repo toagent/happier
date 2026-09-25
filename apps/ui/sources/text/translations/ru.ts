@@ -5956,6 +5956,15 @@ export const ru: TranslationStructure = {
     },
     inactiveResumable: "Неактивна (можно возобновить)",
     inactiveMachineOffline: "Неактивна (машина не в сети)",
+    serverLink: {
+        connecting: "Подключение к серверу…",
+        restarting: "Сервер перезапускается, переподключение…",
+        unreachable: "Нет связи с сервером · переподключение",
+        authRequired: "Войдите снова, чтобы подключиться",
+        error: "Ошибка сервера",
+        noticeTitle: "Это устройство не подключено",
+        noticeBody: "Это устройство сейчас не может связаться с сервером и само переподключается. Машина и эта сессия продолжают работать; экран обновится, когда связь вернётся.",
+    },
     inactiveNotResumable: "Неактивна",
     inactiveNotResumableNoticeTitle: "Эту сессию нельзя возобновить",
     inactiveNotResumableNoticeBody: ({ provider }: { provider: string }) =>

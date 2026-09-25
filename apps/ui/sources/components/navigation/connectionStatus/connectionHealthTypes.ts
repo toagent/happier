@@ -13,6 +13,12 @@ export type ConnectionHealthKind =
     | 'machine_offline'
     | 'machine_not_ready';
 
+/** The part of connection health about this client's link to the server (machines excluded). */
+export type ServerLinkHealthKind = Extract<
+    ConnectionHealthKind,
+    'connecting' | 'server_restarting' | 'server_unreachable' | 'auth_required' | 'server_error'
+>;
+
 export type ConnectionHealthStatusLabelKey =
     | 'status.connected'
     | 'status.connecting'

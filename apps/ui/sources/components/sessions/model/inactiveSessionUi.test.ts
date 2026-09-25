@@ -63,4 +63,43 @@ describe('getInactiveSessionUiState', () => {
             noticeKind: 'none',
         });
     });
+
+    it('reports this device losing the server instead of stale presence or a machine-offline verdict', () => {
+        // Presence still reads online and machine presence may have gone stale: neither is known
+        // while this client cannot reach the server, so the link state is what the user sees.
+        expect(getInactiveSessionUiState({
+            isSessionActive: true,
+            isResumable: true,
+            isMachineOnline: true,
+            serverLink: 'server_unreachable',
+        })).toEqual({
+            shouldShowInput: true,
+            inactiveStatusTextKey: 'session.serverLink.unreachable',
+            noticeKind: 'server-link-down',
+            serverLink: 'server_unreachable',
+        });
+        expect(getInactiveSessionUiState({
+            isSessionActive: false,
+            isResumable: true,
+            isMachineOnline: false,
+            serverLink: 'server_unreachable',
+        })).toMatchObject({
+            inactiveStatusTextKey: 'session.serverLink.unreachable',
+            noticeKind: 'server-link-down',
+        });
+    });
+
+    it('shows a transient reconnect as status only, without a notice', () => {
+        expect(getInactiveSessionUiState({
+            isSessionActive: true,
+            isResumable: true,
+            isMachineOnline: true,
+            serverLink: 'connecting',
+        })).toEqual({
+            shouldShowInput: true,
+            inactiveStatusTextKey: 'session.serverLink.connecting',
+            noticeKind: 'none',
+            serverLink: 'connecting',
+        });
+    });
 });

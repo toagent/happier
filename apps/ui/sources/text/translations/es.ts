@@ -5427,6 +5427,15 @@ export const es: TranslationStructure = {
     },
     inactiveResumable: "Inactiva (reanudable)",
     inactiveMachineOffline: "Inactiva (máquina sin conexión)",
+    serverLink: {
+        connecting: "Conectando con el servidor…",
+        restarting: "El servidor se está reiniciando, reconectando…",
+        unreachable: "Sin conexión con el servidor · reconectando",
+        authRequired: "Vuelve a iniciar sesión para reconectar",
+        error: "Error del servidor",
+        noticeTitle: "Este dispositivo no está conectado",
+        noticeBody: "Este dispositivo no puede llegar al servidor ahora mismo y sigue reconectando por su cuenta. La máquina y esta sesión siguen funcionando; esta vista se pondrá al día cuando vuelva la conexión.",
+    },
     inactiveNotResumable: "Inactiva",
     inactiveNotResumableNoticeTitle: "Esta sesión no se puede reanudar",
     inactiveNotResumableNoticeBody: ({ provider }: { provider: string }) =>

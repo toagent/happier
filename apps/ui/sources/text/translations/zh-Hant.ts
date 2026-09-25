@@ -4415,6 +4415,15 @@ const zhHantOverrides: DeepPartial<TranslationStructure> = {
 
       session: {
           inputPlaceholder: '輸入訊息...',
+          serverLink: {
+              connecting: '正在連線伺服器…',
+              restarting: '伺服器重新啟動中，正在重新連線…',
+              unreachable: '未連線伺服器 · 正在重新連線',
+              authRequired: '需要重新登入才能連線',
+              error: '伺服器發生錯誤',
+              noticeTitle: '這台裝置沒有連上伺服器',
+              noticeBody: '這台裝置暫時連不上伺服器，正在自動重新連線。機器和工作階段照常運作，連線恢復後這裡會自動更新。',
+          },
           transcriptNavigation: {
               title: '導覽',
               modeAll: '全部',

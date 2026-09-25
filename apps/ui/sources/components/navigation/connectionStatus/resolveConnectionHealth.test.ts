@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveConnectionHealth } from './resolveConnectionHealth';
+import { resolveConnectionHealth, resolveServerLinkHealth } from './resolveConnectionHealth';
 
 describe('resolveConnectionHealth', () => {
     it('treats endpoint offline as server_unreachable even if the socket is connected', () => {
@@ -129,5 +129,14 @@ describe('resolveConnectionHealth', () => {
         expect(result.kind).toBe('healthy');
         expect(result.machineCount).toBe(1);
         expect(result.onlineCount).toBe(1);
+    });
+});
+
+describe('resolveServerLinkHealth', () => {
+    it('reads a supervisor that has not started yet as connecting, not as a lost server', () => {
+        // App launch: nothing has failed, so no "not connected" notice may flash before the first attempt.
+        expect(resolveServerLinkHealth({ socketStatus: 'disconnected', endpointStatus: 'idle' })).toBe('connecting');
+        expect(resolveServerLinkHealth({ socketStatus: 'disconnected', endpointStatus: 'offline' })).toBe('server_unreachable');
+        expect(resolveServerLinkHealth({ socketStatus: 'connected', endpointStatus: 'online' })).toBeNull();
     });
 });

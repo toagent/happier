@@ -5,12 +5,13 @@ import type {
     ConnectionHealth,
     ConnectionHealthMachineGroup,
     ConnectionSocketStatus,
+    ServerLinkHealthKind,
 } from './connectionHealthTypes';
 
 type ConnectionSyncErrorKind = 'auth' | 'config' | 'network' | 'server' | 'unknown';
 type ConnectionEndpointReason = 'server_restarting' | string | null;
 
-export function resolveConnectionHealth(params: Readonly<{
+export type ServerLinkHealthInput = Readonly<{
     socketStatus: ConnectionSocketStatus;
     endpointStatus?: EndpointConnectivityStatus;
     endpointReason?: ConnectionEndpointReason;
@@ -18,6 +19,37 @@ export function resolveConnectionHealth(params: Readonly<{
     syncErrorKind?: ConnectionSyncErrorKind;
     hasAccountSettingsSyncIssue?: boolean;
     accountSettingsSyncKind?: ConnectionSyncErrorKind;
+}>;
+
+/** This client's link to the active server; null when it is connected and in sync. */
+export function resolveServerLinkHealth(params: ServerLinkHealthInput): ServerLinkHealthKind | null {
+    if (
+        params.endpointReason === 'server_restarting'
+        && (params.endpointStatus === 'offline' || params.endpointStatus === 'connecting')
+    ) {
+        return 'server_restarting';
+    }
+    if (params.endpointStatus === 'connecting' && params.socketStatus !== 'connected') return 'connecting';
+    if (params.endpointStatus === 'auth_failed') return 'auth_required';
+    if (params.endpointStatus === 'offline') return 'server_unreachable';
+
+    const effectiveSyncErrorKind =
+        params.syncErrorKind === 'auth' || params.accountSettingsSyncKind === 'auth'
+            ? 'auth'
+            : params.syncErrorKind ?? params.accountSettingsSyncKind;
+    const hasAnySyncIssue = params.hasSyncError === true || params.hasAccountSettingsSyncIssue === true;
+
+    if (effectiveSyncErrorKind === 'auth') return 'auth_required';
+    if (hasAnySyncIssue || params.socketStatus === 'error') return 'server_error';
+    if (params.socketStatus === 'connecting') return 'connecting';
+    // The supervisor reports idle only before its first attempt (an outage is offline/connecting),
+    // so a socket that is not up yet is starting, not lost.
+    if (params.socketStatus !== 'connected' && params.endpointStatus === 'idle') return 'connecting';
+    if (params.socketStatus !== 'connected') return 'server_unreachable';
+    return null;
+}
+
+export function resolveConnectionHealth(params: ServerLinkHealthInput & Readonly<{
     machineGroups: ReadonlyArray<ConnectionHealthMachineGroup>;
 }>): ConnectionHealth {
     let hasUnknownReadyCount = false;
@@ -41,88 +73,10 @@ export function resolveConnectionHealth(params: Readonly<{
 
     const hasUnknownMachines = machines.hasUnknownServers || hasUnknownReadyCount;
 
-    if (
-        params.endpointReason === 'server_restarting'
-        && (params.endpointStatus === 'offline' || params.endpointStatus === 'connecting')
-    ) {
+    const serverLink = resolveServerLinkHealth(params);
+    if (serverLink) {
         return {
-            kind: 'server_restarting',
-            machineCount: machines.machineCount,
-            onlineCount: machines.onlineCount,
-            hasUnknownMachines,
-            socketStatus: params.socketStatus,
-        };
-    }
-
-    if (params.endpointStatus === 'connecting' && params.socketStatus !== 'connected') {
-        return {
-            kind: 'connecting',
-            machineCount: machines.machineCount,
-            onlineCount: machines.onlineCount,
-            hasUnknownMachines,
-            socketStatus: params.socketStatus,
-        };
-    }
-
-    if (params.endpointStatus === 'auth_failed') {
-        return {
-            kind: 'auth_required',
-            machineCount: machines.machineCount,
-            onlineCount: machines.onlineCount,
-            hasUnknownMachines,
-            socketStatus: params.socketStatus,
-        };
-    }
-
-    if (params.endpointStatus === 'offline') {
-        return {
-            kind: 'server_unreachable',
-            machineCount: machines.machineCount,
-            onlineCount: machines.onlineCount,
-            hasUnknownMachines,
-            socketStatus: params.socketStatus,
-        };
-    }
-
-    const effectiveSyncErrorKind =
-        params.syncErrorKind === 'auth' || params.accountSettingsSyncKind === 'auth'
-            ? 'auth'
-            : params.syncErrorKind ?? params.accountSettingsSyncKind;
-    const hasAnySyncIssue = params.hasSyncError === true || params.hasAccountSettingsSyncIssue === true;
-
-    if (effectiveSyncErrorKind === 'auth') {
-        return {
-            kind: 'auth_required',
-            machineCount: machines.machineCount,
-            onlineCount: machines.onlineCount,
-            hasUnknownMachines,
-            socketStatus: params.socketStatus,
-        };
-    }
-
-    if (hasAnySyncIssue || params.socketStatus === 'error') {
-        return {
-            kind: 'server_error',
-            machineCount: machines.machineCount,
-            onlineCount: machines.onlineCount,
-            hasUnknownMachines,
-            socketStatus: params.socketStatus,
-        };
-    }
-
-    if (params.socketStatus === 'connecting') {
-        return {
-            kind: 'connecting',
-            machineCount: machines.machineCount,
-            onlineCount: machines.onlineCount,
-            hasUnknownMachines,
-            socketStatus: params.socketStatus,
-        };
-    }
-
-    if (params.socketStatus !== 'connected') {
-        return {
-            kind: 'server_unreachable',
+            kind: serverLink,
             machineCount: machines.machineCount,
             onlineCount: machines.onlineCount,
             hasUnknownMachines,

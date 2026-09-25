@@ -5701,6 +5701,15 @@ localTailscale: {
     },
     inactiveResumable: "非アクティブ（再開可能）",
     inactiveMachineOffline: "非アクティブ（マシンがオフライン）",
+    serverLink: {
+        connecting: "サーバーに接続中…",
+        restarting: "サーバー再起動中、再接続しています…",
+        unreachable: "サーバー未接続 · 再接続中",
+        authRequired: "再接続するには再度サインインしてください",
+        error: "サーバーエラー",
+        noticeTitle: "このデバイスは接続されていません",
+        noticeBody: "このデバイスは現在サーバーに接続できず、自動で再接続を続けています。マシンとこのセッションは動作を続けており、接続が戻るとこの画面も更新されます。",
+    },
     inactiveNotResumable: "非アクティブ",
     inactiveNotResumableNoticeTitle: "このセッションは再開できません",
     inactiveNotResumableNoticeBody: ({ provider }: { provider: string }) =>
