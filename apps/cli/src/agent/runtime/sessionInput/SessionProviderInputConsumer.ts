@@ -218,6 +218,9 @@ export function createSessionProviderInputConsumer<Mode, Message>(
   let waitForNextInputTurn: Promise<void> = Promise.resolve();
   let drainPendingTurn: Promise<void> = Promise.resolve();
   let providerInputAdmissionOpen = true;
+  // Wakes a wait parked on the next input (an idle long-lived dispatch) when admission closes;
+  // otherwise closing admission waits on a dispatch that can only end once it receives input.
+  const providerInputAdmissionClosed = new AbortController();
   let activeProviderInputDispatches = 0;
   let activePendingMaterializationRequests = 0;
   let providerInputBatchReserved = false;
@@ -386,6 +389,7 @@ export function createSessionProviderInputConsumer<Mode, Message>(
     runProviderInputDispatch,
     async closeProviderInputAdmissionAndWaitForDispatches() {
       providerInputAdmissionOpen = false;
+      providerInputAdmissionClosed.abort('provider-input-admission-closed');
       await waitForActiveProviderInputAdmissionWork();
     },
     async waitForNextInput(waitOpts) {
@@ -408,7 +412,7 @@ export function createSessionProviderInputConsumer<Mode, Message>(
         const batch = await waitForNextInput({
           ...opts,
           session: admissionTrackedSession,
-          abortSignal: waitOpts.abortSignal,
+          abortSignal: AbortSignal.any([waitOpts.abortSignal, providerInputAdmissionClosed.signal]),
           isProviderInputAdmissionOpen: () => providerInputAdmissionOpen,
         });
         if (

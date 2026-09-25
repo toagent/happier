@@ -197,6 +197,36 @@ describe('SessionProviderInputConsumer drainPending', () => {
     expect(closed).toHaveBeenCalledTimes(1);
   });
 
+  it('releases an idle long-lived dispatch parked on the next input when admission closes', async () => {
+    const consumer = createDrainConsumer({
+      materializeNextPendingMessageSafely: vi.fn(async () => ({ type: 'no_pending' as const })),
+      // Idle: nothing wakes the wait except its abort signal, exactly as on a quiet session.
+      waitForPendingEligibilityUpdate: async (signal) => await new Promise<boolean>((resolve) => {
+        signal?.addEventListener('abort', () => resolve(false), { once: true });
+      }),
+    });
+    const providerAbort = new AbortController();
+    // Claude remote runs one dispatch for the whole SDK query and pulls every later prompt inside it.
+    const inputsSeen: Array<unknown> = [];
+    const dispatch = consumer.runProviderInputDispatch({
+      abortSignal: providerAbort.signal,
+      dispatch: async () => {
+        while (true) {
+          const batch = await consumer.waitForNextInput({ abortSignal: providerAbort.signal });
+          inputsSeen.push(batch);
+          if (!batch) return 'input-ended' as const;
+        }
+      },
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    await consumer.closeProviderInputAdmissionAndWaitForDispatches();
+
+    await expect(dispatch).resolves.toEqual({ status: 'dispatched', value: 'input-ended' });
+    expect(inputsSeen).toEqual([null]);
+    expect(providerAbort.signal.aborted).toBe(false);
+  });
+
   it('prevents a pending claim after input admission closes', async () => {
     const materializeNextPendingMessageSafely = vi.fn(async () => ({ type: 'no_pending' as const }));
     const consumer = createDrainConsumer({
