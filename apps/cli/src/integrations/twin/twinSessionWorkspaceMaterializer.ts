@@ -282,6 +282,10 @@ async function copyWorkspaceToTarget(input: Readonly<{
       force: true,
       preserveTimestamps: true,
       dereference: false,
+      // Keep link targets as committed. Without this, cp rewrites relative links to absolute paths
+      // into the review workspace: the task opens with every committed symlink shown as changed,
+      // and writes through such a link would land in the review baseline.
+      verbatimSymlinks: true,
     });
     return;
   }

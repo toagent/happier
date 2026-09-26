@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readlink, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -138,6 +138,40 @@ describe('twin session workspace materializer', () => {
         }),
       }),
     ]);
+  });
+
+  it('keeps relative symlinks as they are, so a fresh task starts with no changes', async () => {
+    // Copying the review baseline resolved relative links to absolute paths into the review workspace:
+    // every repository with committed symlinks (skills, .cursorrules) opened a new task showing them
+    // all as changed, and writing through such a link would have edited the baseline itself.
+    const root = await mkdtemp(join(tmpdir(), 'happier-twin-workspace-symlinks-'));
+    temporaryDirectories.push(root);
+    const sourceRoot = join(root, 'source');
+    await mkdir(join(sourceRoot, '.agents', 'skills', 'review'), { recursive: true });
+    await mkdir(join(sourceRoot, '.claude', 'skills'), { recursive: true });
+    await runGit(sourceRoot, ['init', '--initial-branch=main']);
+    await runGit(sourceRoot, ['config', 'user.name', 'Test User']);
+    await runGit(sourceRoot, ['config', 'user.email', 'test@example.com']);
+    await writeFile(join(sourceRoot, 'AGENTS.md'), 'rules\n', 'utf8');
+    await writeFile(join(sourceRoot, '.agents', 'skills', 'review', 'SKILL.md'), 'skill\n', 'utf8');
+    await symlink('AGENTS.md', join(sourceRoot, '.cursorrules'));
+    await symlink('../../.agents/skills/review', join(sourceRoot, '.claude', 'skills', 'review'));
+    await runGit(sourceRoot, ['add', 'AGENTS.md', '.agents', '.cursorrules', '.claude']);
+    await runGit(sourceRoot, ['commit', '-m', 'base']);
+
+    const materializer = createTwinSessionWorkspaceMaterializer({
+      reviewRoot: join(root, 'reviews'),
+      controllerMachineId: 'machine-controller',
+      workers: { 'twin-dev': { machineId: 'machine-dev', workspace: { kind: 'local', root: join(root, 'targets') } } },
+      updateSessionMetadata: async () => {},
+    });
+
+    const prepared = await materializer.prepare({ attempt: attempt(sourceRoot) });
+    const target = prepared.workspace.targetRootDirectory;
+
+    expect(await readlink(join(target, '.cursorrules'))).toBe('AGENTS.md');
+    expect(await readlink(join(target, '.claude', 'skills', 'review'))).toBe('../../.agents/skills/review');
+    expect(await runGit(target, ['status', '--short'])).toBe('');
   });
 
   it('builds the review baseline without running the user\'s git hooks', async () => {
