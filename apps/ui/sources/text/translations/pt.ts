@@ -6953,6 +6953,7 @@ export const pt: TranslationStructure = {
       title: "AÇÕES",
       files: "Arquivos",
       stop: "Parar",
+      permission: ({ mode }: { mode: string }) => `Permissões: ${mode}`,
     },
     noMachinesAvailable: "Sem máquinas",
   },

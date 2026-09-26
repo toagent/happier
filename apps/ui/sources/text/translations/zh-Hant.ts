@@ -5523,6 +5523,9 @@ const zhHantOverrides: DeepPartial<TranslationStructure> = {
     },
 
     agentInput: {
+        actionMenu: {
+            permission: ({ mode }: { mode: string }) => `權限：${mode}`,
+        },
         chipPicker: {
             selectedOptionAccessibilityLabel: ({ option }: { option: string }) => `${option}。已選擇。`,
         },

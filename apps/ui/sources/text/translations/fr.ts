@@ -6411,6 +6411,7 @@ export const fr: TranslationStructure = {
             title: 'ACTIONS',
             files: 'Fichiers',
             stop: 'Arrêter',
+            permission: ({ mode }: { mode: string }) => `Autorisations : ${mode}`,
         },
         noMachinesAvailable: 'Aucune machine',
     },

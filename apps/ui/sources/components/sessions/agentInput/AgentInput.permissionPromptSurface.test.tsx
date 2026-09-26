@@ -273,10 +273,6 @@ vi.mock('./permissionChipVisibility', () => ({
     shouldRenderPermissionChip: () => false,
 }));
 
-vi.mock('./actionMenuActions', () => ({
-    buildAgentInputActionMenuActions: () => [],
-}));
-
 vi.mock('./components/PermissionModePicker', () => ({
     PermissionModePicker: () => null,
 }));

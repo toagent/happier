@@ -685,7 +685,7 @@ describe('AgentInput (action bar auto layout)', () => {
     });
 
     it('keeps the path chip label visible even when chip density is icons', async () => {
-        storageSettings = { ...storageSettings, agentInputChipDensity: 'icons' };
+        storageSettings = { ...storageSettings, agentInputChipDensity: 'icons', agentInputActionBarLayout: 'scroll' };
         vi.resetModules();
         const { AgentInput } = await import('./AgentInput');
 

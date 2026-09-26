@@ -6424,6 +6424,7 @@ export const de: TranslationStructure = {
             title: 'AKTIONEN',
             files: 'Dateien',
             stop: 'Stopp',
+            permission: ({ mode }: { mode: string }) => `Berechtigungen: ${mode}`,
         },
         noMachinesAvailable: 'Keine Rechner',
     },

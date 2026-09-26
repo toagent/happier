@@ -962,7 +962,7 @@ describe('AgentInput (modelOptionsOverride)', () => {
         expect(screen.findByTestId('agent-input-content-popover')).toBeTruthy();
     });
 
-    it('closes the collapsed action menu when opening the permission chip popover', async () => {
+    it('closes the collapsed action menu when opening the permission popover from the menu', async () => {
         const { AgentInput } = await import('./AgentInput');
         mockAgentInputActionBarLayout = 'collapsed';
 
@@ -984,7 +984,7 @@ describe('AgentInput (modelOptionsOverride)', () => {
             await screen.pressByTestIdAsync('agent-input-action-menu-button');
 
             expect(screen.findByTestId('agent-input-action-menu-overlay')).toBeTruthy();
-            await screen.pressByTestIdAsync('agent-input-permission-chip');
+            await screen.pressByTestIdAsync('agent-input-action-menu-permission');
             expect(screen.findByTestId('agent-input-action-menu-overlay')).toBeNull();
             expect(screen.findByTestId('agent-input-content-popover')).toBeTruthy();
         } finally {
@@ -992,7 +992,7 @@ describe('AgentInput (modelOptionsOverride)', () => {
         }
     });
 
-    it('reopens collapsed settings through the shared content popover transport after closing the permission chip popover', async () => {
+    it('reopens collapsed settings through the shared content popover transport after closing the permission popover', async () => {
         const { AgentInput } = await import('./AgentInput');
         mockAgentInputActionBarLayout = 'collapsed';
 
@@ -1010,7 +1010,8 @@ describe('AgentInput (modelOptionsOverride)', () => {
                         modelMode: 'default',
                         onModelModeChange: () => {},
                     } as any));
-            await screen.pressByTestIdAsync('agent-input-permission-chip');
+            await screen.pressByTestIdAsync('agent-input-action-menu-button');
+            await screen.pressByTestIdAsync('agent-input-action-menu-permission');
             expect(screen.findByTestId('agent-input-content-popover')).toBeTruthy();
 
             expect(screen.findByTestId('agent-input-action-menu-button')).toBeTruthy();

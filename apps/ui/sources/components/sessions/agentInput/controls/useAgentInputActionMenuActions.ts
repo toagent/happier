@@ -3,7 +3,8 @@ import * as React from 'react';
 import type { AgentId } from '@/agents/catalog/catalog';
 import type { ActionListItem } from '@/components/ui/lists/ActionListSection';
 
-import { buildAgentInputActionMenuActions } from '../actionMenuActions';
+import { flattenAgentInputActionMenuControlActions, resolveAgentInputActionMenuControlActions } from '../actionMenuActions';
+import type { AgentInputControlId } from './agentInputControlTypes';
 import type { AgentInputExtraActionChip } from '../agentInputContracts';
 import { buildCollapsedExtraControlActions } from './buildCollapsedExtraControlActions';
 
@@ -26,6 +27,8 @@ export function useAgentInputActionMenuActions(params: Readonly<{
     blurInput: () => void;
     openCollapsedOptionsPopover: (chipKey: string | null) => void;
     resetCorePopovers: () => void;
+    permissionLabel?: string | null;
+    onPermissionClick?: () => void;
     onProfileClick?: () => void;
     onEnvVarsClick?: () => void;
     onAgentClick?: () => void;
@@ -37,7 +40,11 @@ export function useAgentInputActionMenuActions(params: Readonly<{
     onFileViewerPress?: () => void;
     canStop?: boolean;
     onStop?: () => void;
-}>): ReadonlyArray<ActionListItem> {
+}>): Readonly<{
+    actions: ReadonlyArray<ActionListItem>;
+    /** Controls the menu reaches, so the collapsed composer can leave their chips out. */
+    menuControlIds: ReadonlySet<AgentInputControlId>;
+}> {
     return React.useMemo(() => {
         const extraControlActions = buildCollapsedExtraControlActions({
             chips: params.extraActionChips,
@@ -48,7 +55,7 @@ export function useAgentInputActionMenuActions(params: Readonly<{
             resetCorePopovers: params.resetCorePopovers,
         });
 
-        return buildAgentInputActionMenuActions({
+        const controlActionsById = resolveAgentInputActionMenuControlActions({
             actionBarIsCollapsed: params.actionBarIsCollapsed,
             hasAnyActions: params.hasAnyActions,
             tint: params.tint,
@@ -62,6 +69,8 @@ export function useAgentInputActionMenuActions(params: Readonly<{
             currentPath: params.currentPath,
             resumeSessionId: params.resumeSessionId,
             sessionId: params.sessionId,
+            permissionLabel: params.permissionLabel,
+            onPermissionClick: params.onPermissionClick,
             onProfileClick: params.onProfileClick,
             onEnvVarsClick: params.onEnvVarsClick,
             onAgentClick: params.onAgentClick,
@@ -77,6 +86,10 @@ export function useAgentInputActionMenuActions(params: Readonly<{
             dismiss: params.dismissActionMenu,
             blurInput: params.blurInput,
         });
+        return {
+            actions: flattenAgentInputActionMenuControlActions(controlActionsById),
+            menuControlIds: new Set(Object.keys(controlActionsById) as AgentInputControlId[]),
+        };
     }, [
         params.actionBarIsCollapsed,
         params.agentId,
@@ -92,6 +105,8 @@ export function useAgentInputActionMenuActions(params: Readonly<{
         params.machineName,
         params.onAgentClick,
         params.onEnvVarsClick,
+        params.onPermissionClick,
+        params.permissionLabel,
         params.onFileViewerPress,
         params.onMachineClick,
         params.onPathClick,

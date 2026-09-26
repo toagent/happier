@@ -2393,6 +2393,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
         sessionModePickerAnchor,
         closeSessionModePicker,
         showPermissionPopover,
+        permissionPopoverAnchor,
         closePermissionPopover,
         showMachinePopover,
         machinePopoverAnchor,
@@ -2656,6 +2657,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
     const {
         handleActionMenuPress,
         actionMenuActions,
+        menuControlIds: actionMenuControlIds,
         hasActionMenuPopoverSections,
     } = useAgentInputActionMenuControls({
         showActionMenu,
@@ -2710,6 +2712,13 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
         hasProfile,
         hasEnvVars,
         hasAgent,
+        permission: showPermissionChip
+            ? {
+                label: effectivePermissionLabel,
+                hasPicker: Boolean(props.onPermissionModeChange),
+                onClick: props.onPermissionClick,
+            }
+            : null,
     });
     const {
         controlNodes: renderedActionControlNodes,
@@ -2717,6 +2726,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
         extraChipAnchorRefsByKey,
     } = useRenderedAgentInputControlRows({
         layout: effectiveActionBarLayout,
+        menuControlIds: actionMenuControlIds,
         chips: props.extraActionChips,
         overlayAnchorRef,
         onToggleExtraChipCollapsedPopover: (chipKey) => {
@@ -3284,6 +3294,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                     onActiveExtraCollapsedPopoverChipClose={closeActiveExtraCollapsedPopoverChip}
                     showMachinePopover={showMachinePopover}
                     machinePopoverAnchor={machinePopoverAnchor}
+                    permissionPopoverAnchor={permissionPopoverAnchor}
                     machineChipAnchorRef={machineChipAnchorRef}
                     machinePopover={props.machinePopover}
                     onMachinePopoverRequestClose={closeMachinePopover}

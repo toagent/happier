@@ -6841,6 +6841,7 @@ export const pl: TranslationStructure = {
       title: "AKCJE",
       files: "Pliki",
       stop: "Zatrzymaj",
+      permission: ({ mode }: { mode: string }) => `Uprawnienia: ${mode}`,
     },
     noMachinesAvailable: "Brak maszyn",
   },

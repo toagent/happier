@@ -213,6 +213,7 @@ export function AgentInputOverlayLayer(props: Readonly<{
 
     showMachinePopover: boolean;
     machinePopoverAnchor: AgentInputPopoverAnchor;
+    permissionPopoverAnchor: AgentInputPopoverAnchor;
     machineChipAnchorRef: React.RefObject<View | null>;
     machinePopover?: SharedContentPopoverLike;
     onMachinePopoverRequestClose: () => void;
@@ -249,7 +250,7 @@ export function AgentInputOverlayLayer(props: Readonly<{
         {
             key: 'permission',
             open: props.showPermissionPopover,
-            anchorRef: props.permissionChipAnchorRef,
+            anchorRef: resolvePopoverAnchorRef(props.permissionPopoverAnchor, props.permissionChipAnchorRef, props.actionMenuAnchorRef),
             content: (
                 <PermissionModePicker
                     title={getPermissionModeTitleForAgentType(props.agentId)}

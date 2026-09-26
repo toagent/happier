@@ -56,9 +56,17 @@ export function useAgentInputActionMenuControls(params: Readonly<{
     hasProfile: boolean;
     hasEnvVars: boolean;
     hasAgent: boolean;
+    /** The permission control, when this composer shows one. */
+    permission?: Readonly<{
+        label: string | null;
+        /** Opens the in-composer picker; otherwise `onClick` takes over. */
+        hasPicker: boolean;
+        onClick?: () => void;
+    }> | null;
 }>): Readonly<{
     handleActionMenuPress: () => void;
-    actionMenuActions: ReturnType<typeof useAgentInputActionMenuActions>;
+    actionMenuActions: ReturnType<typeof useAgentInputActionMenuActions>['actions'];
+    menuControlIds: ReturnType<typeof useAgentInputActionMenuActions>['menuControlIds'];
     hasActionMenuPopoverSections: boolean;
 }> {
     const dismissActionMenu = React.useCallback(() => {
@@ -146,7 +154,19 @@ export function useAgentInputActionMenuControls(params: Readonly<{
         params.sessionModeChipInteraction,
     ]);
 
-    const actionMenuActions = useAgentInputActionMenuActions({
+    const permission = params.permission ?? null;
+    const handleActionMenuPermissionClick = React.useCallback(() => {
+        if (permission?.hasPicker) {
+            params.closeSelectionOverlay('agent');
+            params.openSelectionOverlay('permission', 'actionMenu');
+            return;
+        }
+        permission?.onClick?.();
+    }, [params.closeSelectionOverlay, params.openSelectionOverlay, permission]);
+
+    const actionMenu = useAgentInputActionMenuActions({
+        permissionLabel: permission?.label ?? null,
+        onPermissionClick: permission && (permission.hasPicker || permission.onClick) ? handleActionMenuPermissionClick : undefined,
         actionBarIsCollapsed: params.actionBarIsCollapsed,
         hasAnyActions: params.hasAnyActions,
         tint: params.tint,
@@ -178,6 +198,7 @@ export function useAgentInputActionMenuControls(params: Readonly<{
         onStop: params.onStop,
     });
 
+    const actionMenuActions = actionMenu.actions;
     const hasActionMenuPopoverSections = actionMenuActions.length > 0;
 
     React.useEffect(() => {
@@ -189,6 +210,7 @@ export function useAgentInputActionMenuControls(params: Readonly<{
     return {
         handleActionMenuPress,
         actionMenuActions,
+        menuControlIds: actionMenu.menuControlIds,
         hasActionMenuPopoverSections,
     };
 }

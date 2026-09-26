@@ -7093,6 +7093,7 @@ localTailscale: {
       title: "操作",
       files: "ファイル",
       stop: "停止",
+      permission: ({ mode }: { mode: string }) => `権限：${mode}`,
     },
     noMachinesAvailable: "マシンなし",
   },

@@ -90,6 +90,7 @@ function buildDefaultOverlayLayerFixture(): AgentInputOverlayLayerProps {
 
         showMachinePopover: false,
         machinePopoverAnchor: 'chip',
+        permissionPopoverAnchor: 'chip',
         machineChipAnchorRef: sharedRef,
         onMachinePopoverRequestClose: () => {},
 

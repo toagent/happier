@@ -461,4 +461,26 @@ describe('buildAgentInputActionMenuActions', () => {
         ]);
         expect((actions[1]?.icon as any)?.props?.name).toBe('rocket-launch');
     });
+
+    it('reaches the permission mode from the menu so the collapsed composer needs no permission chip', () => {
+        const onPermissionClick = vi.fn();
+        const actions = buildAgentInputActionMenuActions({
+            actionBarIsCollapsed: true,
+            hasAnyActions: true,
+            tint: '#fff',
+            agentId: 'codex' as any,
+            profileLabel: null,
+            profileIcon: 'person-outline',
+            permissionLabel: 'Default permissions',
+            onPermissionClick,
+            dismiss: () => {},
+            blurInput: () => {},
+        });
+
+        const permission = actions.find((action) => action.id === 'permission');
+        // The label names the effective mode (translated), never the empty default chip label.
+        expect(permission?.label).toBe('agentInput.actionMenu.permission');
+        permission?.onPress?.();
+        expect(onPermissionClick).toHaveBeenCalledTimes(1);
+    });
 });

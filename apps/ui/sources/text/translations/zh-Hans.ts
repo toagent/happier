@@ -6613,6 +6613,7 @@ export const zhHans: TranslationStructure = {
       title: "操作",
       files: "文件",
       stop: "停止",
+      permission: ({ mode }: { mode: string }) => `权限：${mode}`,
     },
     noMachinesAvailable: "无设备",
   },

@@ -22,7 +22,8 @@ vi.mock('@/components/ui/layout/layout', () => ({
     layout: { maxWidth: 800, headerMaxWidth: 800 },
 }));
 
-const storageSettings: Settings = {
+// Mutable so a chip-interaction test can switch the layout; reset in beforeEach.
+const storageSettings: { -readonly [K in keyof Settings]: Settings[K] } = {
     ...settingsDefaults,
     profiles: [],
     agentInputEnterToSend: true,
@@ -314,6 +315,7 @@ vi.mock('./components/AgentInputSelectionListPopover', () => ({
 
 describe('AgentInput (action menu popover props)', () => {
     beforeEach(() => {
+        storageSettings.agentInputActionBarLayout = 'collapsed';
         activeSuggestionsState.value = [];
     });
 
@@ -369,6 +371,8 @@ describe('AgentInput (action menu popover props)', () => {
     });
 
     it('anchors the permission popover to the permission chip and uses the shared popover sizing', async () => {
+        // Chip interaction: the chips are what is under test, so use a layout that shows them.
+        storageSettings.agentInputActionBarLayout = 'wrap';
         capturedPermissionPicker.last = null;
         const { AgentInput } = await import('./AgentInput');
 
@@ -399,6 +403,8 @@ describe('AgentInput (action menu popover props)', () => {
     });
 
     it('closes the permission popover after selecting a mode', async () => {
+        // Chip interaction: the chips are what is under test, so use a layout that shows them.
+        storageSettings.agentInputActionBarLayout = 'wrap';
         captured.last = null;
         capturedPermissionPicker.last = null;
         const { AgentInput } = await import('./AgentInput');
@@ -783,6 +789,8 @@ describe('AgentInput (action menu popover props)', () => {
     });
 
     it('toggles a visible extra-chip content popover closed when the chip is pressed twice', async () => {
+        // Chip interaction: the chips are what is under test, so use a layout that shows them.
+        storageSettings.agentInputActionBarLayout = 'wrap';
         captured.last = null;
         capturedActionMenuContent.last = null;
         const { AgentInput } = await import('./AgentInput');
@@ -859,11 +867,11 @@ describe('AgentInput (action menu popover props)', () => {
                 />);
 
         const settingsButton = screen.findByTestId('agent-input-action-menu-button');
-        const machinePressable = screen.findByTestId('agent-input-machine-chip');
 
         expect(settingsButton).toBeTruthy();
-        expect(machinePressable).toBeTruthy();
-        if (!settingsButton || !machinePressable) {
+        // The menu reaches the machine, so the collapsed composer does not repeat it as a chip.
+        expect(screen.findByTestId('agent-input-machine-chip')).toBeFalsy();
+        if (!settingsButton) {
             return;
         }
 
@@ -885,7 +893,7 @@ describe('AgentInput (action menu popover props)', () => {
         }) | null;
 
         expect(contentPopoverProps?.open).toBe(true);
-        expect(contentPopoverProps?.anchorRef).toStrictEqual(machinePressable.props.ref);
+        expect(contentPopoverProps?.anchorRef).toEqual(settingsButton.props.ref);
         expect(contentPopoverProps?.maxHeightCap).toBeGreaterThan(0);
         expect(contentPopoverProps?.maxWidthCap).toBeGreaterThan(0);
     });
@@ -979,6 +987,8 @@ describe('AgentInput (action menu popover props)', () => {
     });
 
     it('routes the checkout/worktree chip through the SelectionList popover anchored to the chip', async () => {
+        // Chip interaction: the chips are what is under test, so use a layout that shows them.
+        storageSettings.agentInputActionBarLayout = 'wrap';
         captured.last = null;
         capturedActionMenuContent.last = null;
         capturedChipPickerPopover.last = null;

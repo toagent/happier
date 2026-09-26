@@ -19,6 +19,8 @@ export function buildAgentInputActionMenuActions(opts: {
     currentPath?: string | null;
     resumeSessionId?: string | null;
     sessionId?: string;
+    permissionLabel?: string | null;
+    onPermissionClick?: () => void;
     onProfileClick?: () => void;
     onEnvVarsClick?: () => void;
     onAgentClick?: () => void;
@@ -34,7 +36,19 @@ export function buildAgentInputActionMenuActions(opts: {
     dismiss: () => void;
     blurInput: () => void;
 }): ActionListItem[] {
-    if (!opts.actionBarIsCollapsed || !opts.hasAnyActions) return [] as ActionListItem[];
+    return flattenAgentInputActionMenuControlActions(resolveAgentInputActionMenuControlActions(opts));
+}
+
+export type AgentInputActionMenuControlActions = Partial<Record<AgentInputControlId, ReadonlyArray<ActionListItem>>>;
+
+/**
+ * The collapsed action menu, grouped by the control each entry stands in for. A control with an entry
+ * here is reachable from the menu, which is what lets the collapsed composer drop its chip.
+ */
+export function resolveAgentInputActionMenuControlActions(
+    opts: Parameters<typeof buildAgentInputActionMenuActions>[0],
+): AgentInputActionMenuControlActions {
+    if (!opts.actionBarIsCollapsed || !opts.hasAnyActions) return {};
 
     const controlActionsById: Partial<Record<AgentInputControlId, ReadonlyArray<ActionListItem>>> = {
         ...buildCoreCollapsedControlActions(opts),
@@ -42,7 +56,12 @@ export function buildAgentInputActionMenuActions(opts: {
     for (const [controlId, actionOrActions] of Object.entries(opts.extraControlActions ?? {}) as Array<[AgentInputControlId, ActionListItem | ReadonlyArray<ActionListItem>]>) {
         controlActionsById[controlId] = Array.isArray(actionOrActions) ? actionOrActions : [actionOrActions];
     }
+    return controlActionsById;
+}
 
+export function flattenAgentInputActionMenuControlActions(
+    controlActionsById: AgentInputActionMenuControlActions,
+): ActionListItem[] {
     const orderedControlIds = resolveAgentInputControlLines({
         layout: 'collapsed',
         controlIds: Object.keys(controlActionsById) as AgentInputControlId[],

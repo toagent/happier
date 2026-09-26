@@ -6445,6 +6445,7 @@ export const en = {
             title: 'ACTIONS',
             files: 'Files',
             stop: 'Stop',
+            permission: ({ mode }: { mode: string }) => `Permissions: ${mode}`,
         },
         noMachinesAvailable: 'No machines',
     },

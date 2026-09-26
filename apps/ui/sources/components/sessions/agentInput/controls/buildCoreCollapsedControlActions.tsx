@@ -25,6 +25,8 @@ export function buildCoreCollapsedControlActions(opts: Readonly<{
     currentPath?: string | null;
     resumeSessionId?: string | null;
     sessionId?: string;
+    permissionLabel?: string | null;
+    onPermissionClick?: () => void;
     onProfileClick?: () => void;
     onEnvVarsClick?: () => void;
     onAgentClick?: () => void;
@@ -40,6 +42,20 @@ export function buildCoreCollapsedControlActions(opts: Readonly<{
     blurInput: () => void;
 }>): Partial<Record<AgentInputControlId, ReadonlyArray<ActionListItem>>> {
     const controlActionsById: Partial<Record<AgentInputControlId, ReadonlyArray<ActionListItem>>> = {};
+
+    if (opts.onPermissionClick) {
+        controlActionsById.permission = [{
+            id: 'permission',
+            testID: 'agent-input-action-menu-permission',
+            label: t('agentInput.actionMenu.permission', { mode: opts.permissionLabel ?? '' }),
+            icon: <Icon name="shield-check" size={16} color={opts.tint} />,
+            onPress: () => {
+                hapticsLight();
+                opts.dismiss();
+                opts.onPermissionClick?.();
+            },
+        }];
+    }
 
     if (opts.onProfileClick) {
         controlActionsById.profile = [{

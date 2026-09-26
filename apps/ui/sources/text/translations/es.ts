@@ -6824,6 +6824,7 @@ export const es: TranslationStructure = {
       title: "ACCIONES",
       files: "Archivos",
       stop: "Detener",
+      permission: ({ mode }: { mode: string }) => `Permisos: ${mode}`,
     },
     noMachinesAvailable: "Sin máquinas",
   },

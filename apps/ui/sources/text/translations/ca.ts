@@ -6423,6 +6423,7 @@ deps: {
             title: 'ACCIONS',
             files: 'Fitxers',
             stop: 'Atura',
+            permission: ({ mode }: { mode: string }) => `Permisos: ${mode}`,
         },
         noMachinesAvailable: 'Sense màquines',
     },

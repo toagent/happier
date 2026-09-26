@@ -10,6 +10,8 @@ export function resolveRenderedAgentInputControls(params: Readonly<{
     coreControlNodesById: ControlNodesById;
     extraControlNodesById: ControlNodesById;
     extraChips: readonly React.ReactNode[];
+    /** Controls the collapsed action menu reaches; the collapsed composer does not repeat them as chips. */
+    menuControlIds?: ReadonlySet<AgentInputControlId>;
 }>): Readonly<{
     chips: readonly React.ReactNode[];
     secondaryLeadingControls: readonly React.ReactNode[];
@@ -36,7 +38,9 @@ export function resolveRenderedAgentInputControls(params: Readonly<{
     );
 
     const chips = params.layout === 'collapsed'
-        ? resolveControlNodes(controlLines.collapsed).filter(Boolean)
+        ? resolveControlNodes(controlLines.collapsed.filter((controlId) => (
+            controlId === 'actionMenu' || !params.menuControlIds?.has(controlId)
+        ))).filter(Boolean)
         : [
             ...resolveControlNodes(controlLines.primary),
             ...params.extraChips,

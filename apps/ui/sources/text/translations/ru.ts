@@ -6824,6 +6824,7 @@ export const ru: TranslationStructure = {
       title: "ДЕЙСТВИЯ",
       files: "Файлы",
       stop: "Остановить",
+      permission: ({ mode }: { mode: string }) => `Разрешения: ${mode}`,
     },
     noMachinesAvailable: "Нет машин",
   },
