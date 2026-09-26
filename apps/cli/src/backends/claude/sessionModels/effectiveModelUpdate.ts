@@ -100,6 +100,19 @@ function buildModelChangedEventId(params: Readonly<{
   return `claude:model-changed:${encodeURIComponent(params.fromModelId)}:${encodeURIComponent(params.toModelId)}`;
 }
 
+/**
+ * Claude Code names one model two ways: the selector in the SDK init record carries a context
+ * window suffix ("claude-opus-5-5[1m]") while assistant rows carry the API model id
+ * ("claude-opus-5-5"). Both describe the same effective model.
+ */
+function stripContextSuffix(modelId: string): string {
+  return modelId.replace(/\[[^\]]*\]$/u, '');
+}
+
+function isSameClaudeModel(left: string | null, right: string): boolean {
+  return left !== null && stripContextSuffix(left) === stripContextSuffix(right);
+}
+
 function resolveModelLabel(params: Readonly<{
   metadata: Metadata | null | undefined;
   modelId: string;
@@ -116,14 +129,20 @@ export function applyClaudeEffectiveModelUpdate(params: Readonly<{
   source: ClaudeEffectiveModelUpdateSource;
   logPrefix: string;
 }>): void {
-  const modelId = readString(params.modelId);
-  if (!modelId) return;
+  const reportedModelId = readString(params.modelId);
+  if (!reportedModelId) return;
 
   const displayName = readString(params.displayName);
   const contextWindowTokens = readPositiveTokens(params.contextWindowTokens);
   const metadataSnapshot = readMetadataSnapshot(params.client);
   const state = stateFor(params.client);
   const previousModelId = readActiveClaudeModelId(metadataSnapshot) ?? state.lastSeenModelId;
+  // Keep the more specific spelling of the same model so its context window is not dropped.
+  const modelId = isSameClaudeModel(previousModelId, reportedModelId)
+    && stripContextSuffix(reportedModelId) === reportedModelId
+    && previousModelId
+    ? previousModelId
+    : reportedModelId;
   const metadataRequestKey = buildMetadataRequestKey({ modelId, displayName, contextWindowTokens });
 
   const alreadyAppliedInMemory = state.lastSeenModelId === modelId;
@@ -150,8 +169,11 @@ export function applyClaudeEffectiveModelUpdate(params: Readonly<{
     );
   }
 
-  if (previousModelId && previousModelId !== modelId) {
-    const transitionKey = `${previousModelId}\u0000${modelId}`;
+  // Only a change of the model this runtime already observed is news. The first observation merely
+  // resolves the session's selection (e.g. "default"), which is not a change the user made or saw.
+  const observedModelId = state.lastSeenModelId;
+  if (observedModelId && !isSameClaudeModel(observedModelId, modelId)) {
+    const transitionKey = `${observedModelId}\u0000${modelId}`;
     if (state.lastEmittedTransitionKey !== transitionKey) {
       state.lastEmittedTransitionKey = transitionKey;
       params.client.sendSessionEvent(
@@ -159,7 +181,7 @@ export function applyClaudeEffectiveModelUpdate(params: Readonly<{
           type: 'message',
           message: `Model changed to ${resolveModelLabel({ metadata: metadataSnapshot, modelId, displayName })}`,
         },
-        buildModelChangedEventId({ fromModelId: previousModelId, toModelId: modelId }),
+        buildModelChangedEventId({ fromModelId: observedModelId, toModelId: modelId }),
       );
     }
   }
