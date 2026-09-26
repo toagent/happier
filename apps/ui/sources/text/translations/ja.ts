@@ -5701,6 +5701,8 @@ localTailscale: {
     },
     inactiveResumable: "非アクティブ（再開可能）",
     inactiveMachineOffline: "非アクティブ（マシンがオフライン）",
+    changesStatusAction: ({ added, removed }: { added: number; removed: number }) =>
+        `変更を表示：${added} 行追加、${removed} 行削除`,
     serverLink: {
         connecting: "サーバーに接続中…",
         restarting: "サーバー再起動中、再接続しています…",
@@ -8290,6 +8292,8 @@ settingsSession: {
 	        folderSortModeMixedTitle: 'セッションと混在',
 	        folderSortModeMixedSubtitle: 'フォルダーとセッションの正確な共有順序を保持します。',
 	        sectionModeTitle: 'セッションセクション',
+	        storageSourceTitle: 'セッションの取得元',
+	        storageSourceSubtitle: 'Happier のセッション、またはマシン上の直接セッション',
 	        sectionModeActivitySelectedSubtitle: 'アクティブと非アクティブのセッションを分ける',
 	        sectionModeSingleSelectedSubtitle: 'ワークスペース別にまとめた 1 つのセッションセクションを表示',
 	        sectionModeActivityTitle: 'アクティブと非アクティブ',

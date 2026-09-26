@@ -22,6 +22,7 @@ import {
 } from '@/sync/domains/session/listing/attentionPromotion/sessionListAttentionPromotionTypes';
 import { normalizeSessionListFolderSortMode } from '@/sync/domains/session/listing/sessionListFolderSortMode';
 import { Icon } from '@/components/ui/icons/Icon';
+import { useSessionListStorageKind } from '@/components/sessions/model/useSessionListStorageKind';
 import {
     SESSION_LIST_ORDERING_MODES_V1,
     normalizeSessionListOrderingModeV1,
@@ -79,6 +80,14 @@ export default React.memo(function SessionSettingsScreen() {
     const [openSessionListOrderingModeMenu, setOpenSessionListOrderingModeMenu] = React.useState(false);
     const [openSessionListFolderSortModeMenu, setOpenSessionListFolderSortModeMenu] = React.useState(false);
     const [openSessionListSectionModeMenu, setOpenSessionListSectionModeMenu] = React.useState(false);
+    const [openSessionListStorageSourceMenu, setOpenSessionListStorageSourceMenu] = React.useState(false);
+    // Native lists drop the list-top Happier/Direct switch; the same stored choice is made here instead.
+    const sessionListStorage = useSessionListStorageKind();
+    const showSessionListStorageSourceSetting = sessionListStorage.directSessionsEnabled && !sessionListStorage.showStorageTabs;
+    const sessionListStorageSourceItems = React.useMemo(() => [
+        { id: 'persisted', title: t('sessionsList.storagePersistedTab') },
+        { id: 'direct', title: t('sessionsList.storageDirectTab') },
+    ], []);
     const [openWorkspacePathDisplayMenu, setOpenWorkspacePathDisplayMenu] = React.useState(false);
     const [openWorkingIndicatorMenu, setOpenWorkingIndicatorMenu] = React.useState(false);
     const [openTitleUpdatesModeMenu, setOpenTitleUpdatesModeMenu] = React.useState(false);
@@ -605,6 +614,32 @@ export default React.memo(function SessionSettingsScreen() {
                     items={sessionListSectionModeItems}
                     onSelect={handleSessionListSectionModeSelect}
                 />
+                {showSessionListStorageSourceSetting ? (
+                    <DropdownMenu
+                        open={openSessionListStorageSourceMenu}
+                        onOpenChange={setOpenSessionListStorageSourceMenu}
+                        variant="selectable"
+                        search={false}
+                        selectedId={sessionListStorage.storageKind}
+                        showCategoryTitles={false}
+                        matchTriggerWidth={true}
+                        connectToTrigger={true}
+                        rowKind="item"
+                        popoverBoundaryRef={popoverBoundaryRef}
+                        itemTrigger={{
+                            title: t('settingsSession.sessionList.storageSourceTitle'),
+                            subtitle: t('settingsSession.sessionList.storageSourceSubtitle'),
+                            icon: <Icon name="arrows-left-right" size={29} color={theme.colors.accent.blue} />,
+                            showSelectedSubtitle: true,
+                            itemProps: { testID: 'settings-session-sessionListStorageSource-trigger' },
+                        }}
+                        items={sessionListStorageSourceItems}
+                        onSelect={(itemId) => {
+                            if (itemId !== 'persisted' && itemId !== 'direct') return;
+                            sessionListStorage.setStorageKind(itemId);
+                        }}
+                    />
+                ) : null}
                 <DropdownMenu
                     open={openGroupingMenu === 'active'}
                     onOpenChange={(next) => setOpenGroupingMenu(next ? 'active' : null)}

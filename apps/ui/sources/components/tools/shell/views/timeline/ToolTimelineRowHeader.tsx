@@ -73,6 +73,8 @@ export const ToolTimelineRowHeader = React.memo(function ToolTimelineRowHeader(p
         platformOS: Platform.OS,
         isRowHovered: isHovered,
         isActionHovered: false,
+        // Phones and tablets: an expanded tool row is the activated row.
+        isRowActivated: disclosure?.state === 'expanded',
         coarsePrimaryPointer: readCoarsePrimaryPointer(),
     } as const;
     // A pinned row keeps its pin visible; the open-details icon still waits for

@@ -5101,6 +5101,8 @@ export const en = {
         },
         inactiveResumable: 'Inactive (resumable)',
         inactiveMachineOffline: 'Inactive (machine offline)',
+        changesStatusAction: ({ added, removed }: { added: number; removed: number }) =>
+            `View changes: ${added} lines added, ${removed} removed`,
         serverLink: {
             connecting: 'Connecting to server…',
             restarting: 'Server restarting, reconnecting…',
@@ -7618,6 +7620,8 @@ settingsSession: {
 	              folderSortModeMixedTitle: 'Mixed with sessions',
 	              folderSortModeMixedSubtitle: 'Allow folders and sessions to keep an exact shared order.',
 	              sectionModeTitle: 'Session sections',
+	              storageSourceTitle: 'Session source',
+	              storageSourceSubtitle: 'Happier sessions, or direct sessions on your machines',
 	              sectionModeActivitySelectedSubtitle: 'Separate active and inactive sessions',
 	              sectionModeSingleSelectedSubtitle: 'Show one sessions section grouped by workspace',
 	              sectionModeActivityTitle: 'Active and inactive',

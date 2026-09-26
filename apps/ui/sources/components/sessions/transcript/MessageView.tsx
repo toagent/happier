@@ -61,7 +61,7 @@ import { TranscriptRollbackActionButton } from '@/components/sessions/transcript
 import { MessageActionRow } from '@/components/sessions/transcript/messageActions/MessageActionRow';
 import { MessagePinButton } from '@/components/sessions/transcript/messageActions/MessagePinButton';
 import { resolveMessagePinAvailability } from '@/components/sessions/transcript/messageActions/resolveMessagePinAvailability';
-import { readCoarsePrimaryPointer, useRowActionHoverHost } from '@/components/sessions/transcript/messageActions/rowActionRevealHost';
+import { readCoarsePrimaryPointer, useRowActionHoverHost, useTranscriptRowRevealHost } from '@/components/sessions/transcript/messageActions/rowActionRevealHost';
 import { RowActionRevealSlot } from '@/components/sessions/transcript/messageActions/RowActionRevealSlot';
 import { resolveToolRowPinAction } from '@/components/sessions/transcript/toolCalls/ToolCallPinAction';
 import type { TranscriptRollbackAction } from '@/sync/domains/sessionRollback/rollbackUiSupport';
@@ -505,7 +505,7 @@ function UserTextBlock(props: {
   forkCommon: TranscriptForkCommon;
   messageDisplayCommon: TranscriptMessageDisplayCommon;
 }) {
-  const [isMessageHovered, setIsMessageHovered] = React.useState(false);
+  const rowRevealHost = useTranscriptRowRevealHost();
   const [isCopyButtonHovered, setIsCopyButtonHovered] = React.useState(false);
   const [isActionRowFocused, setIsActionRowFocused] = React.useState(false);
   const handleActionsFocus = React.useCallback(() => setIsActionRowFocused(true), []);
@@ -647,7 +647,8 @@ function UserTextBlock(props: {
   }), [props.message, props.messagePins, props.pinReadOnlyContext, props.sessionId, seq]);
   const rowActionVisibilityInput = {
     platformOS: Platform.OS,
-    isRowHovered: isMessageHovered,
+    isRowHovered: rowRevealHost.isRowHovered,
+    isRowActivated: rowRevealHost.isRowActivated,
     isActionHovered: isCopyButtonHovered,
     isRowFocused: isActionRowFocused,
     coarsePrimaryPointer: readCoarsePrimaryPointer(),
@@ -679,12 +680,8 @@ function UserTextBlock(props: {
   if (isStructuredOnly) {
     return (
       <Pressable
-        {...(isWeb
-          ? {
-              onHoverIn: () => setIsMessageHovered(true),
-              onHoverOut: () => setIsMessageHovered(false),
-            }
-          : null)}
+        testID={`transcript-message-row:${props.message.id}`}
+        {...rowRevealHost.pressableProps}
       >
         <View
           style={[styles.structuredUserMessageContainer, props.historical ? styles.historicalMessageContainer : null]}
@@ -805,12 +802,8 @@ function UserTextBlock(props: {
 
   return (
     <Pressable
-      {...(isWeb
-        ? {
-            onHoverIn: () => setIsMessageHovered(true),
-            onHoverOut: () => setIsMessageHovered(false),
-          }
-        : null)}
+      testID={`transcript-message-row:${props.message.id}`}
+      {...rowRevealHost.pressableProps}
     >
       <View
         style={[styles.userMessageContainer, props.historical ? styles.historicalMessageContainer : null]}
@@ -971,7 +964,7 @@ function AgentTextBlock(props: {
   forkCommon: TranscriptForkCommon;
   messageDisplayCommon: TranscriptMessageDisplayCommon;
 }) {
-  const [isMessageHovered, setIsMessageHovered] = React.useState(false);
+  const rowRevealHost = useTranscriptRowRevealHost();
   const [isCopyButtonHovered, setIsCopyButtonHovered] = React.useState(false);
   const [isActionRowFocused, setIsActionRowFocused] = React.useState(false);
   const handleActionsFocus = React.useCallback(() => setIsActionRowFocused(true), []);
@@ -1123,7 +1116,8 @@ function AgentTextBlock(props: {
   }), [props.message, props.messagePins, props.pinReadOnlyContext, props.sessionId, seq]);
   const rowActionVisibilityInput = {
     platformOS: Platform.OS,
-    isRowHovered: isMessageHovered,
+    isRowHovered: rowRevealHost.isRowHovered,
+    isRowActivated: rowRevealHost.isRowActivated,
     isActionHovered: isCopyButtonHovered,
     isRowFocused: isActionRowFocused,
     coarsePrimaryPointer: readCoarsePrimaryPointer(),
@@ -1250,12 +1244,8 @@ function AgentTextBlock(props: {
 
   return (
     <Pressable
-      {...(isWeb
-        ? {
-            onHoverIn: () => setIsMessageHovered(true),
-            onHoverOut: () => setIsMessageHovered(false),
-          }
-        : null)}
+      testID={`transcript-message-row:${props.message.id}`}
+      {...rowRevealHost.pressableProps}
     >
       <TranscriptJumpAttention
         sessionId={props.sessionId}
@@ -1720,6 +1710,9 @@ function ToolCallBlock(props: {
             platformOS: Platform.OS,
             isRowHovered: structuredPinHost.isHovered,
             isActionHovered: false,
+            // Structured tool content is shown in full, so its pin is card chrome rather than
+            // row noise: it stays reachable on phones and tablets.
+            isRowActivated: true,
             coarsePrimaryPointer: readCoarsePrimaryPointer(),
             pinned: toolPinAction.pinned,
           })}

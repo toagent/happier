@@ -38,7 +38,19 @@ export type SessionRowPresentation = Readonly<{
      * takes ordinary secondary ink and is not announced as an attention state.
      */
     backgroundActivityStatusLine?: true;
+    /**
+     * A minimal row on a native touch surface has no status line, so what needs the person is named
+     * in the row's trailing slot instead of leaving it to a dot. Pointer minimal rows keep the dot.
+     */
+    trailingStatusTextKey?: 'status.permissionRequired' | 'status.actionRequired' | 'status.error' | 'status.readyForReview';
 }>;
+
+const TRAILING_STATUS_TEXT_KEY: Partial<Record<SessionRowAttentionState, NonNullable<SessionRowPresentation['trailingStatusTextKey']>>> = {
+    permission_required: 'status.permissionRequired',
+    action_required: 'status.actionRequired',
+    failed: 'status.error',
+    ready: 'status.readyForReview',
+};
 
 export function resolveLegacySessionRowAttentionState(input: Readonly<{
     hasUnreadMessages: boolean;
@@ -76,6 +88,8 @@ export function resolveSessionRowPresentation(input: Readonly<{
      * or the badge the way unread does.
      */
     standing?: boolean;
+    /** The row is a minimal row on a native touch surface (see shouldUseReadableNativeTouchMinimalSessionRow). */
+    readableNativeTouchMinimal?: boolean;
 }>): SessionRowPresentation {
     const backgroundActiveUsesWorkingIndicator = input.backgroundActive === true
         && input.attentionState !== 'working'
@@ -99,6 +113,12 @@ export function resolveSessionRowPresentation(input: Readonly<{
     if (input.density === 'minimal') {
         // A minimal row draws no secondary line, but the marker still needs the
         // key: it is what the row is announced with.
+        const trailingStatusTextKey = input.readableNativeTouchMinimal === true
+            ? TRAILING_STATUS_TEXT_KEY[input.attentionState]
+            : undefined;
+        if (trailingStatusTextKey) {
+            return { attentionIndicator, titleTone, secondaryLine: 'none', trailingStatusTextKey };
+        }
         return presentsStanding
             ? { attentionIndicator, titleTone, secondaryLine: 'none', statusTextKey: 'status.keptInAttention' }
             : { attentionIndicator, titleTone, secondaryLine: 'none' };

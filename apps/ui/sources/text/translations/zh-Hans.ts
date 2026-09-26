@@ -5244,6 +5244,8 @@ export const zhHans: TranslationStructure = {
     },
     inactiveResumable: "未激活（可恢复）",
     inactiveMachineOffline: "未激活（机器离线）",
+    changesStatusAction: ({ added, removed }: { added: number; removed: number }) =>
+        `查看变更：新增 ${added} 行，删除 ${removed} 行`,
     serverLink: {
         connecting: "正在连接服务器…",
         restarting: "服务器重启中，正在重连…",
@@ -7790,6 +7792,8 @@ settingsSession: {
 	        folderSortModeMixedTitle: '与会话混合',
 	        folderSortModeMixedSubtitle: '允许文件夹和会话保持精确的共享顺序。',
 	        sectionModeTitle: '会话分区',
+	        storageSourceTitle: '会话来源',
+	        storageSourceSubtitle: 'Happier 管理的会话，或机器上的直连会话',
 	        sectionModeActivitySelectedSubtitle: '分开活跃和非活跃会话',
 	        sectionModeSingleSelectedSubtitle: '显示一个按工作区分组的会话分区',
 	        sectionModeActivityTitle: '活跃和非活跃',

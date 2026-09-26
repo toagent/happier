@@ -49,6 +49,7 @@ describe('SessionsListStorageChrome sidebar surface', () => {
         const screen = await renderScreen(
             <SessionsListStorageChrome
                 directSessionsEnabled
+                showStorageTabs
                 storageKind="direct"
                 onSelectStorageKind={() => {}}
             />,

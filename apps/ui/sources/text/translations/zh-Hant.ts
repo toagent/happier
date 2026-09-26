@@ -4415,6 +4415,8 @@ const zhHantOverrides: DeepPartial<TranslationStructure> = {
 
       session: {
           inputPlaceholder: '輸入訊息...',
+          changesStatusAction: ({ added, removed }: { added: number; removed: number }) =>
+              `查看變更：新增 ${added} 行，刪除 ${removed} 行`,
           serverLink: {
               connecting: '正在連線伺服器…',
               restarting: '伺服器重新啟動中，正在重新連線…',
@@ -6752,6 +6754,8 @@ settingsSession: {
 	              folderSortModeMixedTitle: '與工作階段混合',
 	              folderSortModeMixedSubtitle: '允許資料夾與工作階段保留精確的共享順序。',
 	              sectionModeTitle: '工作階段區段',
+	              storageSourceTitle: '工作階段來源',
+	              storageSourceSubtitle: 'Happier 管理的工作階段，或機器上的直連工作階段',
 	              sectionModeActivitySelectedSubtitle: '分開活躍與非活躍工作階段',
 	              sectionModeSingleSelectedSubtitle: '顯示一個依工作區分組的工作階段區段',
 	              sectionModeActivityTitle: '活躍與非活躍',

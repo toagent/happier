@@ -427,6 +427,8 @@ export const ToolView = React.memo<ToolViewProps>((props) => {
                                 platformOS: Platform.OS,
                                 isRowHovered: headerActionHost.isHovered,
                                 isActionHovered: false,
+                                // A tool card's header action is card chrome, not row noise.
+                                isRowActivated: true,
                                 coarsePrimaryPointer: readCoarsePrimaryPointer(),
                                 pinned: props.headerAction.pinned,
                             })}

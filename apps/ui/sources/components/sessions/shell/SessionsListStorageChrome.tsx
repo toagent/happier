@@ -24,6 +24,8 @@ const stylesheet = StyleSheet.create(() => ({
 
 export type SessionsListStorageChromeProps = Readonly<{
     directSessionsEnabled: boolean;
+    /** Whether the list-top switch is drawn; native surfaces keep this choice in Session settings. */
+    showStorageTabs: boolean;
     storageKind: SessionStorageKind;
     onSelectStorageKind: (storageKind: SessionStorageKind) => void;
 }>;
@@ -36,7 +38,7 @@ export const SessionsListStorageChrome = React.memo((props: SessionsListStorageC
 
     return (
         <>
-            {props.directSessionsEnabled ? (
+            {props.showStorageTabs ? (
                 <SessionListStorageTabsBar
                     activeTabId={props.storageKind}
                     onSelectTab={props.onSelectStorageKind}

@@ -114,7 +114,7 @@ const ActiveSessionsListPaneStateSubscriber = React.memo((props: Readonly<{
 const SessionsListWrapperContent = React.memo((props: { pathname: string; surfaceRoutePathname: string }) => {
     const { theme } = useUnistyles();
     const isFocused = useIsFocused();
-    const { directSessionsEnabled, storageKind, setStorageKind } = useSessionListStorageKind();
+    const { directSessionsEnabled, showStorageTabs, storageKind, setStorageKind } = useSessionListStorageKind();
     const newSessionDrafts = useNewSessionDraftProjections();
     const pathname = props.pathname;
     const surfaceRoutePathname = props.surfaceRoutePathname;
@@ -213,6 +213,7 @@ const SessionsListWrapperContent = React.memo((props: { pathname: string; surfac
     const storageChrome = (
         <SessionsListStorageChrome
             directSessionsEnabled={directSessionsEnabled}
+            showStorageTabs={showStorageTabs}
             storageKind={storageKind}
             onSelectStorageKind={setStorageKind}
         />

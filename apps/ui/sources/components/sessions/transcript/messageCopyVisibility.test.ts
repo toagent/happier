@@ -23,9 +23,16 @@ describe('transcript row action visibility policy', () => {
         expect(shouldShowTranscriptRowActions(webInput({ isRowFocused: true }))).toBe(true);
     });
 
-    it('always shows row actions on touch platforms, coarse primary pointers and selection mode', () => {
-        expect(shouldShowTranscriptRowActions({ platformOS: 'ios', isRowHovered: false, isActionHovered: false })).toBe(true);
-        expect(shouldShowTranscriptRowActions({ platformOS: 'android', isRowHovered: false, isActionHovered: false })).toBe(true);
+    it('keeps phone and tablet rows quiet until the row is tapped (activated)', () => {
+        for (const platformOS of ['ios', 'android'] as const) {
+            expect(shouldShowTranscriptRowActions({ platformOS, isRowHovered: false, isActionHovered: false })).toBe(false);
+            expect(shouldShowTranscriptRowActions({ platformOS, isRowHovered: false, isActionHovered: false, isRowActivated: true })).toBe(true);
+            expect(shouldShowTranscriptRowActions({ platformOS, isRowHovered: false, isActionHovered: false, selectionModeActive: true })).toBe(true);
+            expect(shouldShowTranscriptRowPinAction({ platformOS, isRowHovered: false, isActionHovered: false, pinned: true })).toBe(true);
+        }
+    });
+
+    it('always shows row actions on other touch hosts, coarse primary pointers and selection mode', () => {
         expect(shouldShowTranscriptRowActions({ platformOS: 'windows', isRowHovered: false, isActionHovered: false })).toBe(true);
         expect(shouldShowTranscriptRowActions(webInput({ coarsePrimaryPointer: true }))).toBe(true);
         expect(shouldShowTranscriptRowActions(webInput({ selectionModeActive: true }))).toBe(true);

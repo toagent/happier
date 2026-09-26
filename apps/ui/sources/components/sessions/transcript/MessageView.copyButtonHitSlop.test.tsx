@@ -105,7 +105,7 @@ describe('MessageView (copy button hitSlop)', () => {
     });
 
     it.each(['ios', 'android'] as const)(
-        'renders inline message actions on %s instead of relying on long-press dropdowns',
+        'keeps message actions quiet on %s until the message is tapped, without long-press dropdowns',
         async (platformOS) => {
             platformState.os = platformOS;
             vi.resetModules();
@@ -124,6 +124,14 @@ describe('MessageView (copy button hitSlop)', () => {
                     <MessageView message={message} metadata={null} sessionId="s1" />
                 </TranscriptMessageSelectionProvider>,
             );
+
+            const findSelectButtons = () => screen.findAll(
+                (node: any) => node.type === 'Pressable' && node.props?.testID === 'transcript-message-select:m1',
+            );
+            expect(findSelectButtons()).toHaveLength(0);
+            await act(async () => {
+                screen.findByTestId('transcript-message-row:m1')?.props.onPress?.({} as never);
+            });
 
             const copyButtons = screen.findAll(
                 (node: any) => node.type === 'Pressable' && node.props?.testID === 'transcript-message-copy:m1',

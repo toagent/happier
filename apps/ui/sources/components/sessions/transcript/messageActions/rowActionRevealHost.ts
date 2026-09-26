@@ -80,3 +80,31 @@ export function useRowActionHoverHost(): RowActionHoverHost {
     }), []);
     return { isHovered, hoverProps };
 }
+
+export type TranscriptRowRevealHost = Readonly<{
+    isRowHovered: boolean;
+    isRowActivated: boolean;
+    /** Spread onto the row's Pressable: hover on web, tap-to-toggle on phones and tablets. */
+    pressableProps: Readonly<{
+        onHoverIn?: () => void;
+        onHoverOut?: () => void;
+        onPress?: () => void;
+    }>;
+}>;
+
+/**
+ * Row host for a transcript message whose row is a `Pressable`. It feeds the one
+ * visibility policy (`shouldShowTranscriptRowActions`) with hover on web and with
+ * a tap toggle on phones and tablets, where long-press stays free for text selection.
+ */
+export function useTranscriptRowRevealHost(): TranscriptRowRevealHost {
+    const [isRowHovered, setIsRowHovered] = React.useState(false);
+    const [isRowActivated, setIsRowActivated] = React.useState(false);
+    const pressableProps = React.useMemo(() => (Platform.OS === 'web'
+        ? {
+            onHoverIn: () => setIsRowHovered(true),
+            onHoverOut: () => setIsRowHovered(false),
+        }
+        : { onPress: () => setIsRowActivated((activated) => !activated) }), []);
+    return { isRowHovered, isRowActivated, pressableProps };
+}

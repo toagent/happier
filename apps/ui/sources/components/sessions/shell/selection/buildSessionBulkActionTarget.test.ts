@@ -54,6 +54,7 @@ function createSettings(params: Readonly<{
         density: 'default',
         compact: false,
         compactMinimal: false,
+        readableNativeTouchMinimal: false,
         identityDisplay: 'avatar',
         activeColorMode: 'activityAndAttention',
         workingIndicatorMode: 'spinner',

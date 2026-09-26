@@ -299,6 +299,7 @@ import { useSessionScreenIsFocused } from './useSessionScreenIsFocused';
 import { resolveMobileWorkspaceExperienceToggleActionId } from '@/components/workspaceCockpit/mobileWorkspaceExperience';
 import { useMobileWorkspaceExperienceState } from '@/components/workspaceCockpit/useMobileWorkspaceExperienceState';
 import { useOpenSessionTarget } from '@/components/sessions/panes/open/useOpenSessionTarget';
+import { SessionChangesStatusAction } from '@/components/sessions/shell/SessionChangesStatusAction';
 import type { SessionPaneUrlState } from '@/components/sessions/panes/url/sessionPaneUrlState';
 import { useSessionPaneUrlSync } from '@/components/sessions/panes/url/useSessionPaneUrlSync';
 import { SessionResumeProvider } from '@/components/sessions/model/SessionResumeContext';
@@ -2443,6 +2444,13 @@ function SessionViewLoaded({
         scopeId: paneScopeId,
         serverId: sessionRouteServerId,
     });
+    // Phones and tablets: what this task changed sits one tap from the composer.
+    const openSessionChanges = React.useCallback(() => {
+        openSessionTarget({ kind: 'sourceControl' });
+    }, [openSessionTarget]);
+    const sessionChangesStatusAction = React.useMemo(() => (Platform.OS === 'web'
+        ? undefined
+        : <SessionChangesStatusAction sessionId={sessionId} onOpenChanges={openSessionChanges} />), [openSessionChanges, sessionId]);
     /**
      * The lead-in from the compact work-state surface to the expanded Agents roster.
      *
@@ -6422,6 +6430,7 @@ function SessionViewLoaded({
                 isMicActive={micButtonState.isMicActive}
                 onAbort={handleAgentInputAbort}
                 inactiveStatusText={inactiveStatusText}
+                statusTrailingActions={sessionChangesStatusAction}
                 serverLink={inactiveUi.serverLink ?? null}
                 onFileViewerPress={handleAgentInputFileViewerPress}
                 // Autocomplete configuration

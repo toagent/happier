@@ -10,6 +10,7 @@ import {
     type ViewToken,
 } from 'react-native';
 import { SessionListVirtualizedList } from '@/components/ui/lists/flashListCompat/SessionListVirtualizedList';
+import { shouldUseReadableNativeTouchMinimalSessionRow } from './sessionListRowDensity';
 import { usePathname, useRouter } from 'expo-router';
 import { useNavigateToSession } from '@/hooks/session/useNavigateToSession';
 import { SessionListViewItem, storage, useSetting, useSettings } from '@/sync/domains/state/storage';
@@ -1062,6 +1063,11 @@ export const SessionsListContent = React.memo(function SessionsListContent(props
             density: normalizeRowDensity(compact, compactMinimal),
             compact,
             compactMinimal,
+            readableNativeTouchMinimal: shouldUseReadableNativeTouchMinimalSessionRow({
+                compact,
+                compactMinimal,
+                platform: Platform.OS,
+            }),
             identityDisplay: sessionListIdentityDisplay,
             activeColorMode: normalizeActiveColorMode(sessionListActiveColorMode),
             workingIndicatorMode: normalizeWorkingIndicatorMode(sessionListWorkingIndicatorStyle),

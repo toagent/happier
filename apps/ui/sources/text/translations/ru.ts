@@ -5956,6 +5956,8 @@ export const ru: TranslationStructure = {
     },
     inactiveResumable: "Неактивна (можно возобновить)",
     inactiveMachineOffline: "Неактивна (машина не в сети)",
+    changesStatusAction: ({ added, removed }: { added: number; removed: number }) =>
+        `Изменения: добавлено строк ${added}, удалено ${removed}`,
     serverLink: {
         connecting: "Подключение к серверу…",
         restarting: "Сервер перезапускается, переподключение…",
@@ -8025,6 +8027,8 @@ settingsSession: {
 	        folderSortModeMixedTitle: 'Вперемешку с сессиями',
 	        folderSortModeMixedSubtitle: 'Разрешить папкам и сессиям сохранять точный общий порядок.',
 	        sectionModeTitle: 'Разделы сессий',
+	        storageSourceTitle: 'Источник сессий',
+	        storageSourceSubtitle: 'Сессии Happier или прямые сессии на ваших машинах',
 	        sectionModeActivitySelectedSubtitle: 'Разделять активные и неактивные сессии',
 	        sectionModeSingleSelectedSubtitle: 'Показывать один раздел сессий, сгруппированный по workspace',
 	        sectionModeActivityTitle: 'Активные и неактивные',

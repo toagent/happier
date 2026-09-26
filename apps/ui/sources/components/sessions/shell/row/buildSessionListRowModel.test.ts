@@ -135,6 +135,7 @@ function createSettings(
         density: 'default',
         compact: false,
         compactMinimal: false,
+        readableNativeTouchMinimal: false,
         identityDisplay: 'avatar',
         activeColorMode: 'activityAndAttention',
         workingIndicatorMode: 'spinner',

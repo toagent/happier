@@ -654,6 +654,11 @@ const stylesheet = StyleSheet.create((theme) => ({
     activityTimeMinimal: {
         fontSize: 10,
     },
+    trailingStatusText: {
+        ...SESSION_LIST_ROW_STATUS_TEXT_METRICS.default,
+        ...Typography.default('semiBold'),
+        flexShrink: 0,
+    },
     swipeAction: {
         width: 112,
         height: '100%',
@@ -1205,9 +1210,11 @@ const SessionItemContent = React.memo(
         const shouldMuteTitle = rowPresentation.titleTone === 'quiet';
         const trailingAttentionIndicator = isMinimal ? rowPresentation.attentionIndicator : 'none';
         const showTrailingAttentionIndicator = trailingAttentionIndicator !== 'none';
-        const trailingAttentionReplacesTime = trailingAttentionIndicator === 'working';
+        // A minimal native row names what needs the person where the time was (see the presentation owner).
+        const trailingStatusText = rowPresentation.trailingStatusTextKey ? t(rowPresentation.trailingStatusTextKey) : null;
+        const trailingAttentionReplacesTime = trailingAttentionIndicator === 'working' || trailingStatusText !== null;
         const showTrailingActivityTime = Boolean(activityTimeLabel) && !trailingAttentionReplacesTime;
-        const hasTrailingMeta = showTrailingAttentionIndicator || showTrailingActivityTime;
+        const hasTrailingMeta = showTrailingAttentionIndicator || showTrailingActivityTime || trailingStatusText !== null;
         const resolvedSessionListIdentityDisplay =
             sessionListIdentityDisplay === 'agentLogo' || sessionListIdentityDisplay === 'none'
                 ? sessionListIdentityDisplay
@@ -1700,7 +1707,7 @@ const SessionItemContent = React.memo(
                                 />
                             ) : null}
                         </View>
-                    ) : showTrailingAttentionIndicator || showTrailingActivityTime ? (
+                    ) : hasTrailingMeta ? (
                         <View style={styles.trailingMetaRow}>
                             <SessionRowScmBadge sessionId={resolvedSession.id} />
                             {showTrailingAttentionIndicator ? (
@@ -1713,6 +1720,15 @@ const SessionItemContent = React.memo(
                                     workingSpinnerTone="neutral"
                                     animationEnabled={attentionIndicatorAnimationEnabled}
                                 />
+                            ) : null}
+                            {trailingStatusText !== null ? (
+                                <Text
+                                    testID={`session-row-trailing-status-${resolvedSession.id}`}
+                                    style={[styles.trailingStatusText, { color: rowStatusColor }]}
+                                    numberOfLines={1}
+                                >
+                                    {trailingStatusText}
+                                </Text>
                             ) : null}
                             {showTrailingActivityTime ? (
                                 <Text

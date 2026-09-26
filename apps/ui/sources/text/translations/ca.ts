@@ -5094,6 +5094,8 @@ deps: {
         },
         inactiveResumable: 'Inactiva (es pot reprendre)',
         inactiveMachineOffline: 'Inactiva (màquina fora de línia)',
+        changesStatusAction: ({ added, removed }: { added: number; removed: number }) =>
+            `Veure els canvis: ${added} línies afegides, ${removed} eliminades`,
         serverLink: {
             connecting: 'Connectant al servidor…',
             restarting: 'El servidor s\'està reiniciant, reconnectant…',
@@ -7594,6 +7596,8 @@ settingsSession: {
 	                folderSortModeMixedTitle: 'Barrejat amb sessions',
 	                folderSortModeMixedSubtitle: 'Permet que carpetes i sessions mantinguin un ordre compartit exacte.',
 	                sectionModeTitle: 'Seccions de sessions',
+	                storageSourceTitle: 'Origen de les sessions',
+	                storageSourceSubtitle: 'Sessions de Happier, o sessions directes a les teves màquines',
 	                sectionModeActivitySelectedSubtitle: 'Separa sessions actives i inactives',
 	                sectionModeSingleSelectedSubtitle: 'Mostra una sola seccio de sessions agrupada per espai de treball',
 	                sectionModeActivityTitle: 'Actives i inactives',

@@ -187,6 +187,7 @@ function createBoundaryProps() {
             density: 'default' as const,
             compact: false,
             compactMinimal: false,
+            readableNativeTouchMinimal: false,
             identityDisplay: 'avatar' as const,
             activeColorMode: 'activityAndAttention' as const,
             workingIndicatorMode: 'spinner' as const,

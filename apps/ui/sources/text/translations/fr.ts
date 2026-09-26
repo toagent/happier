@@ -5078,6 +5078,8 @@ export const fr: TranslationStructure = {
         },
         inactiveResumable: 'Inactive (reprenable)',
         inactiveMachineOffline: 'Inactive (machine hors ligne)',
+        changesStatusAction: ({ added, removed }: { added: number; removed: number }) =>
+            `Voir les modifications : ${added} lignes ajoutées, ${removed} supprimées`,
         serverLink: {
             connecting: 'Connexion au serveur…',
             restarting: 'Le serveur redémarre, reconnexion…',
@@ -7584,6 +7586,8 @@ settingsSession: {
 	              folderSortModeMixedTitle: 'Mélangés aux sessions',
 	              folderSortModeMixedSubtitle: 'Permet aux dossiers et aux sessions de garder un ordre commun exact.',
 	              sectionModeTitle: 'Sections de sessions',
+	              storageSourceTitle: 'Source des sessions',
+	              storageSourceSubtitle: 'Sessions Happier, ou sessions directes sur vos machines',
 	              sectionModeActivitySelectedSubtitle: 'Sépare les sessions actives et inactives',
 	              sectionModeSingleSelectedSubtitle: 'Affiche une seule section de sessions groupée par workspace',
 	              sectionModeActivityTitle: 'Actives et inactives',

@@ -5448,6 +5448,8 @@ export const pl: TranslationStructure = {
     },
     inactiveResumable: "Nieaktywna (można wznowić)",
     inactiveMachineOffline: "Nieaktywna (maszyna offline)",
+    changesStatusAction: ({ added, removed }: { added: number; removed: number }) =>
+        `Zobacz zmiany: dodano ${added} wierszy, usunięto ${removed}`,
     serverLink: {
         connecting: "Łączenie z serwerem…",
         restarting: "Serwer uruchamia się ponownie, ponowne łączenie…",
@@ -8041,6 +8043,8 @@ settingsSession: {
 	          folderSortModeMixedTitle: 'Wymieszane z sesjami',
 	          folderSortModeMixedSubtitle: 'Pozwól folderom i sesjom zachować dokładną wspólną kolejność.',
 	          sectionModeTitle: 'Sekcje sesji',
+	          storageSourceTitle: 'Źródło sesji',
+	          storageSourceSubtitle: 'Sesje Happier lub sesje bezpośrednie na Twoich maszynach',
 	          sectionModeActivitySelectedSubtitle: 'Oddziel sesje aktywne i nieaktywne',
 	          sectionModeSingleSelectedSubtitle: 'Pokaż jedną sekcję sesji pogrupowaną według workspace',
 	          sectionModeActivityTitle: 'Aktywne i nieaktywne',

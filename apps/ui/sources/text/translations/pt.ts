@@ -5547,6 +5547,8 @@ export const pt: TranslationStructure = {
     },
     inactiveResumable: "Inativa (retomável)",
     inactiveMachineOffline: "Inativa (máquina offline)",
+    changesStatusAction: ({ added, removed }: { added: number; removed: number }) =>
+        `Ver alterações: ${added} linhas adicionadas, ${removed} removidas`,
     serverLink: {
         connecting: "Conectando ao servidor…",
         restarting: "Servidor reiniciando, reconectando…",
@@ -8160,6 +8162,8 @@ settingsSession: {
 	          folderSortModeMixedTitle: 'Misturado com sessões',
 	          folderSortModeMixedSubtitle: 'Permita que pastas e sessões mantenham uma ordem compartilhada exata.',
 	          sectionModeTitle: 'Seções de sessões',
+	          storageSourceTitle: 'Origem das sessões',
+	          storageSourceSubtitle: 'Sessões do Happier, ou sessões diretas nas suas máquinas',
 	          sectionModeActivitySelectedSubtitle: 'Separe sessões ativas e inativas',
 	          sectionModeSingleSelectedSubtitle: 'Mostre uma única seção de sessões agrupada por workspace',
 	          sectionModeActivityTitle: 'Ativas e inativas',

@@ -392,3 +392,43 @@ describe('resolveSessionRowPresentation', () => {
         }).attentionIndicator).toBe('failed');
     });
 });
+
+describe('minimal native touch row trailing status', () => {
+    const minimalNative = (attentionState: Parameters<typeof resolveSessionRowPresentation>[0]['attentionState']) =>
+        resolveSessionRowPresentation({
+            attentionState,
+            density: 'minimal',
+            requestedSecondaryLineMode: 'status',
+            hasPathSubtitle: false,
+            readableNativeTouchMinimal: true,
+        });
+
+    it('names what needs the person in the row itself, since a minimal row has no status line', () => {
+        expect(minimalNative('permission_required').trailingStatusTextKey).toBe('status.permissionRequired');
+        expect(minimalNative('action_required').trailingStatusTextKey).toBe('status.actionRequired');
+        expect(minimalNative('failed').trailingStatusTextKey).toBe('status.error');
+        expect(minimalNative('ready').trailingStatusTextKey).toBe('status.readyForReview');
+    });
+
+    it('keeps quiet, unread and working rows to their indicator and time', () => {
+        expect(minimalNative('quiet').trailingStatusTextKey).toBeUndefined();
+        expect(minimalNative('unread').trailingStatusTextKey).toBeUndefined();
+        expect(minimalNative('working').trailingStatusTextKey).toBeUndefined();
+    });
+
+    it('leaves pointer minimal rows and rows with a status line unchanged', () => {
+        expect(resolveSessionRowPresentation({
+            attentionState: 'permission_required',
+            density: 'minimal',
+            requestedSecondaryLineMode: 'status',
+            hasPathSubtitle: false,
+        }).trailingStatusTextKey).toBeUndefined();
+        expect(resolveSessionRowPresentation({
+            attentionState: 'permission_required',
+            density: 'default',
+            requestedSecondaryLineMode: 'status',
+            hasPathSubtitle: false,
+            readableNativeTouchMinimal: true,
+        }).trailingStatusTextKey).toBeUndefined();
+    });
+});

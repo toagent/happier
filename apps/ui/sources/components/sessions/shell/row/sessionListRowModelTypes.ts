@@ -33,6 +33,8 @@ export type SessionListRowPresentationSettings = Readonly<{
     density: SessionRowDensity;
     compact: boolean;
     compactMinimal: boolean;
+    /** Minimal rows on a native touch surface (see shouldUseReadableNativeTouchMinimalSessionRow). */
+    readableNativeTouchMinimal: boolean;
     identityDisplay: 'avatar' | 'agentLogo' | 'none';
     activeColorMode: 'activityAndAttention' | 'attentionOnly' | 'allActive';
     workingIndicatorMode: 'spinner' | 'pulse';

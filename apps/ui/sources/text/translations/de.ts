@@ -5091,6 +5091,8 @@ export const de: TranslationStructure = {
         },
         inactiveResumable: 'Inaktiv (fortsetzbar)',
         inactiveMachineOffline: 'Inaktiv (Rechner offline)',
+        changesStatusAction: ({ added, removed }: { added: number; removed: number }) =>
+            `Änderungen ansehen: ${added} Zeilen hinzugefügt, ${removed} entfernt`,
         serverLink: {
             connecting: 'Verbindung zum Server…',
             restarting: 'Server startet neu, verbinde erneut…',
@@ -7597,6 +7599,8 @@ settingsSession: {
 	              folderSortModeMixedTitle: 'Gemischt mit Sessions',
 	              folderSortModeMixedSubtitle: 'Ordnern und Sessions eine gemeinsame, exakte Reihenfolge erlauben.',
 	              sectionModeTitle: 'Session-Bereiche',
+	              storageSourceTitle: 'Sitzungsquelle',
+	              storageSourceSubtitle: 'Happier-Sitzungen oder direkte Sitzungen auf deinen Rechnern',
 	              sectionModeActivitySelectedSubtitle: 'Aktive und inaktive Sessions trennen',
 	              sectionModeSingleSelectedSubtitle: 'Einen Session-Bereich zeigen, gruppiert nach Workspace',
 	              sectionModeActivityTitle: 'Aktiv und inaktiv',

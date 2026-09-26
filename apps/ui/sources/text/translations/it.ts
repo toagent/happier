@@ -5773,6 +5773,8 @@ export const it: TranslationStructure = {
     },
     inactiveResumable: "Inattiva (riprendibile)",
     inactiveMachineOffline: "Inattiva (macchina offline)",
+    changesStatusAction: ({ added, removed }: { added: number; removed: number }) =>
+        `Vedi modifiche: ${added} righe aggiunte, ${removed} rimosse`,
     serverLink: {
         connecting: "Connessione al server…",
         restarting: "Il server si sta riavviando, riconnessione…",
@@ -8370,6 +8372,8 @@ settingsSession: {
 	          folderSortModeMixedTitle: 'Miste con le sessioni',
 	          folderSortModeMixedSubtitle: 'Consenti a cartelle e sessioni di mantenere un ordine condiviso esatto.',
 	          sectionModeTitle: 'Sezioni delle sessioni',
+	          storageSourceTitle: 'Origine delle sessioni',
+	          storageSourceSubtitle: 'Sessioni Happier, o sessioni dirette sulle tue macchine',
 	          sectionModeActivitySelectedSubtitle: 'Separa sessioni attive e inattive',
 	          sectionModeSingleSelectedSubtitle: 'Mostra una sola sezione sessioni raggruppata per workspace',
 	          sectionModeActivityTitle: 'Attive e inattive',

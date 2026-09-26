@@ -364,6 +364,7 @@ export function buildSessionListRowModel(input: BuildSessionListRowModelInput): 
         workingRetained: presentsRetainedWorking,
         standing: presentsAttentionStanding,
         backgroundActive: status.state === 'background_active',
+        readableNativeTouchMinimal: settings.readableNativeTouchMinimal,
     });
     // Absent unless the person asked for it (R-8): the row model always carries the field so a host
     // cannot invent a second way to get the sentence, and the setting decides whether it is drawn.
