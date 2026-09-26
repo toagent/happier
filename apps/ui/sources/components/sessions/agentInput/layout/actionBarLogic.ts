@@ -48,7 +48,6 @@ export function shouldShowPathAndResumeRow(actionBarLayout: AgentInputActionBarL
 export function resolveAgentInputActionBarLayout(params: Readonly<{
     configuredLayout: AgentInputActionBarLayout | 'auto' | null | undefined;
     platform: string;
-    isMobileLayout: boolean;
 }>): AgentInputActionBarLayout {
     if (
         params.configuredLayout === 'wrap'
@@ -59,5 +58,7 @@ export function resolveAgentInputActionBarLayout(params: Readonly<{
     }
 
     if (params.platform === 'web') return 'scroll';
-    return params.isMobileLayout ? 'scroll' : 'wrap';
+    // Native (phone and tablet): the composer is text and send; every other control sits behind
+    // the one action menu. An explicit layout setting above still wins.
+    return 'collapsed';
 }

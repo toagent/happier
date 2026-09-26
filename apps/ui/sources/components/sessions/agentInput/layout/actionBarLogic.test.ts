@@ -18,20 +18,28 @@ describe('agentInput/actionBarLogic', () => {
         expect(resolveAgentInputActionBarLayout({
             configuredLayout: 'auto',
             platform: 'web',
-            isMobileLayout: false,
         })).toBe('scroll');
+    });
+
+    it('collapses every control behind one menu by default on native, leaving the composer to text and send', () => {
+        expect(resolveAgentInputActionBarLayout({
+            configuredLayout: 'auto',
+            platform: 'android',
+        })).toBe('collapsed');
+        expect(resolveAgentInputActionBarLayout({
+            configuredLayout: null,
+            platform: 'ios',
+        })).toBe('collapsed');
     });
 
     it('preserves explicit action bar layout settings', () => {
         expect(resolveAgentInputActionBarLayout({
             configuredLayout: 'wrap',
             platform: 'web',
-            isMobileLayout: false,
         })).toBe('wrap');
         expect(resolveAgentInputActionBarLayout({
             configuredLayout: 'collapsed',
             platform: 'ios',
-            isMobileLayout: true,
         })).toBe('collapsed');
     });
 

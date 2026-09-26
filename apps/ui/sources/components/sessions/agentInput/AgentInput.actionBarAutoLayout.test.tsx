@@ -148,8 +148,8 @@ describe('AgentInput (action bar auto layout)', () => {
         expect(keyboardMockState.callCount).toBe(0);
     });
 
-    it('uses the scrollable action bar layout in auto mode on sub-tablet widths', async () => {
-        storageSettings = { ...storageSettings, agentInputChipDensity: 'labels' };
+    it('uses the scrollable action bar layout when scroll is selected on native', async () => {
+        storageSettings = { ...storageSettings, agentInputChipDensity: 'labels', agentInputActionBarLayout: 'scroll' };
         vi.resetModules();
         const { AgentInput } = await import('./AgentInput');
 
@@ -644,6 +644,7 @@ describe('AgentInput (action bar auto layout)', () => {
     });
 
     it('keeps mobile action controls in two visible scrollable chip rows without the keyboard', async () => {
+        storageSettings = { ...storageSettings, agentInputActionBarLayout: 'scroll' };
         keyboardMockState.height = 0;
         vi.resetModules();
         const { AgentInput } = await import('./AgentInput');
@@ -748,48 +749,5 @@ describe('AgentInput (action bar auto layout)', () => {
         });
 
         expect(multiTextInputMockState.renderCount).toBe(renderCountAfterInitialMeasurements);
-    });
-
-    /**
-     * The composer does not own the whole window: on a docked-sidebar tablet it renders inside the
-     * main pane. Deciding `wrap` vs `scroll` from `useWindowDimensions()` therefore measures the
-     * wrong box — a 1009dp landscape tablet reports "wide" while the pane the chips actually live
-     * in is ~705dp, and they end up crammed. The decision has to follow the measured container.
-     */
-    it('picks the action bar layout from the measured container, not the window', async () => {
-        layoutMockState.platform = 'ios';
-        // Y700 landscape: tablet-classed window, but the sidebar keeps the pane well under it.
-        layoutMockState.width = 1009;
-        layoutMockState.height = 632;
-        vi.resetModules();
-        const { act } = await import('react-test-renderer');
-        const { AgentInput } = await import('./AgentInput');
-
-        const screen = await renderScreen(
-            <AgentInput
-                value=""
-                placeholder="Type"
-                onChangeText={() => {}}
-                onSend={() => {}}
-                onPermissionClick={() => {}}
-                onMachineClick={() => {}}
-                machineName="Builder"
-                onPathClick={() => {}}
-                currentPath="/tmp"
-                autocompleteKinds={[]}
-                autocompleteSuggestions={async () => []}
-            />,
-        );
-
-        const root = screen.tree.root.findByProps({ testID: 'agent-input-root' });
-        await act(async () => {
-            root.props.onLayout({ nativeEvent: { layout: { width: 705, height: 200 } } });
-        });
-
-        const scrollViews = screen.tree.root.findAll((node: any) => (
-            node?.type === 'ScrollView' && node?.props?.horizontal === true
-        ));
-        expect(scrollViews.length).toBeGreaterThan(0);
-        expect(scrollViews[0]?.props?.scrollEnabled).toBe(true);
     });
 });

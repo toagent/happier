@@ -1687,9 +1687,8 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
         return resolveAgentInputActionBarLayout({
             configuredLayout: agentInputActionBarLayout,
             platform: Platform.OS,
-            isMobileLayout: isMobileLayoutWidth(composerWidth),
         });
-    }, [agentInputActionBarLayout, composerWidth]);
+    }, [agentInputActionBarLayout]);
 
     // In labels mode: always show; in icons mode: never show; in auto: show for 'always' policy chips.
     const showChipLabels = effectiveChipDensity === 'labels' || effectiveChipDensity === 'auto';
