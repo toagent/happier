@@ -1167,6 +1167,18 @@ export const en = {
         unknown: 'unknown',
     },
 
+    // A task's state in the words of what it needs next (list rows, composer status).
+    taskStatus: {
+        ready: 'Ready',
+        working: 'Working…',
+        permissionRequired: 'Needs approval',
+        actionRequired: 'Needs reply',
+        failed: 'Failed',
+        readyForReview: 'Ready to review',
+        paused: 'Paused · send to continue',
+        machineOffline: 'Computer offline · messages queue',
+    },
+
     connectionStatus: {
         title: 'Connection',
         labels: {

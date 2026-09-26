@@ -769,7 +769,7 @@ describe('getSessionStatus', () => {
         });
 
         expect(status.state).toBe('thinking');
-        expect(status.statusText).toBe('status.working');
+        expect(status.statusText).toBe('taskStatus.working');
     });
 
     it('uses the neutral status color token for background-active runtime status', async () => {
@@ -834,7 +834,7 @@ describe('getSessionStatus', () => {
 
         expect(status).toMatchObject({
             state: 'waiting',
-            statusText: 'status.online',
+            statusText: 'taskStatus.ready',
             shouldShowStatus: false,
         });
     });
@@ -929,7 +929,7 @@ describe('getSessionStatus', () => {
         const hook = await renderHook(() => useSessionStatus(session));
 
         expect(hook.getCurrent().state).toBe('thinking');
-        expect(hook.getCurrent().statusText).toBe('status.working');
+        expect(hook.getCurrent().statusText).toBe('taskStatus.working');
         nowSpy.mockRestore();
     });
 

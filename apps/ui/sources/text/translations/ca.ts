@@ -1259,6 +1259,18 @@ export const ca: TranslationStructure = {
         unknown: 'desconegut',
     },
 
+    // A task's state in the words of what it needs next (list rows, composer status).
+    taskStatus: {
+        ready: 'A punt',
+        working: 'En curs…',
+        permissionRequired: 'Cal aprovar',
+        actionRequired: 'Cal respondre',
+        failed: 'Ha fallat',
+        readyForReview: 'Per revisar',
+        paused: 'En pausa · envia per continuar',
+        machineOffline: 'Ordinador fora de línia · en cua',
+    },
+
     connectionStatus: {
         title: 'Connexió',
         labels: {

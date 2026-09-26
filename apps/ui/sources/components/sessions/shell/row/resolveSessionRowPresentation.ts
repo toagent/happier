@@ -24,7 +24,7 @@ export type SessionRowPresentation = Readonly<{
     attentionIndicator: SessionRowAttentionIndicator;
     titleTone: SessionRowTitleTone;
     secondaryLine: SessionRowSecondaryLine;
-    statusTextKey?: 'status.readyForReview' | 'status.error' | 'status.workingRetained' | 'status.keptInAttention';
+    statusTextKey?: 'taskStatus.readyForReview' | 'taskStatus.failed' | 'status.workingRetained' | 'status.keptInAttention';
     /**
      * The status line is the session's background-activity line.
      *
@@ -42,14 +42,14 @@ export type SessionRowPresentation = Readonly<{
      * A minimal row on a native touch surface has no status line, so what needs the person is named
      * in the row's trailing slot instead of leaving it to a dot. Pointer minimal rows keep the dot.
      */
-    trailingStatusTextKey?: 'status.permissionRequired' | 'status.actionRequired' | 'status.error' | 'status.readyForReview';
+    trailingStatusTextKey?: 'taskStatus.permissionRequired' | 'taskStatus.actionRequired' | 'taskStatus.failed' | 'taskStatus.readyForReview';
 }>;
 
 const TRAILING_STATUS_TEXT_KEY: Partial<Record<SessionRowAttentionState, NonNullable<SessionRowPresentation['trailingStatusTextKey']>>> = {
-    permission_required: 'status.permissionRequired',
-    action_required: 'status.actionRequired',
-    failed: 'status.error',
-    ready: 'status.readyForReview',
+    permission_required: 'taskStatus.permissionRequired',
+    action_required: 'taskStatus.actionRequired',
+    failed: 'taskStatus.failed',
+    ready: 'taskStatus.readyForReview',
 };
 
 export function resolveLegacySessionRowAttentionState(input: Readonly<{
@@ -125,7 +125,7 @@ export function resolveSessionRowPresentation(input: Readonly<{
     }
 
     if (input.attentionState === 'failed') {
-        return { attentionIndicator, titleTone, secondaryLine: 'status', statusTextKey: 'status.error' };
+        return { attentionIndicator, titleTone, secondaryLine: 'status', statusTextKey: 'taskStatus.failed' };
     }
 
     if (input.attentionState === 'working' && input.workingRetained === true) {
@@ -145,7 +145,7 @@ export function resolveSessionRowPresentation(input: Readonly<{
     }
 
     if (input.attentionState === 'ready') {
-        return { attentionIndicator, titleTone, secondaryLine: 'status', statusTextKey: 'status.readyForReview' };
+        return { attentionIndicator, titleTone, secondaryLine: 'status', statusTextKey: 'taskStatus.readyForReview' };
     }
 
     if (presentsStanding) {

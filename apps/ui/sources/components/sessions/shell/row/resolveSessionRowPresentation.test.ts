@@ -247,7 +247,7 @@ describe('resolveSessionRowPresentation', () => {
             attentionIndicator: 'ready',
             titleTone: 'emphasized',
             secondaryLine: 'status',
-            statusTextKey: 'status.readyForReview',
+            statusTextKey: 'taskStatus.readyForReview',
         });
     });
 
@@ -261,7 +261,7 @@ describe('resolveSessionRowPresentation', () => {
             attentionIndicator: 'failed',
             titleTone: 'emphasized',
             secondaryLine: 'status',
-            statusTextKey: 'status.error',
+            statusTextKey: 'taskStatus.failed',
         });
     });
 
@@ -404,10 +404,10 @@ describe('minimal native touch row trailing status', () => {
         });
 
     it('names what needs the person in the row itself, since a minimal row has no status line', () => {
-        expect(minimalNative('permission_required').trailingStatusTextKey).toBe('status.permissionRequired');
-        expect(minimalNative('action_required').trailingStatusTextKey).toBe('status.actionRequired');
-        expect(minimalNative('failed').trailingStatusTextKey).toBe('status.error');
-        expect(minimalNative('ready').trailingStatusTextKey).toBe('status.readyForReview');
+        expect(minimalNative('permission_required').trailingStatusTextKey).toBe('taskStatus.permissionRequired');
+        expect(minimalNative('action_required').trailingStatusTextKey).toBe('taskStatus.actionRequired');
+        expect(minimalNative('failed').trailingStatusTextKey).toBe('taskStatus.failed');
+        expect(minimalNative('ready').trailingStatusTextKey).toBe('taskStatus.readyForReview');
     });
 
     it('keeps quiet, unread and working rows to their indicator and time', () => {

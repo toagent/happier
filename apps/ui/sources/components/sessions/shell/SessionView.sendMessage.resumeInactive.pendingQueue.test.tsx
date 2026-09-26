@@ -822,7 +822,7 @@ describe('SessionView (sendMessage resumeInactive pendingQueue)', () => {
         const screen = await renderSessionView({ routeServerId: 'server-cache' });
         const agentInput = findAgentInput(screen);
 
-        expect(agentInput.props.connectionStatus?.text).toBe('status.online');
+        expect(agentInput.props.connectionStatus?.text).toBe('taskStatus.ready');
         expect(agentInput.props.isSendDisabled).toBe(false);
 
         await act(async () => {

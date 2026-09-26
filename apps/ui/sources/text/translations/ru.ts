@@ -5587,6 +5587,18 @@ export const ru: TranslationStructure = {
     unknown: "неизвестно",
   },
 
+  // A task's state in the words of what it needs next (list rows, composer status).
+  taskStatus: {
+    ready: "Готово",
+    working: "Выполняется…",
+    permissionRequired: "Ждёт одобрения",
+    actionRequired: "Ждёт ответа",
+    failed: "Ошибка",
+    readyForReview: "Готово к проверке",
+    paused: "Пауза · отправьте, чтобы продолжить",
+    machineOffline: "Компьютер офлайн · в очереди",
+  },
+
   connectionStatus: {
     title: "Соединение",
     labels: {

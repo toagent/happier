@@ -1650,6 +1650,18 @@ export const it: TranslationStructure = {
     unknown: "sconosciuto",
   },
 
+  // A task's state in the words of what it needs next (list rows, composer status).
+  taskStatus: {
+    ready: "Pronto",
+    working: "In corso…",
+    permissionRequired: "Da approvare",
+    actionRequired: "Attende risposta",
+    failed: "Non riuscito",
+    readyForReview: "Da rivedere",
+    paused: "In pausa · invia per continuare",
+    machineOffline: "Computer offline · in coda",
+  },
+
   connectionStatus: {
     title: "Connessione",
     labels: {

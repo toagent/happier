@@ -12,8 +12,8 @@ type ServerLinkStatusTextKey =
 export type InactiveSessionUiState = Readonly<{
     shouldShowInput: boolean;
     inactiveStatusTextKey:
-        | 'session.inactiveResumable'
-        | 'session.inactiveMachineOffline'
+        | 'taskStatus.paused'
+        | 'taskStatus.machineOffline'
         | 'session.inactiveNotResumable'
         | ServerLinkStatusTextKey
         | null;
@@ -78,14 +78,14 @@ function resolveSessionState(opts: {
     if (!opts.isMachineOnline) {
         return {
             shouldShowInput: true,
-            inactiveStatusTextKey: 'session.inactiveMachineOffline',
+            inactiveStatusTextKey: 'taskStatus.machineOffline',
             noticeKind: 'machine-offline',
         };
     }
 
     return {
         shouldShowInput: true,
-        inactiveStatusTextKey: 'session.inactiveResumable',
+        inactiveStatusTextKey: 'taskStatus.paused',
         noticeKind: 'none',
     };
 }

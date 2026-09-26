@@ -34,7 +34,7 @@ describe('getInactiveSessionUiState', () => {
             isMachineOnline: false,
         })).toEqual({
             shouldShowInput: true,
-            inactiveStatusTextKey: 'session.inactiveMachineOffline',
+            inactiveStatusTextKey: 'taskStatus.machineOffline',
             noticeKind: 'machine-offline',
         });
     });
@@ -46,7 +46,7 @@ describe('getInactiveSessionUiState', () => {
             isMachineOnline: true,
         })).toEqual({
             shouldShowInput: true,
-            inactiveStatusTextKey: 'session.inactiveResumable',
+            inactiveStatusTextKey: 'taskStatus.paused',
             noticeKind: 'none',
         });
     });

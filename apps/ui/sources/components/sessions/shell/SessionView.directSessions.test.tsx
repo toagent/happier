@@ -2221,7 +2221,7 @@ describe('SessionView (direct sessions)', () => {
 
     const screen = await renderSessionViewAndSettle();
 
-    expect(findAgentInput(screen).props.connectionStatus?.text).toBe('status.online');
+    expect(findAgentInput(screen).props.connectionStatus?.text).toBe('taskStatus.ready');
     expect(findAgentInput(screen).props.showAbortButton).toBe(false);
 
     storageState.sessions.s1 = {
@@ -2238,7 +2238,7 @@ describe('SessionView (direct sessions)', () => {
       </AppPaneProvider>,
     );
 
-    expect(findAgentInput(screen).props.connectionStatus?.text).toBe('status.working');
+    expect(findAgentInput(screen).props.connectionStatus?.text).toBe('taskStatus.working');
     expect(findAgentInput(screen).props.showAbortButton).toBe(true);
   });
 
@@ -2252,7 +2252,7 @@ describe('SessionView (direct sessions)', () => {
     };
 
     const screen = await renderSessionViewAndSettle();
-    expect(findAgentInput(screen).props.connectionStatus?.text).toBe('status.online');
+    expect(findAgentInput(screen).props.connectionStatus?.text).toBe('taskStatus.ready');
 
     storageState.sessions.s1 = {
       ...storageState.sessions.s1,

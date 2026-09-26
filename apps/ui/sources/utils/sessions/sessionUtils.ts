@@ -257,7 +257,7 @@ export function getSessionStatus(session: SessionStatusSource, nowMs: number = D
         return {
             state: 'waiting',
             isConnected: isOnline,
-            statusText: t('status.online'),
+            statusText: t('taskStatus.ready'),
             shouldShowStatus: false,
             statusColor: statusColors.default,
             statusDotColor: statusColors.default,
@@ -304,7 +304,7 @@ export function getSessionStatus(session: SessionStatusSource, nowMs: number = D
     }
 
     const workingStatusText = (() => {
-        if (workingTextMode === 'static') return t('status.working');
+        if (workingTextMode === 'static') return t('taskStatus.working');
         const idx = typeof vibingIndex === 'number'
             ? vibingIndex
             : Math.floor(Math.random() * vibingMessages.length);
@@ -329,7 +329,7 @@ export function getSessionStatus(session: SessionStatusSource, nowMs: number = D
         return {
             state: 'action_required',
             isConnected: true,
-            statusText: t('status.actionRequired'),
+            statusText: t('taskStatus.actionRequired'),
             shouldShowStatus: true,
             statusColor: statusColors.actionRequired,
             statusDotColor: statusColors.actionRequired,
@@ -341,7 +341,7 @@ export function getSessionStatus(session: SessionStatusSource, nowMs: number = D
         return {
             state: 'permission_required',
             isConnected: true,
-            statusText: t('status.permissionRequired'),
+            statusText: t('taskStatus.permissionRequired'),
             shouldShowStatus: true,
             statusColor: statusColors.actionRequired,
             statusDotColor: statusColors.actionRequired,
@@ -379,7 +379,7 @@ export function getSessionStatus(session: SessionStatusSource, nowMs: number = D
     return {
         state: 'waiting',
         isConnected: true,
-        statusText: t('status.online'),
+        statusText: t('taskStatus.ready'),
         shouldShowStatus: false,
         statusColor: statusColors.connected,
         statusDotColor: statusColors.connected,

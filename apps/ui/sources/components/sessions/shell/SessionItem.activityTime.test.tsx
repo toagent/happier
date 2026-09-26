@@ -1211,7 +1211,7 @@ describe('SessionItem activity time', () => {
 
         expect(screen.findByTestId('session-list-status-subtitle-sess_ready-ready')).toBeTruthy();
         expect(screen.findByTestId('session-list-attention-indicator-sess_ready-secondary-ready')).toBeTruthy();
-        expect(screen.findByTestId('session-list-status-subtitle-text-sess_ready-ready')?.props.children).toBe('status.readyForReview');
+        expect(screen.findByTestId('session-list-status-subtitle-text-sess_ready-ready')?.props.children).toBe('taskStatus.readyForReview');
         expect(screen.getTextContent()).not.toContain('online');
     });
 
@@ -1353,9 +1353,9 @@ describe('SessionItem activity time', () => {
 
         expect(screen.findByTestId('session-list-status-subtitle-sess_failed_status-failed')).toBeTruthy();
         expect(screen.findByTestId('session-list-attention-indicator-sess_failed_status-secondary-failed')).toBeTruthy();
-        expect(screen.findByTestId('session-list-status-subtitle-text-sess_failed_status-failed')?.props.children).toBe('status.error');
+        expect(screen.findByTestId('session-list-status-subtitle-text-sess_failed_status-failed')?.props.children).toBe('taskStatus.failed');
         expect(screen.getTextContent()).not.toContain('online');
-        const statusText = screen.findAllByType('Text').find((node) => node.props.children === 'status.error');
+        const statusText = screen.findAllByType('Text').find((node) => node.props.children === 'taskStatus.failed');
         expect(flattenStyle(statusText?.props.style).color).not.toBe('#34C759');
     });
 

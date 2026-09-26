@@ -742,7 +742,7 @@ const zhHantOverrides: DeepPartial<TranslationStructure> = {
         // Tab navigation labels
         inbox: '收件匣',
         friends: '好友',
-        sessions: '工作階段',
+        sessions: '任務',
         settings: '設定',
     },
 
@@ -1937,7 +1937,7 @@ const zhHantOverrides: DeepPartial<TranslationStructure> = {
         online: '線上',
         working: '正在工作...',
         workingRetained: '工作中，等待更新…',
-        keptInAttention: '已保留在需要注意',
+        keptInAttention: '已保留在「等你處理」',
         backgroundActive: ({ count }: { count: number }) => `背景執行 ${count} 項`,
         activityUnknown: '活動狀態無法使用',
         readyForReview: '已可審閱',
@@ -1948,6 +1948,18 @@ const zhHantOverrides: DeepPartial<TranslationStructure> = {
         permissionRequired: '需要權限',
         activeNow: '目前活躍',
         unknown: '未知',
+    },
+
+    // A task's state in the words of what it needs next (list rows, composer status).
+    taskStatus: {
+        ready: '可繼續',
+        working: '進行中…',
+        permissionRequired: '待批准',
+        actionRequired: '待回覆',
+        failed: '出錯',
+        readyForReview: '待查看',
+        paused: '已暫停，傳送即繼續',
+        machineOffline: '電腦離線，訊息排隊',
     },
 
     connectionStatus: {
@@ -3237,8 +3249,8 @@ const zhHantOverrides: DeepPartial<TranslationStructure> = {
 		        overrideDisabled: '已停用',
 		        visibilityModeInherit: '帳戶值',
 		        visibilityModeAlwaysWhenEnabled: '啟用時一律顯示',
-		        visibilityModeAttentionOrActive: '需要注意或活躍時',
-		        visibilityModeAttentionOnly: '僅需要注意時',
+		        visibilityModeAttentionOrActive: '等你處理或進行中時',
+		        visibilityModeAttentionOnly: '僅等你處理時',
 		    },
 
 		    settingsNotifications: {
@@ -4219,7 +4231,7 @@ const zhHantOverrides: DeepPartial<TranslationStructure> = {
     ...newSessionMcpTranslationExtension,
     ...acpCatalogTranslationExtension.newSession,
     // Used by new-session screen and launch flows
-	        title: '啟動新工作階段',
+	        title: '新建任務',
 	        noMachinesFound: '未找到裝置。請先在您的電腦上啟動 Happier 工作階段。',
 	        allMachinesOffline: '所有裝置似乎都已離線',
 	        machineOfflineInlineTitle: '機器離線',
@@ -4237,7 +4249,7 @@ const zhHantOverrides: DeepPartial<TranslationStructure> = {
         sessionStartedMessage: '工作階段已成功啟動。',
         sessionSpawningFailed: '工作階段生成失敗 - 未返回工作階段 ID。',
         startingSession: '正在啟動工作階段...',
-        startNewSessionInFolder: '在此資料夾中啟動新工作階段',
+        startNewSessionInFolder: '在此資料夾新建任務',
         failedToStart: '啟動工作階段失敗。確保守護程序在目標裝置上執行。',
         sessionTimeout: '工作階段啟動逾時。裝置可能執行緩慢或守護程序可能無回應。',
         notConnectedToServer: '未連線到伺服器。請檢查您的網路連線。',
@@ -5259,7 +5271,7 @@ const zhHantOverrides: DeepPartial<TranslationStructure> = {
         deleteFolder: '刪除資料夾',
         deleteFolderPromptTitle: '刪除資料夾',
         deleteFolderPromptDescription: '此資料夾中的工作階段會保留在工作區中。',
-        newSessionInFolder: '在資料夾中新建工作階段',
+        newSessionInFolder: '在資料夾中新建任務',
         clearFolderFocus: '清除資料夾焦點',
         folderVisibility: '資料夾可見性',
         folderViewTree: '資料夾檢視',
@@ -5310,8 +5322,8 @@ const zhHantOverrides: DeepPartial<TranslationStructure> = {
         selectionAddTags: '新增標籤',
         selectionRemoveTags: '移除標籤',
         selectionSetTags: '設定標籤',
-        selectionKeepInAttention: '保留在需要注意',
-        selectionRemoveFromAttention: '從需要注意中移除',
+        selectionKeepInAttention: '保留在「等你處理」',
+        selectionRemoveFromAttention: '移出「等你處理」',
         selectionAddTagsPromptTitle: '新增標籤',
         selectionRemoveTagsPromptTitle: '移除標籤',
         selectionSetTagsPromptTitle: '設定標籤',
@@ -5332,7 +5344,7 @@ const zhHantOverrides: DeepPartial<TranslationStructure> = {
             created: '依建立時間排序',
             updated: '依最近活動排序',
         },
-        attentionSectionTitle: '需要注意',
+        attentionSectionTitle: '等你處理',
         activeSectionTitle: '活動中',
         inactiveSectionTitle: '非活動',
         pinnedSectionTitle: '已置頂',
@@ -5351,7 +5363,7 @@ const zhHantOverrides: DeepPartial<TranslationStructure> = {
             presetName: '預設名稱', movePresetUp: '上移預設', movePresetDown: '下移預設',
             noPresets: '沒有已儲存的預設', noPresetsMessage: '下次選擇自訂提醒時即可儲存。',
         },
-        workingSectionTitle: '正在工作',
+        workingSectionTitle: '進行中',
         hideInactiveSessions: '隱藏非使用中工作階段',
         showInactiveSessions: '顯示非使用中工作階段',
     },
@@ -5451,9 +5463,9 @@ const zhHantOverrides: DeepPartial<TranslationStructure> = {
         markSessionReadSubtitle: '清除此工作階段的未讀提醒',
         markSessionUnread: '標為未讀',
         markSessionUnreadSubtitle: '將此工作階段保留在未讀清單中',
-        keepInAttention: '保留在需要注意',
+        keepInAttention: '保留在「等你處理」',
         keepInAttentionSubtitle: '即使已讀，也會留在這裡',
-        removeFromAttention: '從需要注意中移除',
+        removeFromAttention: '移出「等你處理」',
         removeFromAttentionSubtitle: '已讀後可以重新排回清單下方',
         executionRunsSubtitle: '查看此工作階段的執行',
         automationsTitle: '自動化',
@@ -5524,6 +5536,7 @@ const zhHantOverrides: DeepPartial<TranslationStructure> = {
 
     agentInput: {
         actionMenu: {
+            title: '更多',
             permission: ({ mode }: { mode: string }) => `權限：${mode}`,
         },
         chipPicker: {
@@ -5856,7 +5869,7 @@ const zhHantOverrides: DeepPartial<TranslationStructure> = {
             reasoning: '推理',
             applyChanges: '更新檔案',
             viewDiff: '差異',
-            turnDiff: '回合差異',
+            turnDiff: '本輪改動',
             question: '問題',
             changeTitle: '變更標題',
             switchMode: '切換模式',
@@ -6691,27 +6704,27 @@ settingsSession: {
                agentActivityCountDisabledSubtitle: '清單列中不顯示代理數量',
 	              workingStatusAnimatedTextTitle: '動態工作文字',
 	              workingStatusAnimatedTextEnabledSubtitle: '工作階段執行時輪換工作動詞',
-	              workingStatusAnimatedTextDisabledSubtitle: '工作階段執行時顯示固定的「正在工作...」標籤',
-	              attentionPromotionModeTitle: '需要注意的工作階段',
-	              attentionPromotionModeSubtitle: '選擇等待你處理或可供檢視的工作階段顯示位置',
+	              workingStatusAnimatedTextDisabledSubtitle: '任務進行時顯示固定的「進行中…」',
+	              attentionPromotionModeTitle: '等你處理的任務',
+	              attentionPromotionModeSubtitle: '等你批准、回覆或查看的任務放在哪裡',
 	              attentionPromotionModeOffTitle: '保留在一般位置',
 	              attentionPromotionModeOffSubtitle: '保持清單既有的分組與排序',
-	              attentionPromotionModeGlobalTitle: '在頂部置頂分組',
-	              attentionPromotionModeGlobalSubtitle: '在其他工作階段上方顯示一個注意事項分組',
+	              attentionPromotionModeGlobalTitle: '置頂',
+	              attentionPromotionModeGlobalSubtitle: '放在列表最上面',
 	              attentionPromotionModeWithinGroupsTitle: '移到目前分組頂部',
 	              attentionPromotionModeWithinGroupsSubtitle: '將工作階段保留在其資料夾或工作區內',
-	              attentionStandingDefaultTitle: '將工作階段保留在需要注意',
+	              attentionStandingDefaultTitle: '一直保留在「等你處理」',
 	              attentionStandingDefaultEnabledSubtitle: '每個工作階段都會一直保留，直到你移除它',
 	              attentionStandingDefaultDisabledSubtitle: '逐個保留工作階段',
-	              attentionStandingDefaultUnavailableSubtitle: '請先在「需要注意的工作階段」中選擇顯示位置',
-	              workingPlacementModeTitle: '正在工作的工作階段',
-	              workingPlacementModeSubtitle: '選擇目前正在工作的工作階段顯示位置',
+	              attentionStandingDefaultUnavailableSubtitle: '請先設定「等你處理的任務」放在哪裡',
+	              workingPlacementModeTitle: '進行中的任務',
+	              workingPlacementModeSubtitle: '進行中的任務放在哪裡',
 	              workingPlacementModeOffTitle: '保留在正常位置',
-	              workingPlacementModeOffSubtitle: '按目前分組和排序保留正在工作的工作階段',
-	              workingPlacementModeGlobalTitle: '分組到頂部',
-	              workingPlacementModeGlobalSubtitle: '在需要注意的工作階段下方顯示工作中區段',
+	              workingPlacementModeOffSubtitle: '按原來的分組和排序',
+	              workingPlacementModeGlobalTitle: '排在其後',
+	              workingPlacementModeGlobalSubtitle: '放在「等你處理」下面',
 	              workingPlacementModeWithinGroupsTitle: '移到目前分組頂部',
-	              workingPlacementModeWithinGroupsSubtitle: '將正在工作的工作階段保留在其資料夾或工作區內',
+	              workingPlacementModeWithinGroupsSubtitle: '留在所在資料夾或工作區裡',
 	              narrowWorkingIndicatorTitle: '窄列表工作指示器',
 	              narrowWorkingIndicatorSpinnerSelectedSubtitle: '在窄列中顯示小型中性載入指示器',
 	              narrowWorkingIndicatorPulseSelectedSubtitle: '在窄列中顯示脈衝圓點',
@@ -6745,7 +6758,7 @@ settingsSession: {
 	              activeColorTitle: '作用中標題色彩',
 	              activeColorSubtitle: '選擇哪些工作階段使用作用中的標題色彩。',
 	              activeColorActivityAndAttentionTitle: '活動與需注意',
-	              activeColorActivityAndAttentionSubtitle: '對正在工作的工作階段和需要注意的工作階段使用作用中色彩。',
+	              activeColorActivityAndAttentionSubtitle: '進行中和等你處理的任務用醒目顏色。',
 	              activeColorAttentionOnlyTitle: '僅需注意',
 	              activeColorAttentionOnlySubtitle: '僅對需要你注意的工作階段使用作用中色彩。',
 	              activeColorAllActiveTitle: '所有作用中工作階段',
@@ -8030,7 +8043,7 @@ settingsSession: {
 
                 createSession: '建立工作階段',
 
-                selectSession: '選擇工作階段',
+                selectSession: '選一個任務',
 
                 loading: '載入中…',
 
@@ -8051,9 +8064,9 @@ settingsSession: {
 
                     `Use the desktop setup flow to reconnect the background service for ${targetLabel}. Open the manual steps only if you are already on that computer.`,
 
-                createSession: '使用 + 按鈕或從終端機啟動新的工作階段。',
+                createSession: '點 + 新建任務，或在電腦終端機裡啟動。',
 
-                selectSession: '從側邊欄選擇一個工作階段並在這裡查看。',
+                selectSession: '從左邊選一個任務，查看它的進展和改動。',
 
                 loading: '正在取得你的機器與工作階段…',
 

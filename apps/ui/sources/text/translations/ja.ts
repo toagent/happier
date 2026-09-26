@@ -1632,6 +1632,18 @@ export const ja: TranslationStructure = {
     unknown: "不明",
   },
 
+  // A task's state in the words of what it needs next (list rows, composer status).
+  taskStatus: {
+    ready: "続行できます",
+    working: "進行中…",
+    permissionRequired: "承認待ち",
+    actionRequired: "返信待ち",
+    failed: "エラー",
+    readyForReview: "確認待ち",
+    paused: "一時停止中・送信で再開",
+    machineOffline: "PCがオフライン・送信待ち",
+  },
+
 	  connectionStatus: {
 	    title: "接続",
 	    labels: {
