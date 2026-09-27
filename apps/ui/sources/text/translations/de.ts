@@ -1173,9 +1173,9 @@ export const de: TranslationStructure = {
     sourceChanges: {
         notApplied: 'Die Änderungen liegen noch nur in der Kopie der Aufgabe',
         apply: 'Ins Projekt übernehmen',
-        applied: ({ count }: { count: number }) => `Im Projekt · ${count} Dateien`,
-        appliedNote: 'Nicht committet',
-        appliedNoteWithSkipped: ({ skipped }: { skipped: number }) => `Nicht committet, ${skipped} ignorierte Dateien ausgelassen`,
+        applied: 'Im Projekt',
+        appliedNote: ({ count }: { count: number }) => `${count} Dateien, nicht committet`,
+        appliedNoteWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `${count} Dateien, nicht committet; ${skipped} ignorierte Dateien ausgelassen`,
         undo: 'Rückgängig',
         confirmApplyTitle: 'Ins Projekt übernehmen?',
         confirmApplyBody: 'Die Änderungen der Aufgabe landen als nicht committete Änderungen in deinem Projekt. Du kannst das rückgängig machen.',

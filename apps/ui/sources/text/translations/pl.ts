@@ -1340,9 +1340,9 @@ export const pl: TranslationStructure = {
   sourceChanges: {
     notApplied: 'Zmiany są na razie tylko w kopii zadania',
     apply: 'Zastosuj w projekcie',
-    applied: ({ count }: { count: number }) => `W projekcie · ${count} plików`,
-    appliedNote: 'Bez commita',
-    appliedNoteWithSkipped: ({ skipped }: { skipped: number }) => `Bez commita, pominięto ${skipped} ignorowanych plików`,
+    applied: 'W projekcie',
+    appliedNote: ({ count }: { count: number }) => `${count} plików, bez commita`,
+    appliedNoteWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `${count} plików, bez commita; pominięto ${skipped} ignorowanych plików`,
     undo: 'Cofnij',
     confirmApplyTitle: 'Zastosować w projekcie?',
     confirmApplyBody: 'Zmiany z zadania trafią do projektu jako niezatwierdzone edycje. Możesz to cofnąć.',

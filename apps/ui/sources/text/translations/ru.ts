@@ -5591,9 +5591,9 @@ export const ru: TranslationStructure = {
   sourceChanges: {
     notApplied: 'Изменения пока только в копии задачи',
     apply: 'Применить к проекту',
-    applied: ({ count }: { count: number }) => `В проекте · файлов: ${count}`,
-    appliedNote: 'Без коммита',
-    appliedNoteWithSkipped: ({ skipped }: { skipped: number }) => `Без коммита, пропущено игнорируемых: ${skipped}`,
+    applied: 'В проекте',
+    appliedNote: ({ count }: { count: number }) => `Файлов: ${count}, без коммита`,
+    appliedNoteWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `Файлов: ${count}, без коммита; пропущено игнорируемых: ${skipped}`,
     undo: 'Отменить',
     confirmApplyTitle: 'Применить к проекту?',
     confirmApplyBody: 'Изменения задачи попадут в проект как незакоммиченные правки. Это можно отменить.',

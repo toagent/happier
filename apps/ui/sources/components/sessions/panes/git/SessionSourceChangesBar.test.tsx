@@ -105,8 +105,7 @@ describe('SessionSourceChangesBar', () => {
         expect(state.rpcCalls[1]).toMatchObject({ machineId: 'controller', payload: { sessionId: 's1', action: 'apply' } });
         expect(screen.findByTestId('session-source-changes-undo')).toBeTruthy();
         const applied = JSON.stringify(screen.tree.toJSON());
-        expect(applied).toContain('sourceChanges.applied:{\\"count\\":3}');
-        expect(applied).toContain('sourceChanges.appliedNoteWithSkipped:{\\"skipped\\":2}');
+        expect(applied).toContain('sourceChanges.appliedNoteWithSkipped:{\\"count\\":3,\\"skipped\\":2}');
 
         await act(async () => { await screen.findByTestId('session-source-changes-undo')?.props.onPress(); });
         expect(state.rpcCalls[2]).toMatchObject({ payload: { action: 'undo' } });

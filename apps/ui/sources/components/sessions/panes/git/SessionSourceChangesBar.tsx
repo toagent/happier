@@ -138,12 +138,12 @@ export const SessionSourceChangesBar = React.memo(function SessionSourceChangesB
             <View style={styles.bar} testID="session-source-changes-bar">
                 <View style={styles.column}>
                     <Text style={styles.appliedText} numberOfLines={1}>
-                        {t('sourceChanges.applied', { count: state.fileCount })}
+                        {t('sourceChanges.applied')}
                     </Text>
                     <Text style={styles.note} numberOfLines={2}>
                         {state.skippedIgnoredCount > 0
-                            ? t('sourceChanges.appliedNoteWithSkipped', { skipped: state.skippedIgnoredCount })
-                            : t('sourceChanges.appliedNote')}
+                            ? t('sourceChanges.appliedNoteWithSkipped', { count: state.fileCount, skipped: state.skippedIgnoredCount })
+                            : t('sourceChanges.appliedNote', { count: state.fileCount })}
                     </Text>
                 </View>
                 <RoundButton

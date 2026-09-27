@@ -1954,9 +1954,9 @@ const zhHantOverrides: DeepPartial<TranslationStructure> = {
     sourceChanges: {
         notApplied: '改動還只在任務副本裡',
         apply: '套用到專案',
-        applied: ({ count }: { count: number }) => `已放進專案 · ${count} 個檔案`,
-        appliedNote: '未提交',
-        appliedNoteWithSkipped: ({ skipped }: { skipped: number }) => `未提交，略過 ${skipped} 個忽略檔案`,
+        applied: '已放進專案',
+        appliedNote: ({ count }: { count: number }) => `${count} 個檔案，未提交`,
+        appliedNoteWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `${count} 個檔案，未提交；略過 ${skipped} 個忽略檔案`,
         undo: '復原',
         confirmApplyTitle: '套用到專案？',
         confirmApplyBody: '這次任務的改動會以未提交的修改放進你的專案，可以隨時復原。',

@@ -1367,9 +1367,9 @@ export const pt: TranslationStructure = {
   sourceChanges: {
     notApplied: 'As alterações ainda estão só na cópia da tarefa',
     apply: 'Aplicar ao projeto',
-    applied: ({ count }: { count: number }) => `No seu projeto · ${count} arquivos`,
-    appliedNote: 'Sem commit',
-    appliedNoteWithSkipped: ({ skipped }: { skipped: number }) => `Sem commit, ${skipped} arquivos ignorados deixados de fora`,
+    applied: 'No seu projeto',
+    appliedNote: ({ count }: { count: number }) => `${count} arquivos, sem commit`,
+    appliedNoteWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `${count} arquivos, sem commit; ${skipped} arquivos ignorados deixados de fora`,
     undo: 'Desfazer',
     confirmApplyTitle: 'Aplicar ao seu projeto?',
     confirmApplyBody: 'As alterações da tarefa entram no projeto como edições sem commit. Você pode desfazer.',
