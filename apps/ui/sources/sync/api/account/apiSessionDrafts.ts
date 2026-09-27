@@ -13,12 +13,14 @@ import {
 
 import type { AuthCredentials } from '@/auth/storage/tokenStorage';
 import { serverFetch } from '@/sync/http/client';
+import { readServerFetchWriteTimeoutMs } from '@/sync/runtime/connectivity/serverReachabilityTuning';
 import type { SessionDraftRepositoryTransport } from '@/sync/ops/sessionDrafts/sessionDraftRepository';
 
 async function postJson(params: Readonly<{
     credentials: AuthCredentials;
     path: string;
     body: unknown;
+    timeoutMs?: number;
 }>): Promise<unknown> {
     const response = await serverFetch(params.path, {
         method: 'POST',
@@ -27,7 +29,7 @@ async function postJson(params: Readonly<{
             'Content-Type': 'application/json',
         },
         body: JSON.stringify(params.body),
-    }, { includeAuth: false });
+    }, { includeAuth: false, timeoutMs: params.timeoutMs });
     let raw: unknown;
     try {
         raw = await response.json();
@@ -68,6 +70,10 @@ export function createApiSessionDraftsTransport(params: Readonly<{
                 credentials: params.credentials,
                 path: SESSION_DRAFT_ROUTE_MUTATE,
                 body,
+                // The write is a compare-and-set on `expectedRevision`, so a timeout that fires after
+                // the server committed is safe: the retry comes back as a conflict and is rebased.
+                // Without a bound, a write the server never answers holds the draft's flush forever.
+                timeoutMs: readServerFetchWriteTimeoutMs(),
             }));
             if (!parsed.success) throw new Error('Invalid session draft response');
             return parsed.data;

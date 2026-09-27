@@ -15,9 +15,9 @@ export function readServerReachabilityProbeTimeoutMs(): number {
 }
 
 /**
- * Upper bound for durable pending-outbox writes. The outbox owns the idempotency
- * key and retry semantics that make an ambiguous timeout recoverable; generic
- * writes must not inherit this policy.
+ * Upper bound for writes whose owner makes an ambiguous timeout recoverable: the durable
+ * pending outbox (idempotency key + retry) and session-draft writes (compare-and-set on
+ * revision, conflicts rebased). Generic writes must not inherit this policy.
  */
 export function readServerFetchWriteTimeoutMs(): number {
     const raw = String(process.env.EXPO_PUBLIC_HAPPIER_SERVER_WRITE_TIMEOUT_MS ?? '').trim();
