@@ -29,6 +29,15 @@ const stylesheet = StyleSheet.create((theme) => ({
     appliedText: {
         color: theme.colors.text.primary,
     },
+    column: {
+        flex: 1,
+        minWidth: 0,
+        gap: 2,
+    },
+    note: {
+        fontSize: 12,
+        color: theme.colors.text.secondary,
+    },
 }));
 
 type BarState =
@@ -126,11 +135,16 @@ export const SessionSourceChangesBar = React.memo(function SessionSourceChangesB
     if (state.kind === 'applied') {
         return (
             <View style={styles.bar} testID="session-source-changes-bar">
-                <Text style={[styles.text, styles.appliedText]} numberOfLines={2}>
-                    {state.skippedIgnoredCount > 0
-                        ? t('sourceChanges.appliedWithSkipped', { count: state.fileCount, skipped: state.skippedIgnoredCount })
-                        : t('sourceChanges.applied', { count: state.fileCount })}
-                </Text>
+                <View style={styles.column}>
+                    <Text style={[styles.text, styles.appliedText]} numberOfLines={1}>
+                        {t('sourceChanges.applied', { count: state.fileCount })}
+                    </Text>
+                    <Text style={styles.note} numberOfLines={2}>
+                        {state.skippedIgnoredCount > 0
+                            ? t('sourceChanges.appliedNoteWithSkipped', { skipped: state.skippedIgnoredCount })
+                            : t('sourceChanges.appliedNote')}
+                    </Text>
+                </View>
                 <RoundButton
                     size="small"
                     display="inverted"

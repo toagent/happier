@@ -1300,8 +1300,9 @@ export const zhHans: TranslationStructure = {
   sourceChanges: {
     notApplied: '改动还只在任务副本里',
     apply: '应用到项目',
-    applied: ({ count }: { count: number }) => `已放进项目：${count} 个文件，未提交`,
-    appliedWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `已放进项目：${count} 个文件，未提交（跳过 ${skipped} 个被忽略的文件）`,
+    applied: ({ count }: { count: number }) => `已放进项目 · ${count} 个文件`,
+    appliedNote: '未提交',
+    appliedNoteWithSkipped: ({ skipped }: { skipped: number }) => `未提交，跳过 ${skipped} 个忽略文件`,
     undo: '撤销',
     confirmApplyTitle: '应用到项目？',
     confirmApplyBody: '这次任务的改动会作为未提交的修改放进你的项目，可以随时撤销。',

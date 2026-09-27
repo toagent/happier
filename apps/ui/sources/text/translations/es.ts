@@ -1319,8 +1319,9 @@ export const es: TranslationStructure = {
   sourceChanges: {
     notApplied: 'Los cambios aún solo están en la copia de la tarea',
     apply: 'Aplicar al proyecto',
-    applied: ({ count }: { count: number }) => `En tu proyecto: ${count} archivos, sin confirmar`,
-    appliedWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `En tu proyecto: ${count} archivos, sin confirmar (${skipped} archivos ignorados omitidos)`,
+    applied: ({ count }: { count: number }) => `En tu proyecto · ${count} archivos`,
+    appliedNote: 'Sin confirmar',
+    appliedNoteWithSkipped: ({ skipped }: { skipped: number }) => `Sin confirmar, ${skipped} archivos ignorados omitidos`,
     undo: 'Deshacer',
     confirmApplyTitle: '¿Aplicar a tu proyecto?',
     confirmApplyBody: 'Los cambios de la tarea entran en tu proyecto como ediciones sin confirmar. Puedes deshacerlo.',

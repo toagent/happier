@@ -1171,8 +1171,9 @@ export const en = {
     sourceChanges: {
         notApplied: 'These changes are still only in the task\'s copy',
         apply: 'Apply to project',
-        applied: ({ count }: { count: number }) => `In your project: ${count} files, not committed`,
-        appliedWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `In your project: ${count} files, not committed (${skipped} ignored files left out)`,
+        applied: ({ count }: { count: number }) => `In your project · ${count} files`,
+        appliedNote: 'Not committed',
+        appliedNoteWithSkipped: ({ skipped }: { skipped: number }) => `Not committed, ${skipped} ignored files left out`,
         undo: 'Undo',
         confirmApplyTitle: 'Apply to your project?',
         confirmApplyBody: 'The task\'s changes go into your project as uncommitted edits. You can undo this.',

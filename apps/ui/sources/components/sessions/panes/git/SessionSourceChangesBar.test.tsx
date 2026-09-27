@@ -96,7 +96,7 @@ describe('SessionSourceChangesBar', () => {
     it('puts the task changes into the project after a confirmation, then offers to undo', async () => {
         state.rpcResults = [
             { status: 'not_applied' },
-            { status: 'applied', appliedAt: 1, fileCount: 3, skippedIgnoredCount: 0 },
+            { status: 'applied', appliedAt: 1, fileCount: 3, skippedIgnoredCount: 2 },
             { status: 'undone' },
         ];
         const screen = await renderBar();
@@ -104,7 +104,9 @@ describe('SessionSourceChangesBar', () => {
         await act(async () => { await screen.findByTestId('session-source-changes-apply')?.props.onPress(); });
         expect(state.rpcCalls[1]).toMatchObject({ machineId: 'controller', payload: { sessionId: 's1', action: 'apply' } });
         expect(screen.findByTestId('session-source-changes-undo')).toBeTruthy();
-        expect(JSON.stringify(screen.tree.toJSON())).toContain('sourceChanges.applied:{\\"count\\":3}');
+        const applied = JSON.stringify(screen.tree.toJSON());
+        expect(applied).toContain('sourceChanges.applied:{\\"count\\":3}');
+        expect(applied).toContain('sourceChanges.appliedNoteWithSkipped:{\\"skipped\\":2}');
 
         await act(async () => { await screen.findByTestId('session-source-changes-undo')?.props.onPress(); });
         expect(state.rpcCalls[2]).toMatchObject({ payload: { action: 'undo' } });

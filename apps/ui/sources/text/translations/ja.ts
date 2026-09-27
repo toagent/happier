@@ -1636,8 +1636,9 @@ export const ja: TranslationStructure = {
   sourceChanges: {
     notApplied: '変更はまだタスクのコピーにだけあります',
     apply: 'プロジェクトに適用',
-    applied: ({ count }: { count: number }) => `プロジェクトに反映済み：${count} ファイル、未コミット`,
-    appliedWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `プロジェクトに反映済み：${count} ファイル、未コミット（無視対象 ${skipped} 件は除外）`,
+    applied: ({ count }: { count: number }) => `プロジェクトに反映 · ${count} ファイル`,
+    appliedNote: '未コミット',
+    appliedNoteWithSkipped: ({ skipped }: { skipped: number }) => `未コミット、無視対象 ${skipped} 件は除外`,
     undo: '元に戻す',
     confirmApplyTitle: 'プロジェクトに適用しますか？',
     confirmApplyBody: 'タスクの変更を未コミットの編集としてプロジェクトに入れます。いつでも元に戻せます。',

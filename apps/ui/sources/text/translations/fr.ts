@@ -1173,8 +1173,9 @@ export const fr: TranslationStructure = {
     sourceChanges: {
         notApplied: 'Les modifications ne sont encore que dans la copie de la tâche',
         apply: 'Appliquer au projet',
-        applied: ({ count }: { count: number }) => `Dans ton projet : ${count} fichiers, non commités`,
-        appliedWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `Dans ton projet : ${count} fichiers, non commités (${skipped} fichiers ignorés laissés de côté)`,
+        applied: ({ count }: { count: number }) => `Dans ton projet · ${count} fichiers`,
+        appliedNote: 'Non commités',
+        appliedNoteWithSkipped: ({ skipped }: { skipped: number }) => `Non commités, ${skipped} fichiers ignorés laissés de côté`,
         undo: 'Annuler',
         confirmApplyTitle: 'Appliquer à ton projet ?',
         confirmApplyBody: 'Les modifications de la tâche arrivent dans ton projet comme modifications non commitées. Tu peux annuler.',

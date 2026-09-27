@@ -1263,8 +1263,9 @@ export const ca: TranslationStructure = {
     sourceChanges: {
         notApplied: 'Els canvis encara només són a la còpia de la tasca',
         apply: 'Aplica al projecte',
-        applied: ({ count }: { count: number }) => `Al teu projecte: ${count} fitxers, sense confirmar`,
-        appliedWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `Al teu projecte: ${count} fitxers, sense confirmar (${skipped} fitxers ignorats omesos)`,
+        applied: ({ count }: { count: number }) => `Al teu projecte · ${count} fitxers`,
+        appliedNote: 'Sense confirmar',
+        appliedNoteWithSkipped: ({ skipped }: { skipped: number }) => `Sense confirmar, ${skipped} fitxers ignorats omesos`,
         undo: 'Desfés',
         confirmApplyTitle: 'Vols aplicar-ho al projecte?',
         confirmApplyBody: 'Els canvis de la tasca entraran al projecte com a edicions sense confirmar. Ho pots desfer.',
