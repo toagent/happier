@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import type {
   DeferredSessionBufferEntry,
   DeferredSessionBufferDropReason,
@@ -17,6 +19,8 @@ import type { SessionRuntimeActivitySnapshotPublisher } from '@/session/runtimeA
 import type { SessionUserMessageEnqueueResult } from '@/rpc/handlers/sessionUserMessageSend';
 import type { SessionRuntimeControls } from '@/rpc/handlers/sessionControls';
 import { cloneCallableSessionRuntimeControls } from '@/api/session/sessionRuntimeControls';
+import type { TurnAssistantTextSnapshot } from '@/api/session/turnAssistantTextSnapshot';
+import { createUnavailableEphemeralSendOutcome, type EphemeralSendResult } from '@/api/session/ephemeralSendOutcome';
 
 export type DeferredApiSessionTarget = Readonly<{
   sessionId: string;
@@ -69,6 +73,15 @@ export type DeferredApiSessionTarget = Readonly<{
   discardPendingMessageQueueV2All: (opts: { reason: 'switch_to_local' | 'manual' }) => Promise<number>;
   discardCommittedMessageLocalIds: (opts: { localIds: string[]; reason: 'switch_to_local' | 'manual' }) => Promise<number>;
   sendSessionDeath: () => void;
+  getLastObservedMessageSeq?: () => number;
+  sendAgentMessageEphemeral?: (provider: unknown, body: unknown, opts: unknown) => EphemeralSendResult;
+  sendAgentMessageEphemeralDelta?: (provider: unknown, body: unknown, opts: unknown) => EphemeralSendResult;
+  getEphemeralStreamConnectionEpoch?: () => number;
+  beginTurnAssistantTextSnapshot?: (params?: { turnToken?: string; startSeqExclusive?: number | null }) => string;
+  getTurnAssistantTextSnapshot?: (params: {
+    turnToken?: string | null;
+    startSeqExclusive?: number | null;
+  }) => TurnAssistantTextSnapshot | null;
   flush: () => Promise<void>;
   close: () => Promise<void>;
 }>;
@@ -105,6 +118,7 @@ export class DeferredApiSessionClient {
   private pendingWakeDebt = false;
   private providerOwnedUserMessageEchoClassifier: ProviderOwnedUserMessageEchoClassifier | null = null;
   private providerOwnedUserMessageEchoClassifierSet = false;
+  private preAttachTurn: Readonly<{ turnToken: string; startSeqExclusive: number | null }> | null = null;
 
   constructor(opts: { placeholderSessionId: string; limits: DeferredSessionBufferLimits }) {
     this.sessionId = opts.placeholderSessionId;
@@ -552,6 +566,54 @@ export class DeferredApiSessionClient {
     await this.withAttachedTarget((t) => t.close(), undefined);
   }
 
+  /**
+   * Live (ephemeral) reply text goes straight to the real client's transport. Before attach there is
+   * no transport, so the writer is told it is unavailable and keeps the reply on its committed path.
+   */
+  sendAgentMessageEphemeral(provider: unknown, body: unknown, opts: unknown): EphemeralSendResult {
+    const target = this.target;
+    return target?.sendAgentMessageEphemeral
+      ? target.sendAgentMessageEphemeral(provider, body, opts)
+      : createUnavailableEphemeralSendOutcome(this.getEphemeralStreamConnectionEpoch());
+  }
+
+  sendAgentMessageEphemeralDelta(provider: unknown, body: unknown, opts: unknown): EphemeralSendResult {
+    const target = this.target;
+    return target?.sendAgentMessageEphemeralDelta
+      ? target.sendAgentMessageEphemeralDelta(provider, body, opts)
+      : createUnavailableEphemeralSendOutcome(this.getEphemeralStreamConnectionEpoch());
+  }
+
+  getEphemeralStreamConnectionEpoch(): number {
+    return this.target?.getEphemeralStreamConnectionEpoch?.() ?? 0;
+  }
+
+  getLastObservedMessageSeq(): number {
+    return this.target?.getLastObservedMessageSeq?.() ?? 0;
+  }
+
+  /**
+   * The real client owns the turn's assistant-text snapshot (it observes every transcript write).
+   * A turn begun before attach is replayed onto it at attach, ahead of the buffered writes.
+   */
+  beginTurnAssistantTextSnapshot(params?: { turnToken?: string; startSeqExclusive?: number | null }): string {
+    const target = this.target;
+    if (target?.beginTurnAssistantTextSnapshot) {
+      this.preAttachTurn = null;
+      return target.beginTurnAssistantTextSnapshot(params);
+    }
+    const turnToken = params?.turnToken?.trim() || randomUUID();
+    this.preAttachTurn = { turnToken, startSeqExclusive: params?.startSeqExclusive ?? null };
+    return turnToken;
+  }
+
+  getTurnAssistantTextSnapshot(params: {
+    turnToken?: string | null;
+    startSeqExclusive?: number | null;
+  }): TurnAssistantTextSnapshot | null {
+    return this.target?.getTurnAssistantTextSnapshot?.(params) ?? null;
+  }
+
   getRuntimeActivitySnapshotPublisher(): SessionRuntimeActivitySnapshotPublisher | null {
     return this.target?.getRuntimeActivitySnapshotPublisher?.() ?? null;
   }
@@ -597,6 +659,11 @@ export class DeferredApiSessionClient {
 
     if (this.providerOwnedUserMessageEchoClassifierSet) {
       _real.setProviderOwnedUserMessageEchoClassifier?.(this.providerOwnedUserMessageEchoClassifier);
+    }
+
+    if (this.preAttachTurn) {
+      _real.beginTurnAssistantTextSnapshot?.(this.preAttachTurn);
+      this.preAttachTurn = null;
     }
 
     this.flushInFlight = this.drainBufferedCallsUntilEmpty();

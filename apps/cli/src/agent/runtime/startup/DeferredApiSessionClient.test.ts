@@ -4,9 +4,13 @@ import { createDeferred } from '@/testkit/async/deferred';
 import type { SessionRuntimeActivitySnapshotPublisher } from '@/session/runtimeActivity/types';
 import { DeferredApiSessionClient, type DeferredApiSessionTarget } from './DeferredApiSessionClient';
 import type { Metadata } from '@/api/types';
+import type { SessionClientPort } from '@/api/session/sessionClientPort';
 import { registerSessionHandlers } from '@/rpc/handlers/registerSessionHandlers';
 import { SESSION_RPC_METHODS } from '@happier-dev/protocol/rpc';
 import { createClaudeUnifiedUserMessageHandler } from '@/backends/claude/startup/createClaudeUnifiedUserMessageHandler';
+import { createClaudeReadyHandler } from '@/backends/claude/ready/createClaudeReadyHandler';
+import { createTurnAssistantTextSnapshotStore } from '@/api/session/turnAssistantTextSnapshot';
+import { createClaudeRemoteStreamedTranscriptSession } from '@/backends/claude/remote/createClaudeRemoteStreamedTranscriptSession';
 
 function createMetadataStub(overrides?: Partial<Metadata>): Metadata {
   return {
@@ -21,6 +25,96 @@ function createMetadataStub(overrides?: Partial<Metadata>): Metadata {
 }
 
 describe('DeferredApiSessionClient', () => {
+  it('lets the ready notification carry the reply of the turn once the real session client is attached', async () => {
+    const deferred = new DeferredApiSessionClient({
+      placeholderSessionId: 'PID-ready-preview',
+      limits: { maxEntries: 10, maxBytes: 10_000 },
+    });
+    const store = createTurnAssistantTextSnapshotStore({ maxTextChars: 500 });
+    await deferred.attach({
+      sessionId: 'session-ready-preview',
+      rpcHandlerManager: { registerHandler: vi.fn(), invokeLocal: vi.fn(async () => ({})) },
+      sendSessionEvent: vi.fn(),
+      getMetadataSnapshot: () => null,
+      getLastObservedMessageSeq: () => 4,
+      beginTurnAssistantTextSnapshot: (params?: { turnToken?: string; startSeqExclusive?: number | null }) => store.beginTurn(params),
+      getTurnAssistantTextSnapshot: (params: { turnToken?: string | null; startSeqExclusive?: number | null }) => store.getForTurn(params),
+    } as unknown as DeferredApiSessionTarget);
+
+    // Same optional capability probe the Claude launcher uses to start a turn.
+    const port: Pick<SessionClientPort, 'beginTurnAssistantTextSnapshot' | 'getLastObservedMessageSeq'> = deferred;
+    const startSeqExclusive = port.getLastObservedMessageSeq?.() ?? null;
+    const turnToken = port.beginTurnAssistantTextSnapshot?.({ startSeqExclusive }) ?? null;
+    store.observe({ text: 'notes.txt 里只有一行：TODO', source: 'committed', seq: 5 });
+
+    const sendToAllDevices = vi.fn();
+    createClaudeReadyHandler({
+      session: deferred,
+      pushSender: { sendToAllDevices },
+      waitingForCommandLabel: 'Claude',
+      logPrefix: '[test]',
+      getPending: () => null,
+      getQueueSize: () => 0,
+    })({ turnToken, startSeqExclusive });
+
+    expect(sendToAllDevices).toHaveBeenCalledWith(expect.any(String), 'notes.txt 里只有一行：TODO', { sessionId: 'session-ready-preview' });
+  });
+
+  it('streams the reply live through the real session client instead of holding it until it is committed', async () => {
+    const deferred = new DeferredApiSessionClient({
+      placeholderSessionId: 'PID-live-stream',
+      limits: { maxEntries: 10, maxBytes: 10_000 },
+    });
+    const body = { type: 'message', message: '正在读取' } as never;
+    const opts = { localId: 'reply-1', createdAt: 1 };
+
+    // Before attach there is no transport yet: the writer is told so and keeps its committed path.
+    const beforeAttach = createClaudeRemoteStreamedTranscriptSession(deferred as never);
+    expect(await beforeAttach.sendAgentMessageEphemeral?.('claude', body, opts)).toMatchObject({
+      accepted: false,
+      reason: { code: 'transport_unavailable' },
+    });
+
+    // The real client is a class instance whose send reads its own socket state.
+    const sent: unknown[][] = [];
+    const realClient = {
+      sessionId: 'session-live-stream',
+      epoch: 3,
+      rpcHandlerManager: { registerHandler: vi.fn(), invokeLocal: vi.fn(async () => ({})) },
+      sendAgentMessageEphemeral(this: { epoch: number }, ...args: unknown[]) {
+        sent.push(args);
+        return { accepted: true as const, epoch: this.epoch };
+      },
+      getEphemeralStreamConnectionEpoch(this: { epoch: number }) {
+        return this.epoch;
+      },
+    };
+    await deferred.attach(realClient as unknown as DeferredApiSessionTarget);
+
+    const streamed = createClaudeRemoteStreamedTranscriptSession(deferred as never);
+    expect(await streamed.sendAgentMessageEphemeral?.('claude', body, opts)).toEqual({ accepted: true, epoch: 3 });
+    expect(sent).toEqual([['claude', body, opts]]);
+  });
+
+  it('keeps a turn begun before attach, so its reply is still found after the real client attaches', async () => {
+    const deferred = new DeferredApiSessionClient({
+      placeholderSessionId: 'PID-pre-attach-turn',
+      limits: { maxEntries: 10, maxBytes: 10_000 },
+    });
+    const turnToken = deferred.beginTurnAssistantTextSnapshot({ startSeqExclusive: null });
+
+    const store = createTurnAssistantTextSnapshotStore({ maxTextChars: 500 });
+    await deferred.attach({
+      sessionId: 'session-pre-attach-turn',
+      rpcHandlerManager: { registerHandler: vi.fn(), invokeLocal: vi.fn(async () => ({})) },
+      beginTurnAssistantTextSnapshot: (params?: { turnToken?: string; startSeqExclusive?: number | null }) => store.beginTurn(params),
+      getTurnAssistantTextSnapshot: (params: { turnToken?: string | null; startSeqExclusive?: number | null }) => store.getForTurn(params),
+    } as unknown as DeferredApiSessionTarget);
+    store.observe({ text: 'done', source: 'committed', seq: 2 });
+
+    expect(deferred.getTurnAssistantTextSnapshot({ turnToken })?.text).toBe('done');
+  });
+
   it('buffers exact Claude transcript commits until the real session client attaches', async () => {
     const deferred = new DeferredApiSessionClient({
       placeholderSessionId: 'PID-claude-exact-commit',
