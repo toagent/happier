@@ -9,6 +9,7 @@ export const RPC_METHODS = {
   DAEMON_SCHEDULED_SESSION_RESOLVE_TARGET_V1: 'daemon.scheduledSession.resolveTarget.v1',
   DAEMON_SCHEDULED_SESSION_RELEASE_V1: 'daemon.scheduledSession.release.v1',
   DAEMON_SCHEDULED_SESSION_IDLE_V1: 'daemon.scheduledSession.idle.v1',
+  DAEMON_SCHEDULED_SESSION_SOURCE_CHANGES_V1: 'daemon.scheduledSession.sourceChanges.v1',
   DAEMON_EXECUTION_RUNS_LIST: 'daemon.executionRuns.list',
   DAEMON_TERMINAL_ENSURE: 'daemon.terminal.ensure',
   DAEMON_TERMINAL_STREAM_READ: 'daemon.terminal.stream.read',

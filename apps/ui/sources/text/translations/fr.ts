@@ -1169,6 +1169,25 @@ export const fr: TranslationStructure = {
         unknown: 'inconnu',
     },
 
+    // Bringing a scheduled task's changes into the person's project.
+    sourceChanges: {
+        notApplied: 'Les modifications ne sont encore que dans la copie de la tâche',
+        apply: 'Appliquer au projet',
+        applied: ({ count }: { count: number }) => `Dans ton projet : ${count} fichiers, non commités`,
+        appliedWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `Dans ton projet : ${count} fichiers, non commités (${skipped} fichiers ignorés laissés de côté)`,
+        undo: 'Annuler',
+        confirmApplyTitle: 'Appliquer à ton projet ?',
+        confirmApplyBody: 'Les modifications de la tâche arrivent dans ton projet comme modifications non commitées. Tu peux annuler.',
+        confirmUndoTitle: 'Retirer les modifications ?',
+        confirmUndoBody: 'Retire de ton projet les modifications apportées par cette tâche.',
+        conflictTitle: 'Ces fichiers ont changé dans ton projet',
+        conflictApplyBody: ({ files }: { files: string }) => `Tu as modifié ${files} après l'envoi de la tâche. Rien n'a été appliqué, tes modifications sont préservées.`,
+        conflictUndoBody: ({ files }: { files: string }) => `${files} a changé après l'application. Rien n'a été annulé, tes modifications sont préservées.`,
+        noChangesTitle: 'Rien à appliquer',
+        noChangesBody: 'Cette tâche n\'a modifié aucun fichier.',
+        failedTitle: 'Impossible de terminer',
+        failedBody: 'L\'ordinateur qui planifie est injoignable. Réessaie dans un instant.',
+    },
     // A task's state in the words of what it needs next (list rows, composer status).
     taskStatus: {
         ready: 'Prêt',

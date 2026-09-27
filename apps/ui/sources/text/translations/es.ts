@@ -1315,6 +1315,25 @@ export const es: TranslationStructure = {
     unknown: "desconocido",
   },
 
+  // Bringing a scheduled task's changes into the person's project.
+  sourceChanges: {
+    notApplied: 'Los cambios aún solo están en la copia de la tarea',
+    apply: 'Aplicar al proyecto',
+    applied: ({ count }: { count: number }) => `En tu proyecto: ${count} archivos, sin confirmar`,
+    appliedWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `En tu proyecto: ${count} archivos, sin confirmar (${skipped} archivos ignorados omitidos)`,
+    undo: 'Deshacer',
+    confirmApplyTitle: '¿Aplicar a tu proyecto?',
+    confirmApplyBody: 'Los cambios de la tarea entran en tu proyecto como ediciones sin confirmar. Puedes deshacerlo.',
+    confirmUndoTitle: '¿Quitar los cambios?',
+    confirmUndoBody: 'Quita del proyecto las ediciones que puso esta tarea.',
+    conflictTitle: 'Estos archivos cambiaron en tu proyecto',
+    conflictApplyBody: ({ files }: { files: string }) => `Cambiaste ${files} después de enviar la tarea. No se aplicó nada, tus ediciones están a salvo.`,
+    conflictUndoBody: ({ files }: { files: string }) => `${files} cambió después de aplicar. No se deshizo nada, tus ediciones están a salvo.`,
+    noChangesTitle: 'Nada que aplicar',
+    noChangesBody: 'Esta tarea no cambió ningún archivo.',
+    failedTitle: 'No se pudo completar',
+    failedBody: 'No se puede contactar con el equipo que planifica. Inténtalo de nuevo en un momento.',
+  },
   // A task's state in the words of what it needs next (list rows, composer status).
   taskStatus: {
     ready: "Listo",

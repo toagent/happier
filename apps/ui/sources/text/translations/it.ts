@@ -1650,6 +1650,25 @@ export const it: TranslationStructure = {
     unknown: "sconosciuto",
   },
 
+  // Bringing a scheduled task's changes into the person's project.
+  sourceChanges: {
+    notApplied: 'Le modifiche sono ancora solo nella copia dell\'attività',
+    apply: 'Applica al progetto',
+    applied: ({ count }: { count: number }) => `Nel progetto: ${count} file, non committati`,
+    appliedWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `Nel progetto: ${count} file, non committati (${skipped} file ignorati esclusi)`,
+    undo: 'Annulla',
+    confirmApplyTitle: 'Applicare al progetto?',
+    confirmApplyBody: 'Le modifiche dell\'attività entrano nel progetto come modifiche non committate. Puoi annullare.',
+    confirmUndoTitle: 'Togliere le modifiche?',
+    confirmUndoBody: 'Rimuove dal progetto le modifiche inserite da questa attività.',
+    conflictTitle: 'Questi file sono cambiati nel progetto',
+    conflictApplyBody: ({ files }: { files: string }) => `Hai modificato ${files} dopo l'invio dell'attività. Non è stato applicato nulla, le tue modifiche sono al sicuro.`,
+    conflictUndoBody: ({ files }: { files: string }) => `${files} è cambiato dopo l'applicazione. Non è stato annullato nulla, le tue modifiche sono al sicuro.`,
+    noChangesTitle: 'Niente da applicare',
+    noChangesBody: 'Questa attività non ha modificato alcun file.',
+    failedTitle: 'Impossibile completare',
+    failedBody: 'Il computer che pianifica non è raggiungibile. Riprova tra poco.',
+  },
   // A task's state in the words of what it needs next (list rows, composer status).
   taskStatus: {
     ready: "Pronto",

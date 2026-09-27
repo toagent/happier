@@ -1167,6 +1167,25 @@ export const en = {
         unknown: 'unknown',
     },
 
+    // Bringing a scheduled task's changes into the person's project.
+    sourceChanges: {
+        notApplied: 'These changes are still only in the task\'s copy',
+        apply: 'Apply to project',
+        applied: ({ count }: { count: number }) => `In your project: ${count} files, not committed`,
+        appliedWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `In your project: ${count} files, not committed (${skipped} ignored files left out)`,
+        undo: 'Undo',
+        confirmApplyTitle: 'Apply to your project?',
+        confirmApplyBody: 'The task\'s changes go into your project as uncommitted edits. You can undo this.',
+        confirmUndoTitle: 'Take the changes back out?',
+        confirmUndoBody: 'Removes the edits this task put into your project.',
+        conflictTitle: 'These files changed in your project',
+        conflictApplyBody: ({ files }: { files: string }) => `You changed ${files} after dispatching this task. Nothing was applied, so your edits are safe.`,
+        conflictUndoBody: ({ files }: { files: string }) => `${files} changed after the task's edits were applied. Nothing was undone, so your edits are safe.`,
+        noChangesTitle: 'Nothing to apply',
+        noChangesBody: 'This task did not change any files.',
+        failedTitle: 'Could not finish',
+        failedBody: 'The controller could not be reached. Try again in a moment.',
+    },
     // A task's state in the words of what it needs next (list rows, composer status).
     taskStatus: {
         ready: 'Ready',

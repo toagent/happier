@@ -1169,6 +1169,25 @@ export const de: TranslationStructure = {
         unknown: 'unbekannt',
     },
 
+    // Bringing a scheduled task's changes into the person's project.
+    sourceChanges: {
+        notApplied: 'Die Änderungen liegen noch nur in der Kopie der Aufgabe',
+        apply: 'Ins Projekt übernehmen',
+        applied: ({ count }: { count: number }) => `Im Projekt: ${count} Dateien, nicht committet`,
+        appliedWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `Im Projekt: ${count} Dateien, nicht committet (${skipped} ignorierte Dateien ausgelassen)`,
+        undo: 'Rückgängig',
+        confirmApplyTitle: 'Ins Projekt übernehmen?',
+        confirmApplyBody: 'Die Änderungen der Aufgabe landen als nicht committete Änderungen in deinem Projekt. Du kannst das rückgängig machen.',
+        confirmUndoTitle: 'Änderungen wieder herausnehmen?',
+        confirmUndoBody: 'Entfernt die Änderungen, die diese Aufgabe in dein Projekt gebracht hat.',
+        conflictTitle: 'Diese Dateien haben sich im Projekt geändert',
+        conflictApplyBody: ({ files }: { files: string }) => `Du hast ${files} nach dem Absenden geändert. Es wurde nichts übernommen, deine Änderungen sind sicher.`,
+        conflictUndoBody: ({ files }: { files: string }) => `${files} wurde nach dem Übernehmen geändert. Es wurde nichts rückgängig gemacht, deine Änderungen sind sicher.`,
+        noChangesTitle: 'Nichts zu übernehmen',
+        noChangesBody: 'Diese Aufgabe hat keine Dateien geändert.',
+        failedTitle: 'Nicht abgeschlossen',
+        failedBody: 'Der planende Rechner ist nicht erreichbar. Versuche es gleich noch einmal.',
+    },
     // A task's state in the words of what it needs next (list rows, composer status).
     taskStatus: {
         ready: 'Bereit',

@@ -337,6 +337,7 @@ export function createTwinSessionAttemptStore(params: Readonly<{
     }),
     load: async (spawnNonce) => await readAttempt(attemptPath(params.directory, spawnNonce)),
     listRecoverable: async () => (await listAttempts()).filter((attempt) => attempt.phase !== 'released'),
+    listAll: async () => await listAttempts(),
     update: async (spawnNonce, transition) => await withMutationLock(async () => {
       const path = attemptPath(params.directory, spawnNonce);
       const current = await readAttempt(path);
@@ -417,6 +418,7 @@ export function createTwinSessionSchedulerAdapter(params: Readonly<{
     forgetLease: async (input) => await leaseClient.forget(input),
     prepareWorkspace: workspaceMaterializer.prepare,
     finalizeWorkspace: workspaceMaterializer.finalize,
+    sourceChanges: workspaceMaterializer.sourceChanges,
     spawnTarget: async (input) => parseSpawnResult(await callRpc({
       credentials: params.credentials,
       machineId: input.machineId,

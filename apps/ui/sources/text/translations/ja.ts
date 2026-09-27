@@ -1632,6 +1632,25 @@ export const ja: TranslationStructure = {
     unknown: "不明",
   },
 
+  // Bringing a scheduled task's changes into the person's project.
+  sourceChanges: {
+    notApplied: '変更はまだタスクのコピーにだけあります',
+    apply: 'プロジェクトに適用',
+    applied: ({ count }: { count: number }) => `プロジェクトに反映済み：${count} ファイル、未コミット`,
+    appliedWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `プロジェクトに反映済み：${count} ファイル、未コミット（無視対象 ${skipped} 件は除外）`,
+    undo: '元に戻す',
+    confirmApplyTitle: 'プロジェクトに適用しますか？',
+    confirmApplyBody: 'タスクの変更を未コミットの編集としてプロジェクトに入れます。いつでも元に戻せます。',
+    confirmUndoTitle: '適用を元に戻しますか？',
+    confirmUndoBody: 'このタスクがプロジェクトに入れた編集を取り除きます。',
+    conflictTitle: 'プロジェクトのファイルが変わっています',
+    conflictApplyBody: ({ files }: { files: string }) => `タスクの送信後に ${files} が変更されました。あなたの編集を守るため、何も適用していません。`,
+    conflictUndoBody: ({ files }: { files: string }) => `適用後に ${files} が変更されました。あなたの編集を守るため、元に戻していません。`,
+    noChangesTitle: '適用する変更はありません',
+    noChangesBody: 'このタスクはファイルを変更していません。',
+    failedTitle: '完了できませんでした',
+    failedBody: 'スケジューラーの PC に接続できません。しばらくしてからお試しください。',
+  },
   // A task's state in the words of what it needs next (list rows, composer status).
   taskStatus: {
     ready: "続行できます",

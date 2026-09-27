@@ -1371,6 +1371,12 @@ export {
   type SpawnSessionNonceResolution,
 } from './spawnSessionNonce.js';
 export {
+  ScheduledSessionSourceChangesActionV1Schema,
+  ScheduledSessionSourceChangesResultV1Schema,
+  type ScheduledSessionSourceChangesActionV1,
+  type ScheduledSessionSourceChangesResultV1,
+} from './scheduledSessionSourceChanges.js';
+export {
   HappierReplayDialogItemSchema,
   HappierReplayStrategySchema,
   SessionContinueWithReplayRequestSchema,

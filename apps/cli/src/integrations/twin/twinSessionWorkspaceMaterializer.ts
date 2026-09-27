@@ -16,6 +16,8 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 
 import {
   buildSessionWorkspaceLocationV1,
+  type ScheduledSessionSourceChangesActionV1,
+  type ScheduledSessionSourceChangesResultV1,
   type ScheduledWorkspaceV1,
 } from '@happier-dev/protocol';
 
@@ -431,6 +433,108 @@ async function applyPatchToReviewWorkspace(input: Readonly<{
   }
 }
 
+export type TwinSessionSourceChangesAction = ScheduledSessionSourceChangesActionV1;
+
+/** What happened to a task's changes in its source project (the person's own checkout). */
+export type TwinSessionSourceChangesResult = Exclude<
+  ScheduledSessionSourceChangesResultV1,
+  { status: 'not_found' | 'invalid_request' }
+>;
+
+type SourceApplyRecord = Readonly<{
+  v: 1;
+  appliedAt: number;
+  fileCount: number;
+  skippedIgnoredCount: number;
+  excludedPaths: readonly string[];
+}>;
+
+/** `git apply --numstat -z` records: "added\tdeleted\tpath\0", or for a rename "a\td\t\0old\0new\0". */
+function readPatchPaths(numstat: string): string[] {
+  const fields = numstat.split('\0');
+  const paths: string[] = [];
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index] ?? '';
+    if (!field) continue;
+    const parts = field.split('\t');
+    if (parts.length < 3) continue;
+    const path = parts.slice(2).join('\t');
+    if (path) {
+      paths.push(path);
+      continue;
+    }
+    const from = fields[index + 1];
+    const to = fields[index + 2];
+    if (from) paths.push(from);
+    if (to) paths.push(to);
+    index += 2;
+  }
+  return Array.from(new Set(paths));
+}
+
+/** Paths the source project ignores; `git check-ignore` exits 1 when none are. */
+async function readSourceIgnoredPaths(sourceRoot: string, paths: readonly string[]): Promise<string[]> {
+  const ignored: string[] = [];
+  const chunkSize = 200;
+  for (let offset = 0; offset < paths.length; offset += chunkSize) {
+    const chunk = paths.slice(offset, offset + chunkSize);
+    const result = await runScmCommand({
+      bin: 'git',
+      cwd: sourceRoot,
+      args: ['-c', 'core.quotePath=false', 'check-ignore', '--', ...chunk],
+      timeoutMs: null,
+    });
+    if (!result.success && result.exitCode !== 1) {
+      throw new Error(`git check-ignore failed: ${(result.stderr || result.stdout).trim()}`);
+    }
+    ignored.push(...result.stdout.split('\n').map((line) => line.trim()).filter(Boolean));
+  }
+  return ignored;
+}
+
+function escapeApplyExcludePattern(path: string): string {
+  return path.replace(/[\\*?[\]]/g, (char) => `\\${char}`);
+}
+
+/** Files `git apply` refused, from its "error: <path>: ..." / "error: patch failed: <path>:<line>" lines. */
+function readApplyConflictFiles(detail: string): string[] {
+  const files = new Set<string>();
+  for (const line of detail.split('\n')) {
+    const failed = /^error: patch failed: (.+):\d+$/u.exec(line.trim());
+    if (failed?.[1]) {
+      files.add(failed[1]);
+      continue;
+    }
+    const other = /^error: (.+?): (?:patch does not apply|already exists in working directory|does not exist in working directory|No such file or directory|does not match index)$/u.exec(line.trim());
+    if (other?.[1]) files.add(other[1]);
+  }
+  return Array.from(files);
+}
+
+async function runSourceApply(input: Readonly<{
+  sourceRoot: string;
+  patchFile: string;
+  excludedPaths: readonly string[];
+  reverse: boolean;
+}>): Promise<Readonly<{ status: 'ok' }> | Readonly<{ status: 'conflict'; files: string[] }>> {
+  const args = [
+    'apply', '--binary', '--whitespace=nowarn',
+    ...(input.reverse ? ['--reverse'] : []),
+    ...input.excludedPaths.map((path) => `--exclude=${escapeApplyExcludePattern(path)}`),
+  ];
+  const check = await runScmCommand({
+    bin: 'git',
+    cwd: input.sourceRoot,
+    args: ['-c', 'core.hooksPath=/dev/null', ...args, '--check', input.patchFile],
+    timeoutMs: null,
+  });
+  if (!check.success) {
+    return { status: 'conflict', files: readApplyConflictFiles(check.stderr || check.stdout) };
+  }
+  await runGitText({ cwd: input.sourceRoot, args: [...args, input.patchFile] });
+  return { status: 'ok' };
+}
+
 async function defaultUpdateSessionMetadata(input: TwinSessionWorkspaceMetadataUpdate, credentials: Credentials): Promise<void> {
   const rawSession = await fetchSessionByIdCompat({
     token: credentials.token,
@@ -529,6 +633,88 @@ export function createTwinSessionWorkspaceMaterializer(params: Readonly<{
         options: { ...input.attempt.options, directory: targetDirectory },
         workspace,
       };
+    },
+    /**
+     * Brings the task's current changes into its source project as uncommitted edits, or takes them
+     * back out. The patch is taken fresh from the task workspace (a task stays open after its turn),
+     * files the project ignores are left out, and nothing is written when any file no longer matches
+     * what the task started from. The applied patch is kept beside the review workspace for undo.
+     */
+    sourceChanges: async (input: Readonly<{
+      attempt: TwinSessionSchedulerAttempt;
+      action: TwinSessionSourceChangesAction;
+    }>): Promise<TwinSessionSourceChangesResult> => {
+      const workspace = input.attempt.workspace;
+      if (!workspace) throw new Error('Scheduled session workspace was not prepared');
+      const recordDirectory = join(dirname(workspace.reviewRootDirectory), 'source-apply');
+      const recordFile = join(recordDirectory, 'applied.json');
+      const appliedPatchFile = join(recordDirectory, 'applied.patch');
+      const readRecord = async (): Promise<SourceApplyRecord | null> => {
+        try {
+          return JSON.parse(await readFile(recordFile, 'utf8')) as SourceApplyRecord;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+          throw error;
+        }
+      };
+      const appliedResult = (record: SourceApplyRecord): TwinSessionSourceChangesResult => ({
+        status: 'applied',
+        appliedAt: record.appliedAt,
+        fileCount: record.fileCount,
+        skippedIgnoredCount: record.skippedIgnoredCount,
+      });
+
+      const record = await readRecord();
+      if (input.action === 'status') return record ? appliedResult(record) : { status: 'not_applied' };
+
+      if (input.action === 'undo') {
+        if (!record) return { status: 'not_applied' };
+        const undone = await runSourceApply({
+          sourceRoot: workspace.sourceRootDirectory,
+          patchFile: appliedPatchFile,
+          excludedPaths: record.excludedPaths,
+          reverse: true,
+        });
+        if (undone.status === 'conflict') return undone;
+        await rm(recordDirectory, { recursive: true, force: true });
+        return { status: 'undone' };
+      }
+
+      if (record) return appliedResult(record);
+      const worker = resolveWorker(input.attempt.workerId);
+      const patchDirectory = await mkdtemp(join(tmpdir(), 'happier-twin-source-patch-'));
+      const patchFile = join(patchDirectory, 'changes.patch');
+      try {
+        await writeTargetPatch({ workspace, transport: worker.workspace, patchFile, runProcess });
+        if ((await stat(patchFile)).size === 0) return { status: 'no_changes' };
+        const paths = readPatchPaths(await runGitText({
+          cwd: workspace.sourceRootDirectory,
+          args: ['apply', '--numstat', '-z', patchFile],
+        }));
+        const excludedPaths = await readSourceIgnoredPaths(workspace.sourceRootDirectory, paths);
+        const fileCount = paths.length - excludedPaths.length;
+        if (fileCount <= 0) return { status: 'no_changes' };
+        const applied = await runSourceApply({
+          sourceRoot: workspace.sourceRootDirectory,
+          patchFile,
+          excludedPaths,
+          reverse: false,
+        });
+        if (applied.status === 'conflict') return applied;
+        const nextRecord: SourceApplyRecord = {
+          v: 1,
+          appliedAt: Date.now(),
+          fileCount,
+          skippedIgnoredCount: excludedPaths.length,
+          excludedPaths,
+        };
+        await mkdir(recordDirectory, { recursive: true, mode: 0o700 });
+        await cp(patchFile, appliedPatchFile);
+        await writeFile(recordFile, JSON.stringify(nextRecord), { mode: 0o600 });
+        return appliedResult(nextRecord);
+      } finally {
+        await rm(patchDirectory, { recursive: true, force: true });
+      }
     },
     finalize: async (input: Readonly<{
       attempt: TwinSessionSchedulerAttempt;

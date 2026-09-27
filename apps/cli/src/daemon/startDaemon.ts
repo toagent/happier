@@ -8515,6 +8515,11 @@ export async function startDaemon(options: Readonly<{ takeover?: boolean }> = {}
                         }
                         return outcome;
                       },
+                      scheduledSessionSourceChanges: async (input) => {
+                        const outcome = await twinSessionScheduler.sourceChanges(input);
+                        logger.debug('[TWIN SCHEDULER] Source changes', { sessionId: input.sessionId, action: input.action, status: outcome.status });
+                        return outcome;
+                      },
                       // An idle report that does not return the slot leaves the queue full, so its
                       // outcome (and why it did not match) is always logged.
                       observeScheduledSessionIdle: async (input) => {

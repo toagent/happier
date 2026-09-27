@@ -22,6 +22,7 @@ import {
   PendingFirstInputV1Schema,
   RestartAllSessionRunnersRequestV1Schema,
   RestartSessionRunnerRequestV1Schema,
+  ScheduledSessionSourceChangesActionV1Schema,
   SessionAgentTransitionRequestV1Schema,
   rejectUndispatchedSessionAgentTransition,
   SessionConnectedServiceAuthSwitchRpcParamsSchema,
@@ -250,6 +251,11 @@ export type MachineRpcHandlers = {
     sessionId: string;
     receipt?: string;
   }>) => Promise<import('@/integrations/twin/twinSessionReleaseOutbox').TwinSessionReleaseResult>;
+  /** Controller only: read, apply (as uncommitted edits) or undo a scheduled task's changes in its source project. */
+  scheduledSessionSourceChanges?: (input: Readonly<{
+    sessionId: string;
+    action: 'status' | 'apply' | 'undo';
+  }>) => Promise<unknown>;
   /** Controller only: a worker reports a scheduled session finished its turn (returns the queue slot). */
   observeScheduledSessionIdle?: (input: Readonly<{
     attemptLookupId: string;
@@ -424,6 +430,7 @@ export function registerMachineRpcHandlers(params: Readonly<{
     resolveScheduledTargetSpawnByNonce,
     releaseScheduledSessionLease,
     observeScheduledSessionIdle,
+    scheduledSessionSourceChanges,
     abandonSpawnSessionByNonce,
   } = handlers;
   const spawnSession = async (options: SpawnSessionOptions): Promise<SpawnSessionResult> => {
@@ -482,6 +489,15 @@ export function registerMachineRpcHandlers(params: Readonly<{
     }).strict().safeParse(raw);
     if (!parsed.success || !releaseScheduledSessionLease) return { status: 'not_found' as const };
     return await releaseScheduledSessionLease(parsed.data);
+  });
+  rpcHandlerManager.registerHandler(RPC_METHODS.DAEMON_SCHEDULED_SESSION_SOURCE_CHANGES_V1, async (raw: unknown) => {
+    const parsed = z.object({
+      sessionId: z.string().trim().min(1),
+      action: ScheduledSessionSourceChangesActionV1Schema,
+    }).strict().safeParse(raw);
+    if (!parsed.success) return { status: 'invalid_request' as const };
+    if (!scheduledSessionSourceChanges) return { status: 'not_found' as const };
+    return await scheduledSessionSourceChanges(parsed.data);
   });
   rpcHandlerManager.registerHandler(RPC_METHODS.DAEMON_SCHEDULED_SESSION_IDLE_V1, async (raw: unknown) => {
     const parsed = z.object({

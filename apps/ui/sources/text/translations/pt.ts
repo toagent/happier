@@ -1363,6 +1363,25 @@ export const pt: TranslationStructure = {
     unknown: "desconhecido",
   },
 
+  // Bringing a scheduled task's changes into the person's project.
+  sourceChanges: {
+    notApplied: 'As alterações ainda estão só na cópia da tarefa',
+    apply: 'Aplicar ao projeto',
+    applied: ({ count }: { count: number }) => `No seu projeto: ${count} arquivos, sem commit`,
+    appliedWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `No seu projeto: ${count} arquivos, sem commit (${skipped} arquivos ignorados deixados de fora)`,
+    undo: 'Desfazer',
+    confirmApplyTitle: 'Aplicar ao seu projeto?',
+    confirmApplyBody: 'As alterações da tarefa entram no projeto como edições sem commit. Você pode desfazer.',
+    confirmUndoTitle: 'Remover as alterações?',
+    confirmUndoBody: 'Remove do projeto as edições que esta tarefa colocou.',
+    conflictTitle: 'Estes arquivos mudaram no seu projeto',
+    conflictApplyBody: ({ files }: { files: string }) => `Você mudou ${files} depois de enviar a tarefa. Nada foi aplicado, suas edições estão seguras.`,
+    conflictUndoBody: ({ files }: { files: string }) => `${files} mudou depois de aplicar. Nada foi desfeito, suas edições estão seguras.`,
+    noChangesTitle: 'Nada para aplicar',
+    noChangesBody: 'Esta tarefa não alterou nenhum arquivo.',
+    failedTitle: 'Não foi possível concluir',
+    failedBody: 'Não foi possível falar com o computador que agenda. Tente de novo em instantes.',
+  },
   // A task's state in the words of what it needs next (list rows, composer status).
   taskStatus: {
     ready: "Pronto",

@@ -1950,6 +1950,25 @@ const zhHantOverrides: DeepPartial<TranslationStructure> = {
         unknown: '未知',
     },
 
+    // Bringing a scheduled task's changes into the person's project.
+    sourceChanges: {
+        notApplied: '改動還只在任務副本裡',
+        apply: '套用到專案',
+        applied: ({ count }: { count: number }) => `已放進專案：${count} 個檔案，未提交`,
+        appliedWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `已放進專案：${count} 個檔案，未提交（略過 ${skipped} 個被忽略的檔案）`,
+        undo: '復原',
+        confirmApplyTitle: '套用到專案？',
+        confirmApplyBody: '這次任務的改動會以未提交的修改放進你的專案，可以隨時復原。',
+        confirmUndoTitle: '復原套用？',
+        confirmUndoBody: '從專案裡移除這次任務放進去的改動。',
+        conflictTitle: '專案裡這些檔案已經變了',
+        conflictApplyBody: ({ files }: { files: string }) => `派發後你改過 ${files}。為了不覆蓋你的修改，這次沒有做任何改動。`,
+        conflictUndoBody: ({ files }: { files: string }) => `套用後 ${files} 又被改過。為了不覆蓋你的修改，這次沒有復原。`,
+        noChangesTitle: '沒有要套用的改動',
+        noChangesBody: '這次任務沒有改動任何檔案。',
+        failedTitle: '沒能完成',
+        failedBody: '連不上調度的電腦，請稍後再試。',
+    },
     // A task's state in the words of what it needs next (list rows, composer status).
     taskStatus: {
         ready: '可繼續',

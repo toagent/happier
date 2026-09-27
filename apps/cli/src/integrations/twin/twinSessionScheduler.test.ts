@@ -26,6 +26,10 @@ class MemoryAttemptStore implements TwinSessionSchedulerAttemptStore {
     return attempt ? structuredClone(attempt) : null;
   }
 
+  async listAll(): Promise<readonly TwinSessionSchedulerAttempt[]> {
+    return Array.from(this.attempts.values()).map((attempt) => structuredClone(attempt));
+  }
+
   async listRecoverable(): Promise<readonly TwinSessionSchedulerAttempt[]> {
     return Array.from(this.attempts.values())
       .filter((attempt) => attempt.phase !== 'released')
@@ -119,6 +123,11 @@ function createHarness(params: Readonly<{
       baselineCommit: 'baseline-commit',
     },
   })));
+  const sourceChanges = vi.fn(async (_attempt: TwinSessionSchedulerAttempt, action: string) => (
+    action === 'apply'
+      ? { status: 'applied' as const, appliedAt: 1, fileCount: 2, skippedIgnoredCount: 0 }
+      : { status: 'not_applied' as const }
+  ));
   const finalizeWorkspace = vi.fn(params.finalizeWorkspace ?? (async (attempt: TwinSessionSchedulerAttempt) => ({
     ...attempt.workspace!,
     state: 'finalized' as const,
@@ -133,6 +142,7 @@ function createHarness(params: Readonly<{
     resolveTargetSpawn,
     forgetLease,
     prepareWorkspace,
+    sourceChanges,
     finalizeWorkspace,
     scheduler: createTwinSessionScheduler({
       controllerMachineId: 'controller-machine',
@@ -145,6 +155,7 @@ function createHarness(params: Readonly<{
       forgetLease,
       prepareWorkspace: async ({ attempt }) => await prepareWorkspace(attempt),
       finalizeWorkspace: async ({ attempt, sessionId }) => await finalizeWorkspace(attempt, sessionId),
+      sourceChanges: async ({ attempt, action }) => await sourceChanges(attempt, action),
       spawnTarget: async ({ options }) => await spawnTarget(options),
       resolveTargetSpawn,
       createOwnerToken: () => 'owner-token',
@@ -286,6 +297,22 @@ describe('twin session scheduler', () => {
     await expect(polling).resolves.toMatchObject({ status: 'success', sessionId: 'session-1' });
     expect(harness.prepareWorkspace).toHaveBeenCalledTimes(1);
     expect(harness.spawnTarget).toHaveBeenCalledTimes(1);
+  });
+
+  it('brings a finished task\'s changes into its project by session id, even after its slot was released', async () => {
+    const harness = createHarness();
+    await harness.scheduler.spawn(scheduledOptions());
+    await harness.scheduler.observeSessionExit({ sessionId: 'session-1', unexpected: false });
+    expect(harness.store.attempts.get('spawn-1')?.phase).toBe('released');
+
+    await expect(harness.scheduler.sourceChanges({ sessionId: 'session-1', action: 'apply' }))
+      .resolves.toMatchObject({ status: 'applied', fileCount: 2 });
+    expect(harness.sourceChanges).toHaveBeenCalledWith(
+      expect.objectContaining({ spawnNonce: 'spawn-1', workspace: expect.objectContaining({ state: expect.any(String) }) }),
+      'apply',
+    );
+    await expect(harness.scheduler.sourceChanges({ sessionId: 'someone-else', action: 'apply' }))
+      .resolves.toEqual({ status: 'not_found' });
   });
 
   it('creates one durable lease and one target runner for repeated use of the same spawn nonce', async () => {

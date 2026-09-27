@@ -5587,6 +5587,25 @@ export const ru: TranslationStructure = {
     unknown: "неизвестно",
   },
 
+  // Bringing a scheduled task's changes into the person's project.
+  sourceChanges: {
+    notApplied: 'Изменения пока только в копии задачи',
+    apply: 'Применить к проекту',
+    applied: ({ count }: { count: number }) => `В проекте: файлов ${count}, без коммита`,
+    appliedWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `В проекте: файлов ${count}, без коммита (пропущено игнорируемых: ${skipped})`,
+    undo: 'Отменить',
+    confirmApplyTitle: 'Применить к проекту?',
+    confirmApplyBody: 'Изменения задачи попадут в проект как незакоммиченные правки. Это можно отменить.',
+    confirmUndoTitle: 'Убрать изменения?',
+    confirmUndoBody: 'Удаляет из проекта правки, внесённые этой задачей.',
+    conflictTitle: 'Эти файлы изменились в проекте',
+    conflictApplyBody: ({ files }: { files: string }) => `Вы изменили ${files} после отправки задачи. Ничего не применено, ваши правки в сохранности.`,
+    conflictUndoBody: ({ files }: { files: string }) => `${files} изменился после применения. Ничего не отменено, ваши правки в сохранности.`,
+    noChangesTitle: 'Нечего применять',
+    noChangesBody: 'Эта задача не изменила ни одного файла.',
+    failedTitle: 'Не удалось завершить',
+    failedBody: 'Нет связи с компьютером-планировщиком. Попробуйте чуть позже.',
+  },
   // A task's state in the words of what it needs next (list rows, composer status).
   taskStatus: {
     ready: "Готово",

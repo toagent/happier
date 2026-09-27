@@ -1336,6 +1336,25 @@ export const pl: TranslationStructure = {
     unknown: "nieznane",
   },
 
+  // Bringing a scheduled task's changes into the person's project.
+  sourceChanges: {
+    notApplied: 'Zmiany są na razie tylko w kopii zadania',
+    apply: 'Zastosuj w projekcie',
+    applied: ({ count }: { count: number }) => `W projekcie: ${count} plików, bez commita`,
+    appliedWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `W projekcie: ${count} plików, bez commita (pominięto ${skipped} ignorowanych plików)`,
+    undo: 'Cofnij',
+    confirmApplyTitle: 'Zastosować w projekcie?',
+    confirmApplyBody: 'Zmiany z zadania trafią do projektu jako niezatwierdzone edycje. Możesz to cofnąć.',
+    confirmUndoTitle: 'Wycofać zmiany?',
+    confirmUndoBody: 'Usuwa z projektu edycje dodane przez to zadanie.',
+    conflictTitle: 'Te pliki zmieniły się w projekcie',
+    conflictApplyBody: ({ files }: { files: string }) => `Zmieniłeś ${files} po wysłaniu zadania. Nic nie zastosowano, twoje edycje są bezpieczne.`,
+    conflictUndoBody: ({ files }: { files: string }) => `${files} zmienił się po zastosowaniu. Nic nie cofnięto, twoje edycje są bezpieczne.`,
+    noChangesTitle: 'Nic do zastosowania',
+    noChangesBody: 'To zadanie nie zmieniło żadnych plików.',
+    failedTitle: 'Nie udało się',
+    failedBody: 'Brak połączenia z komputerem planującym. Spróbuj za chwilę.',
+  },
   // A task's state in the words of what it needs next (list rows, composer status).
   taskStatus: {
     ready: "Gotowe",

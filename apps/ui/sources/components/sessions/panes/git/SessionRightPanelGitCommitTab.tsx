@@ -24,6 +24,7 @@ import { sessionScmStashList } from '@/sync/ops';
 import { useKeyboardHeight } from '@/hooks/ui/useKeyboardHeight';
 import { ToolbarButton } from '@/components/ui/buttons/ToolbarButton';
 import { Icon } from '@/components/ui/icons/Icon';
+import { SessionSourceChangesBar } from './SessionSourceChangesBar';
 
 export type SessionRightPanelGitCommitTabProps = Readonly<{
     theme: any;
@@ -106,6 +107,7 @@ export const SessionRightPanelGitCommitTab = React.memo((props: SessionRightPane
 
     return (
         <View style={{ flex: 1, position: 'relative' }}>
+            <SessionSourceChangesBar sessionId={props.sessionId} />
             <CommitChangesSurface
                 theme={props.theme}
                 sessionId={props.sessionId}

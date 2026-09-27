@@ -11,6 +11,7 @@ import type {
   SpawnSessionResult,
   SpawnSessionRunnerAcceptanceHooks,
 } from '@/rpc/handlers/registerSessionHandlers';
+import type { TwinSessionSourceChangesAction, TwinSessionSourceChangesResult } from './twinSessionWorkspaceMaterializer';
 
 export type TwinSessionLeaseState = Readonly<{
   state: 'queued' | 'acquired' | 'released';
@@ -62,6 +63,8 @@ export type TwinSessionSchedulerAttemptStore = Readonly<{
   createIfAbsent: (attempt: TwinSessionSchedulerAttempt) => Promise<TwinSessionSchedulerAttempt>;
   load: (spawnNonce: string) => Promise<TwinSessionSchedulerAttempt | null>;
   listRecoverable: () => Promise<readonly TwinSessionSchedulerAttempt[]>;
+  /** Every attempt, released ones included (their workspace stays for review and apply). */
+  listAll: () => Promise<readonly TwinSessionSchedulerAttempt[]>;
   update: (
     spawnNonce: string,
     transition: (current: TwinSessionSchedulerAttempt) => TwinSessionSchedulerAttempt,
@@ -101,6 +104,10 @@ type TwinSessionSchedulerDeps = Readonly<{
     attempt: TwinSessionSchedulerAttempt;
     sessionId: string;
   }>) => Promise<TwinSessionWorkspaceMaterialization>;
+  sourceChanges: (input: Readonly<{
+    attempt: TwinSessionSchedulerAttempt;
+    action: TwinSessionSourceChangesAction;
+  }>) => Promise<TwinSessionSourceChangesResult>;
   spawnTarget: (input: Readonly<{
     machineId: string;
     options: SpawnSessionOptions;
@@ -510,6 +517,21 @@ export function createTwinSessionScheduler(deps: TwinSessionSchedulerDeps) {
       if (!input.unexpected) await releaseBySessionId(input.sessionId);
     },
     observeRespawnSuccess: async (_input: Readonly<{ sessionId: string }>): Promise<void> => {},
+    /** A task's changes and its source project: read, apply as uncommitted edits, or undo. */
+    sourceChanges: async (input: Readonly<{
+      sessionId: string;
+      action: TwinSessionSourceChangesAction;
+    }>): Promise<TwinSessionSourceChangesResult | Readonly<{ status: 'not_found' }>> => {
+      const sessionId = input.sessionId.trim();
+      if (!sessionId) return { status: 'not_found' };
+      const attempt = (await deps.store.listAll()).find((candidate) => {
+        const resolution = resolutionFromResult(candidate.result);
+        return (resolution.status === 'success' && resolution.sessionId === sessionId)
+          || candidate.terminalSessionId === sessionId;
+      });
+      if (!attempt?.workspace) return { status: 'not_found' };
+      return await deps.sourceChanges({ attempt, action: input.action });
+    },
     // The worker reports a finished turn. Only the queue slot goes back: "at most N at once" limits
     // tasks doing work, not sessions left open for follow-ups (which then run without a slot).
     observeSessionIdle: async (input: Readonly<{

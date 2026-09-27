@@ -292,4 +292,34 @@ describe('ApiMachineClient spawn-happy-session handler', () => {
 
     expect(observeScheduledSessionIdle).toHaveBeenCalledWith(request);
   });
+
+  it('routes a request to bring a task\'s changes into its project to the daemon scheduler', async () => {
+    const machine: Machine = {
+      id: 'machine-test',
+      encryptionKey: new Uint8Array(32).fill(7),
+      encryptionVariant: 'legacy',
+      metadata: null,
+      metadataVersion: 0,
+      daemonState: null,
+      daemonStateVersion: 0,
+    };
+    const client = new ApiMachineClient('token', machine);
+    const scheduledSessionSourceChanges = vi.fn(async () => ({ status: 'not_applied' as const }));
+    client.setRPCHandlers({
+      spawnSession: async () => ({ type: 'success' as const, sessionId: 'local-session' }),
+      stopSession: async () => true,
+      requestShutdown: () => {},
+      scheduledSessionSourceChanges,
+    });
+
+    const call = async (params: unknown) => await (client as any).rpcHandlerManager.handleRequest({
+      method: `${machine.id}:daemon.scheduledSession.sourceChanges.v1`,
+      params: encodeBase64(encrypt(machine.encryptionKey, machine.encryptionVariant, params)),
+    });
+    await call({ sessionId: 'session-1', action: 'apply' });
+    expect(scheduledSessionSourceChanges).toHaveBeenCalledWith({ sessionId: 'session-1', action: 'apply' });
+
+    await call({ sessionId: 'session-1', action: 'rm -rf' });
+    expect(scheduledSessionSourceChanges).toHaveBeenCalledTimes(1);
+  });
 });

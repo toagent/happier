@@ -1259,6 +1259,25 @@ export const ca: TranslationStructure = {
         unknown: 'desconegut',
     },
 
+    // Bringing a scheduled task's changes into the person's project.
+    sourceChanges: {
+        notApplied: 'Els canvis encara només són a la còpia de la tasca',
+        apply: 'Aplica al projecte',
+        applied: ({ count }: { count: number }) => `Al teu projecte: ${count} fitxers, sense confirmar`,
+        appliedWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `Al teu projecte: ${count} fitxers, sense confirmar (${skipped} fitxers ignorats omesos)`,
+        undo: 'Desfés',
+        confirmApplyTitle: 'Vols aplicar-ho al projecte?',
+        confirmApplyBody: 'Els canvis de la tasca entraran al projecte com a edicions sense confirmar. Ho pots desfer.',
+        confirmUndoTitle: 'Vols treure els canvis?',
+        confirmUndoBody: 'Treu del projecte les edicions que hi va posar aquesta tasca.',
+        conflictTitle: 'Aquests fitxers han canviat al projecte',
+        conflictApplyBody: ({ files }: { files: string }) => `Vas canviar ${files} després d'enviar la tasca. No s'ha aplicat res, les teves edicions estan segures.`,
+        conflictUndoBody: ({ files }: { files: string }) => `${files} ha canviat després d'aplicar-ho. No s'ha desfet res, les teves edicions estan segures.`,
+        noChangesTitle: 'No hi ha res per aplicar',
+        noChangesBody: 'Aquesta tasca no ha canviat cap fitxer.',
+        failedTitle: 'No s\'ha pogut acabar',
+        failedBody: 'No es pot contactar amb l\'ordinador que planifica. Torna-ho a provar d\'aquí a una estona.',
+    },
     // A task's state in the words of what it needs next (list rows, composer status).
     taskStatus: {
         ready: 'A punt',

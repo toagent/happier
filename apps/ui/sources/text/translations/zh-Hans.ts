@@ -1296,6 +1296,25 @@ export const zhHans: TranslationStructure = {
     unknown: "未知",
   },
 
+  // Bringing a scheduled task's changes into the person's project.
+  sourceChanges: {
+    notApplied: '改动还只在任务副本里',
+    apply: '应用到项目',
+    applied: ({ count }: { count: number }) => `已放进项目：${count} 个文件，未提交`,
+    appliedWithSkipped: ({ count, skipped }: { count: number; skipped: number }) => `已放进项目：${count} 个文件，未提交（跳过 ${skipped} 个被忽略的文件）`,
+    undo: '撤销',
+    confirmApplyTitle: '应用到项目？',
+    confirmApplyBody: '这次任务的改动会作为未提交的修改放进你的项目，可以随时撤销。',
+    confirmUndoTitle: '撤销应用？',
+    confirmUndoBody: '从项目里移除这次任务放进去的改动。',
+    conflictTitle: '项目里这些文件已经变了',
+    conflictApplyBody: ({ files }: { files: string }) => `派发后你改过 ${files}。为了不覆盖你的修改，这次没有做任何改动。`,
+    conflictUndoBody: ({ files }: { files: string }) => `应用后 ${files} 又被改过。为了不覆盖你的修改，这次没有撤销。`,
+    noChangesTitle: '没有要应用的改动',
+    noChangesBody: '这次任务没有改动任何文件。',
+    failedTitle: '没能完成',
+    failedBody: '连不上调度的电脑，请稍后再试。',
+  },
   // A task's state in the words of what it needs next (list rows, composer status).
   taskStatus: {
     ready: "可继续",

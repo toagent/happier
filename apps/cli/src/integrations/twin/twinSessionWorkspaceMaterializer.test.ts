@@ -140,6 +140,78 @@ describe('twin session workspace materializer', () => {
     ]);
   });
 
+  describe('bringing a task\'s changes into the source project', () => {
+    async function setupSourceAndTask(root: string) {
+      const sourceRoot = join(root, 'project');
+      await mkdir(sourceRoot, { recursive: true });
+      await runGit(sourceRoot, ['init', '--initial-branch=main']);
+      await runGit(sourceRoot, ['config', 'user.name', 'Test User']);
+      await runGit(sourceRoot, ['config', 'user.email', 'test@example.com']);
+      await writeFile(join(sourceRoot, '.gitignore'), '__pycache__/\n', 'utf8');
+      await writeFile(join(sourceRoot, 'a.txt'), 'one\ntwo\n', 'utf8');
+      await runGit(sourceRoot, ['add', '.gitignore', 'a.txt']);
+      await runGit(sourceRoot, ['commit', '-m', 'base']);
+      const materializer = createTwinSessionWorkspaceMaterializer({
+        reviewRoot: join(root, 'reviews'),
+        controllerMachineId: 'machine-controller',
+        workers: { 'twin-dev': { machineId: 'machine-dev', workspace: { kind: 'local', root: join(root, 'targets') } } },
+        updateSessionMetadata: async () => {},
+      });
+      const prepared = await materializer.prepare({ attempt: attempt(sourceRoot) });
+      const task = { ...attempt(sourceRoot), workspace: prepared.workspace };
+      return { sourceRoot, materializer, task, target: prepared.workspace.targetRootDirectory };
+    }
+
+    it('adds the task changes as uncommitted edits, leaves ignored files out, and undoes them', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'happier-twin-apply-'));
+      temporaryDirectories.push(root);
+      const { sourceRoot, materializer, task, target } = await setupSourceAndTask(root);
+      await writeFile(join(target, 'a.txt'), 'one\nTWO\n', 'utf8');
+      await writeFile(join(target, 'new.txt'), 'new\n', 'utf8');
+      await mkdir(join(target, '__pycache__'), { recursive: true });
+      await writeFile(join(target, '__pycache__', 'x.pyc'), 'junk', 'utf8');
+
+      expect(await materializer.sourceChanges({ attempt: task, action: 'status' })).toMatchObject({ status: 'not_applied' });
+      const applied = await materializer.sourceChanges({ attempt: task, action: 'apply' });
+      expect(applied).toMatchObject({ status: 'applied', fileCount: 2, skippedIgnoredCount: 1 });
+      expect(await readFile(join(sourceRoot, 'a.txt'), 'utf8')).toBe('one\nTWO\n');
+      expect(await readFile(join(sourceRoot, 'new.txt'), 'utf8')).toBe('new\n');
+      await expect(stat(join(sourceRoot, '__pycache__'))).rejects.toThrow();
+      // Nothing is committed for the person; the edits wait in the working tree.
+      expect((await runGit(sourceRoot, ['rev-list', '--count', 'HEAD']))).toBe('1');
+
+      // Applying twice does not apply twice.
+      expect(await materializer.sourceChanges({ attempt: task, action: 'apply' })).toMatchObject({ status: 'applied' });
+      expect(await readFile(join(sourceRoot, 'a.txt'), 'utf8')).toBe('one\nTWO\n');
+      expect(await materializer.sourceChanges({ attempt: task, action: 'status' })).toMatchObject({ status: 'applied' });
+
+      expect(await materializer.sourceChanges({ attempt: task, action: 'undo' })).toMatchObject({ status: 'undone' });
+      expect(await readFile(join(sourceRoot, 'a.txt'), 'utf8')).toBe('one\ntwo\n');
+      await expect(stat(join(sourceRoot, 'new.txt'))).rejects.toThrow();
+      expect(await materializer.sourceChanges({ attempt: task, action: 'status' })).toMatchObject({ status: 'not_applied' });
+    });
+
+    it('refuses to apply over edits made in the project since dispatch and names the files', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'happier-twin-apply-conflict-'));
+      temporaryDirectories.push(root);
+      const { sourceRoot, materializer, task, target } = await setupSourceAndTask(root);
+      await writeFile(join(target, 'a.txt'), 'one\nTWO\n', 'utf8');
+      await writeFile(join(target, 'new.txt'), 'new\n', 'utf8');
+      await writeFile(join(sourceRoot, 'a.txt'), 'one\nchanged here\n', 'utf8');
+
+      expect(await materializer.sourceChanges({ attempt: task, action: 'apply' })).toEqual({ status: 'conflict', files: ['a.txt'] });
+      expect(await readFile(join(sourceRoot, 'a.txt'), 'utf8')).toBe('one\nchanged here\n');
+      await expect(stat(join(sourceRoot, 'new.txt'))).rejects.toThrow();
+    });
+
+    it('reports when the task changed nothing', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'happier-twin-apply-none-'));
+      temporaryDirectories.push(root);
+      const { materializer, task } = await setupSourceAndTask(root);
+      expect(await materializer.sourceChanges({ attempt: task, action: 'apply' })).toEqual({ status: 'no_changes' });
+    });
+  });
+
   it('keeps relative symlinks as they are, so a fresh task starts with no changes', async () => {
     // Copying the review baseline resolved relative links to absolute paths into the review workspace:
     // every repository with committed symlinks (skills, .cursorrules) opened a new task showing them
