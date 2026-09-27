@@ -348,6 +348,11 @@ export function useCreateNewSession(params: Readonly<{
     const handleCreateSession = React.useCallback(async (opts?: HandleCreateSessionOptions) => {
         if (createInFlightRef.current) return;
         const current = latestParamsRef.current;
+        // A spawn can wait minutes; failure copy describes the launched machine as it is now.
+        const readLaunchMachine = () => {
+            const latestMachine = latestParamsRef.current.selectedMachine;
+            return latestMachine?.id === current.selectedMachine?.id ? latestMachine : current.selectedMachine;
+        };
         const requestedPath = typeof current.getRequestedPath === 'function'
             ? current.getRequestedPath()
             : current.selectedPath;
@@ -1204,7 +1209,7 @@ export function useCreateNewSession(params: Readonly<{
                     const retryResolution = await promptDaemonUnavailableRetry({
                         titleKey: 'newSession.daemonRpcUnavailableTitle',
                         bodyKey: 'newSession.daemonRpcUnavailableBody',
-                        machine: current.selectedMachine,
+                        machine: readLaunchMachine(),
                     });
                     suppressPostSpawnFollowUpAlert = true;
 
@@ -1393,7 +1398,7 @@ export function useCreateNewSession(params: Readonly<{
                     showDaemonUnavailableAlert({
                         titleKey: 'newSession.launchStillPendingTitle',
                         bodyKey: 'newSession.launchStillPendingBody',
-                        machine: current.selectedMachine,
+                        machine: readLaunchMachine(),
                         onRetry: () => {
                             void handleCreateSession(opts);
                         },
@@ -1455,7 +1460,7 @@ export function useCreateNewSession(params: Readonly<{
                     showDaemonUnavailableAlert({
                         titleKey: 'newSession.daemonRpcUnavailableTitle',
                         bodyKey: 'newSession.daemonRpcUnavailableBody',
-                        machine: current.selectedMachine,
+                        machine: readLaunchMachine(),
                         onRetry: () => {
                             void handleCreateSession(opts);
                         },

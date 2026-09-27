@@ -481,6 +481,81 @@ describe('useCreateNewSession (daemon unavailable UX)', () => {
     await hook.unmount();
   });
 
+  it('describes the machine as it is when the launch fails, not as it was when the launch began', async () => {
+    const { useCreateNewSession, modalAlertSpy, machineSpawnNewSessionSpy } = await setupHarness();
+    let failSpawn: (() => void) | null = null;
+    machineSpawnNewSessionSpy.mockReset().mockImplementation(() => new Promise((resolve) => {
+      failSpawn = () => resolve({
+        type: 'error',
+        errorCode: SPAWN_SESSION_ERROR_CODES.DAEMON_RPC_UNAVAILABLE,
+        errorMessage: 'Daemon RPC is not available',
+      });
+    }));
+
+    const settings = { experiments: false } as unknown as Settings;
+    const machineEnvPresence: UseMachineEnvPresenceResult = {
+      isPreviewEnvSupported: false,
+      isLoading: false,
+      meta: {},
+      refreshedAt: null,
+      refresh: () => {},
+    };
+    const hook = await renderHook(
+      ({ machineActiveAt }: { machineActiveAt: number }) =>
+        useCreateNewSession({
+          draftId: '8e0a5dd1-b1df-43dd-b51e-b7787b30362e',
+          launchIntentSignature: 'test-launch-intent',
+          router: { push: vi.fn(), replace: vi.fn() },
+          selectedMachineId: 'm1',
+          selectedPath: '/tmp',
+          selectedMachine: { id: 'm1', active: true, activeAt: machineActiveAt, metadata: { host: 'devbox' } },
+          setIsCreating: vi.fn(),
+          setIsResumeSupportChecking: vi.fn(),
+          settings,
+          useProfiles: false,
+          selectedProfileId: null,
+          profileMap: new Map(),
+          recentMachinePaths: [],
+          agentType: 'opencode' as any,
+          permissionMode: 'default' as PermissionMode,
+          modelMode: 'default' as ModelMode,
+          promptStore: createNewSessionPromptStore(''),
+          resumeSessionId: '',
+          agentNewSessionOptions: null,
+          machineEnvPresence,
+          secrets: [],
+          secretBindingsByProfileId: {},
+          selectedSecretIdByProfileIdByEnvVarName: {},
+          sessionOnlySecretValueByProfileIdByEnvVarName: {},
+          selectedMachineCapabilities: {},
+          targetServerId: null,
+          allowedTargetServerIds: undefined,
+        }),
+      { initialProps: { machineActiveAt: Date.now() } },
+    );
+
+    let createPromise: Promise<void> | void | null = null;
+    await act(async () => {
+      createPromise = hook.getCurrent().handleCreateSession();
+    });
+    await flushHookEffects();
+    expect(machineSpawnNewSessionSpy).toHaveBeenCalledTimes(1);
+
+    // The spawn waits minutes while the machine keeps sending its keep-alive.
+    vi.setSystemTime(Date.now() + 7 * 60_000);
+    await hook.rerender({ machineActiveAt: Date.now() });
+    await act(async () => {
+      failSpawn?.();
+      await createPromise;
+    });
+    await flushHookEffects({ runAllTimers: true });
+
+    const message = String(modalAlertSpy.mock.calls[0]?.[1] ?? '');
+    expect(message).toContain('status.online');
+    expect(message).not.toContain('status.lastSeen');
+    await hook.unmount();
+  });
+
   it('does not keep the single-flight guard latched after a local validation failure', async () => {
     const { useCreateNewSession, machineSpawnNewSessionSpy } = await setupHarness();
 
