@@ -27,6 +27,7 @@ const stylesheet = StyleSheet.create((theme) => ({
         color: theme.colors.text.secondary,
     },
     appliedText: {
+        fontSize: 14,
         color: theme.colors.text.primary,
     },
     column: {
@@ -136,7 +137,7 @@ export const SessionSourceChangesBar = React.memo(function SessionSourceChangesB
         return (
             <View style={styles.bar} testID="session-source-changes-bar">
                 <View style={styles.column}>
-                    <Text style={[styles.text, styles.appliedText]} numberOfLines={1}>
+                    <Text style={styles.appliedText} numberOfLines={1}>
                         {t('sourceChanges.applied', { count: state.fileCount })}
                     </Text>
                     <Text style={styles.note} numberOfLines={2}>
