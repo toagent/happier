@@ -135,6 +135,7 @@ import { useActionOperation, useAllActionOperations } from '@/sync/domains/actio
 import { resolvePersistedNewSessionOperationIdentity } from '@/sync/domains/actionOperations/actionOperationReentry';
 import {
     flushSessionDraft,
+    persistSessionDraftLocally,
     writeNewSessionDraft,
     writeSessionDraftLocalSupplement,
 } from '@/sync/ops/sessionDrafts/sessionDraftRepository';
@@ -1751,7 +1752,13 @@ export function useNewSessionScreenModel(params?: Readonly<{ draftId?: string }>
             }),
             materializationIntent: 'launchInterrupted',
         });
-        await flushSessionDraft({ scope: draftScope, address: draftAddress });
+        // Launch recovery reads the local replica, so the launch waits only for local durability. The
+        // remote write can stay unanswered indefinitely after the app is suspended mid-request, and every
+        // later flush of this draft joins it; it continues in the background instead of holding the launch.
+        await persistSessionDraftLocally({ scope: draftScope });
+        fireAndForget(flushSessionDraft({ scope: draftScope, address: draftAddress }), {
+            tag: 'NewSessionScreenModel.flushLaunchDraft',
+        });
     }, [currentAuthoringDraft, draftAddress, draftId, draftScope, promptStore, selectedMachineId, targetServerId]);
 
     const onLaunchUserAttemptIdChange = React.useCallback((nextUserAttemptId: string | null) => {

@@ -243,6 +243,30 @@ describe('useNewSessionScreenModel (draft hydration — core)', () => {
         expect(model?.simpleProps?.targetServerId).not.toBe('server-b');
     });
 
+    it('lets a launch proceed while the remote draft write is still unanswered', async () => {
+        // A draft write issued just before the app was suspended can stay unanswered forever, and
+        // every later flush of that draft joins it. Launch recovery reads the local replica, so the
+        // launch waits only for local durability; the remote write continues in the background.
+        const repository = await import('@/sync/ops/sessionDrafts/sessionDraftRepository');
+        const flushSpy = vi.spyOn(repository, 'flushSessionDraft').mockImplementation(() => new Promise(() => {}));
+        try {
+            await renderNewSessionScreenModel(() => {});
+            const persistDraftForLaunch = useCreateNewSessionArgsRef.current?.persistDraftForLaunch as
+                (() => Promise<void>) | undefined;
+            expect(persistDraftForLaunch).toBeTypeOf('function');
+
+            let settled = false;
+            await act(async () => {
+                void persistDraftForLaunch!().then(() => { settled = true; });
+                await new Promise((resolve) => setTimeout(resolve, 0));
+            });
+
+            expect(settled).toBe(true);
+        } finally {
+            flushSpy.mockRestore();
+        }
+    });
+
     it('persists the current target server with the launch draft', async () => {
         targetServerState.allowedTargetServerIds = ['server-a', 'server-b'];
         targetServerState.targetServerId = 'server-b';

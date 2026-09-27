@@ -982,6 +982,16 @@ export class SessionDraftRepository {
         return result.status === 'updated';
     }
 
+    /**
+     * Makes this scope's drafts durable on this device. Launch recovery (currentness, action reentry)
+     * reads only the local replica, so a launch waits for this rather than for the remote write,
+     * which can stay unanswered indefinitely after the app is suspended mid-request.
+     */
+    async persistSessionDraftLocally(params: Readonly<{ scope: SessionDraftRepositoryScope }>): Promise<void> {
+        if (this.storage.prepare) await this.storage.prepare();
+        await this.flushStorage(params.scope);
+    }
+
     flushSessionDraft(params: Readonly<{ scope: SessionDraftRepositoryScope; address: SessionDraftAddressV1 }>): Promise<SessionDraftFlushResult> {
         const key = this.replicaListenerKey(params.scope, params.address);
         const existing = this.flushInFlight.get(key);
@@ -1599,6 +1609,7 @@ export const clearSessionDraftLaunchCurrentness = singleton.clearSessionDraftLau
 export const clearSessionDraftCurrentness = singleton.clearSessionDraftCurrentness.bind(singleton);
 export const deleteSessionDraft = singleton.deleteSessionDraft.bind(singleton);
 export const flushSessionDraft = singleton.flushSessionDraft.bind(singleton);
+export const persistSessionDraftLocally = singleton.persistSessionDraftLocally.bind(singleton);
 export const resolveSessionDraftConflict = singleton.resolveSessionDraftConflict.bind(singleton);
 export const materializeExactSessionDraft = singleton.materializeExact.bind(singleton);
 export const ensureSessionDraftRepositoryHydrated = singleton.ensureSessionDraftRepositoryHydrated.bind(singleton);

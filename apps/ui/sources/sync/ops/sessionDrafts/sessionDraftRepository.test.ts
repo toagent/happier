@@ -92,6 +92,26 @@ function uuid(value: number): string {
 }
 
 describe('sessionDraftRepository', () => {
+    it('persists a draft durably on this device without waiting for a remote write that never answers', async () => {
+        // A launch must not hang on draft sync: a mutate issued just before the app was suspended can
+        // stay unanswered forever, and every later flush of the same draft joins that promise.
+        const storage = { ...createMemoryStorage(), flush: vi.fn(async () => {}) };
+        const remote = createRemote(undefined, { kind: 'newSession', draftId: uuid(993) });
+        const hung = createDeferred<never>();
+        vi.mocked(remote.transport.mutate).mockImplementation(() => hung.promise);
+        const repository = createSessionDraftRepository({ storage, cipher: plainCipher(), transport: remote.transport, syncEnabled: true });
+        const address = { kind: 'newSession' as const, draftId: uuid(993) };
+        repository.writeNewSessionDraft({ scope, draftId: address.draftId, patch: { text: 'launch me' }, materializationIntent: 'launchInterrupted' });
+        void repository.flushSessionDraft({ scope, address });
+        await vi.waitFor(() => expect(remote.transport.mutate).toHaveBeenCalledTimes(1));
+        storage.flush.mockClear();
+
+        await repository.persistSessionDraftLocally({ scope });
+
+        expect(storage.flush).toHaveBeenCalledTimes(1);
+        expect(repository.getSessionDraftSnapshot(scope, address)).not.toBeNull();
+    });
+
     it('does not acknowledge a destructive delete while sync is enabled without an authoritative transport', async () => {
         const repository = createSessionDraftRepository({
             storage: createMemoryStorage(),
